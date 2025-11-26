@@ -57,7 +57,7 @@
     - Initialize AppState with database connection
     - _Requirements: 8.4, 8.5_
 
-- [ ] 4. Create TypeScript types and Tauri command wrappers
+- [x] 4. Create TypeScript types and Tauri command wrappers
   - Define TypeScript interfaces for Expense, Subscription, Category, and DTOs
   - Create utility functions in lib/utils/tauri.ts to wrap Tauri invoke calls
   - Implement error handling wrapper for Tauri commands
