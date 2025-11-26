@@ -7,25 +7,25 @@
   - Implement app data directory path resolution for database file location
   - _Requirements: 8.2, 8.4_
 
-- [ ] 2. Implement data models and database operations
-  - [ ] 2.1 Create Rust model structs for Expense and Subscription
+- [x] 2. Implement data models and database operations
+  - [x] 2.1 Create Rust model structs for Expense and Subscription
     - Define Expense, CreateExpenseDto, UpdateExpenseDto structs with serde serialization
     - Define Subscription, CreateSubscriptionDto, UpdateSubscriptionDto structs
     - _Requirements: 1.2, 3.2_
   
-  - [ ] 2.2 Implement expense database operations
+  - [x] 2.2 Implement expense database operations
     - Write SQL queries for creating, reading, updating, and deleting expenses
     - Implement expense CRUD functions in db module with proper error handling
     - Add date and category indexing for query optimization
     - _Requirements: 1.2, 1.3, 1.4, 6.2, 6.5_
   
-  - [ ] 2.3 Implement subscription database operations
+  - [x] 2.3 Implement subscription database operations
     - Write SQL queries for subscription CRUD operations
     - Implement subscription management functions including status toggle
     - Add function to calculate total monthly subscription cost
     - _Requirements: 3.2, 3.3, 3.5_
   
-  - [ ] 2.4 Initialize categories table with predefined data
+  - [x] 2.4 Initialize categories table with predefined data
     - Create categories table schema with name, color, and icon fields
     - Insert initial category data (交通費, 飲食費, 通信費, 消耗品費, 接待交際費, その他)
     - _Requirements: 5.1_

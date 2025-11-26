@@ -1,4 +1,5 @@
 mod db;
+mod models;
 
 use rusqlite::Connection;
 use std::sync::Mutex;
