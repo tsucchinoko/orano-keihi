@@ -30,29 +30,29 @@
     - Insert initial category data (交通費, 飲食費, 通信費, 消耗品費, 接待交際費, その他)
     - _Requirements: 5.1_
 
-- [ ] 3. Implement Tauri command handlers
-  - [ ] 3.1 Create expense command handlers
+- [x] 3. Implement Tauri command handlers
+  - [x] 3.1 Create expense command handlers
     - Implement create_expense command with validation
     - Implement get_expenses command with month and category filtering
     - Implement update_expense and delete_expense commands
     - Add input validation for amount (positive number) and date (not future)
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 4.1, 4.3, 6.1, 6.2, 6.5_
   
-  - [ ] 3.2 Create subscription command handlers
+  - [x] 3.2 Create subscription command handlers
     - Implement create_subscription and update_subscription commands
     - Implement get_subscriptions command with active_only filter
     - Implement toggle_subscription_status command
     - Implement get_monthly_subscription_total command
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
   
-  - [ ] 3.3 Implement receipt file handling
+  - [x] 3.3 Implement receipt file handling
     - Create save_receipt command to copy files to app data directory
     - Implement file validation (size limit 10MB, format PNG/JPG/PDF)
     - Generate unique filenames with expense_id and timestamp
     - Store receipt file path in database
     - _Requirements: 2.1, 2.2, 2.5_
   
-  - [ ] 3.4 Register all commands in main.rs
+  - [x] 3.4 Register all commands in main.rs
     - Add all expense and subscription commands to Tauri builder
     - Initialize AppState with database connection
     - _Requirements: 8.4, 8.5_

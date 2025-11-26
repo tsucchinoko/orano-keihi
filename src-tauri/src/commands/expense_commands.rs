@@ -1,0 +1,122 @@
+use crate::db::expense_operations;
+use crate::models::{CreateExpenseDto, Expense, UpdateExpenseDto};
+use crate::AppState;
+use chrono::{NaiveDate, Utc};
+use tauri::State;
+
+/// 経費を作成する
+///
+/// # 引数
+/// * `dto` - 経費作成用DTO
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 作成された経費、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn create_expense(
+    dto: CreateExpenseDto,
+    state: State<'_, AppState>,
+) -> Result<Expense, String> {
+    // バリデーション: 金額は正の数値
+    if dto.amount <= 0.0 {
+        return Err("金額は正の数値である必要があります".to_string());
+    }
+
+    // バリデーション: 日付が未来でないことを確認
+    let expense_date = NaiveDate::parse_from_str(&dto.date, "%Y-%m-%d")
+        .map_err(|_| "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string())?;
+    
+    let today = Utc::now().date_naive();
+    if expense_date > today {
+        return Err("未来の日付は指定できません".to_string());
+    }
+
+    // データベース接続を取得
+    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+
+    // 経費を作成
+    expense_operations::create_expense(&db, dto)
+        .map_err(|e| format!("経費の作成に失敗しました: {}", e))
+}
+
+/// 経費一覧を取得する（月とカテゴリでフィルタリング可能）
+///
+/// # 引数
+/// * `month` - 月フィルター（YYYY-MM形式、オプション）
+/// * `category` - カテゴリフィルター（オプション）
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 経費のリスト、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn get_expenses(
+    month: Option<String>,
+    category: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<Expense>, String> {
+    // データベース接続を取得
+    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+
+    // 経費一覧を取得
+    expense_operations::get_expenses(&db, month, category)
+        .map_err(|e| format!("経費の取得に失敗しました: {}", e))
+}
+
+/// 経費を更新する
+///
+/// # 引数
+/// * `id` - 経費ID
+/// * `dto` - 経費更新用DTO
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 更新された経費、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn update_expense(
+    id: i64,
+    dto: UpdateExpenseDto,
+    state: State<'_, AppState>,
+) -> Result<Expense, String> {
+    // バリデーション: 金額が指定されている場合は正の数値
+    if let Some(amount) = dto.amount {
+        if amount <= 0.0 {
+            return Err("金額は正の数値である必要があります".to_string());
+        }
+    }
+
+    // バリデーション: 日付が指定されている場合は未来でないことを確認
+    if let Some(ref date) = dto.date {
+        let expense_date = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .map_err(|_| "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string())?;
+        
+        let today = Utc::now().date_naive();
+        if expense_date > today {
+            return Err("未来の日付は指定できません".to_string());
+        }
+    }
+
+    // データベース接続を取得
+    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+
+    // 経費を更新
+    expense_operations::update_expense(&db, id, dto)
+        .map_err(|e| format!("経費の更新に失敗しました: {}", e))
+}
+
+/// 経費を削除する
+///
+/// # 引数
+/// * `id` - 経費ID
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 成功時は空、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_expense(id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    // データベース接続を取得
+    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+
+    // 経費を削除
+    expense_operations::delete_expense(&db, id)
+        .map_err(|e| format!("経費の削除に失敗しました: {}", e))
+}
