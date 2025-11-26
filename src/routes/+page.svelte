@@ -1,7 +1,7 @@
 <script lang="ts">
 import { invoke } from "@tauri-apps/api/core";
 
-const name = $state("");
+let name = $state("");
 let greetMsg = $state("");
 
 async function greet(event: Event) {
