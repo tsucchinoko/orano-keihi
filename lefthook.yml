@@ -1,0 +1,30 @@
+pre-push:
+  jobs:
+    - name: format frontend
+      tags:
+        - frontend
+      run: deno task format
+    - name: lint frontend
+      tags:
+        - frontend
+      run: deno task lint
+    - name: check frontend 
+      tags:
+        - frontend
+      run: deno task check
+    - name: build frontend
+      tags:
+        - frontend
+      run: deno task build
+    - name: format backend
+      tags:
+        - backend
+      run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+    - name: lint backend
+      tags:
+        - backend
+      run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+    - name: test backend
+      tags:
+        - backend
+      run: cargo test --manifest-path src-tauri/Cargo.toml
