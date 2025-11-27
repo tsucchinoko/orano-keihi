@@ -1,0 +1,11 @@
+[build]
+# デフォルトのマニフェストパスを設定
+target-dir = "src-tauri/target"
+
+[alias]
+# エイリアスを定義してコマンドを短縮
+tauri-build = "build --manifest-path src-tauri/Cargo.toml"
+tauri-check = "check --manifest-path src-tauri/Cargo.toml --all"
+tauri-test = "test --manifest-path src-tauri/Cargo.toml --all"
+tauri-clippy = "clippy --manifest-path src-tauri/Cargo.toml --all"
+tauri-fmt = "fmt --manifest-path src-tauri/Cargo.toml --all"
