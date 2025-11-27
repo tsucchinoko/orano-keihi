@@ -155,9 +155,7 @@ onMount(() => {
 			</div>
 		{:else}
 			<ExpenseList
-				expenses={filteredExpenses()}
 				onEdit={handleEditExpense}
-				onDelete={handleDeleteExpense}
 			/>
 		{/if}
 	</div>
@@ -176,7 +174,7 @@ onMount(() => {
 					<button class="modal-close" onclick={handleFormCancel} aria-label="閉じる">×</button>
 				</div>
 				<div class="modal-body">
-					<ExpenseForm expense={editingExpense} onSave={handleFormSave} onCancel={handleFormCancel} />
+					<ExpenseForm expense={editingExpense} onSuccess={handleFormCancel} onCancel={handleFormCancel} />
 				</div>
 			</div>
 		</div>

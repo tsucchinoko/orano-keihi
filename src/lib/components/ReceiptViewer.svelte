@@ -1,4 +1,6 @@
 <script lang="ts">
+import { convertFileSrc } from "@tauri-apps/api/core";
+
 // Props
 interface Props {
 	receiptPath: string;
@@ -6,6 +8,9 @@ interface Props {
 }
 
 let { receiptPath, onClose }: Props = $props();
+
+// Tauriのファイルパスを変換
+const fileUrl = $derived(convertFileSrc(receiptPath));
 
 // ズームレベル
 let zoomLevel = $state(100);
@@ -121,7 +126,7 @@ function handleBackdropClick(event: MouseEvent) {
 				<!-- 画像表示 -->
 				<div class="flex items-center justify-center min-h-[400px]">
 					<img
-						src={`file://${receiptPath}`}
+						src={fileUrl}
 						alt="領収書"
 						class="max-w-full h-auto transition-transform duration-200"
 						style="transform: scale({zoomLevel / 100}); transform-origin: center;"

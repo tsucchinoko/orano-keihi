@@ -1,14 +1,16 @@
 <script lang="ts">
-import type { Subscription, CreateSubscriptionDto } from "$lib/types";
+import type { Subscription } from "$lib/types";
+import { expenseStore } from "$lib/stores/expenses.svelte";
+import { toastStore } from "$lib/stores/toast.svelte";
 
 // Props
 interface Props {
 	subscription?: Subscription;
-	onSave: (subscription: CreateSubscriptionDto) => void;
+	onSuccess: () => void;
 	onCancel: () => void;
 }
 
-let { subscription, onSave, onCancel }: Props = $props();
+let { subscription, onSuccess, onCancel }: Props = $props();
 
 // フォームの状態
 let name = $state(subscription?.name || "");
@@ -66,23 +68,62 @@ function validate(): boolean {
 	return Object.keys(newErrors).length === 0;
 }
 
+// 送信中フラグ
+let isSubmitting = $state(false);
+
 // フォーム送信
-function handleSubmit(event: Event) {
+async function handleSubmit(event: Event) {
 	event.preventDefault();
 
-	if (!validate()) {
+	if (!validate() || isSubmitting) {
 		return;
 	}
 
-	const subscriptionData: CreateSubscriptionDto = {
-		name: name.trim(),
-		amount: Number.parseFloat(amount),
-		billing_cycle: billingCycle,
-		start_date: new Date(startDate).toISOString(),
-		category,
-	};
+	isSubmitting = true;
 
-	onSave(subscriptionData);
+	try {
+		const subscriptionData = {
+			name: name.trim(),
+			amount: Number.parseFloat(amount),
+			billing_cycle: billingCycle,
+			start_date: new Date(startDate).toISOString(),
+			category,
+		};
+
+		// サブスクリプションを作成または更新
+		let success = false;
+		if (subscription) {
+			// 更新
+			success = await expenseStore.modifySubscription(
+				subscription.id,
+				subscriptionData,
+			);
+		} else {
+			// 新規作成
+			success = await expenseStore.addSubscription(subscriptionData);
+		}
+
+		if (!success) {
+			toastStore.error(
+				expenseStore.error || "サブスクリプションの保存に失敗しました",
+			);
+			return;
+		}
+
+		// 成功メッセージ
+		toastStore.success(
+			subscription
+				? "サブスクリプションを更新しました"
+				: "サブスクリプションを追加しました",
+		);
+
+		// 成功コールバック
+		onSuccess();
+	} catch (error) {
+		toastStore.error(`エラーが発生しました: ${error}`);
+	} finally {
+		isSubmitting = false;
+	}
 }
 
 // 月額換算表示
@@ -212,13 +253,15 @@ const monthlyAmount = $derived(() => {
 			<button
 				type="submit"
 				class="btn btn-primary flex-1"
+				disabled={isSubmitting}
 			>
-				💾 保存
+				{isSubmitting ? '保存中...' : '💾 保存'}
 			</button>
 			<button
 				type="button"
 				onclick={onCancel}
 				class="btn bg-gray-300 text-gray-700 flex-1"
+				disabled={isSubmitting}
 			>
 				キャンセル
 			</button>

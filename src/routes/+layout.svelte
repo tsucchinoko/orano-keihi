@@ -1,5 +1,6 @@
 <script lang="ts">
 import "../app.css";
+import ToastContainer from "$lib/components/ToastContainer.svelte";
 </script>
 
 <!-- グローバルレイアウト: グラデーション背景とナビゲーション構造 -->
@@ -21,6 +22,9 @@ import "../app.css";
 	<main class="main-content">
 		<slot />
 	</main>
+
+	<!-- トースト通知コンテナ -->
+	<ToastContainer />
 </div>
 
 <style>

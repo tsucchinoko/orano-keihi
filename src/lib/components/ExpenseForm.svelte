@@ -1,15 +1,18 @@
 <script lang="ts">
-import type { Expense, CreateExpenseDto } from "$lib/types";
+import type { Expense } from "$lib/types";
+import { expenseStore } from "$lib/stores/expenses.svelte";
+import { toastStore } from "$lib/stores/toast.svelte";
+import { saveReceipt } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
 interface Props {
 	expense?: Expense;
-	onSave: (expense: CreateExpenseDto, receiptFile?: string) => void;
+	onSuccess: () => void;
 	onCancel: () => void;
 }
 
-let { expense, onSave, onCancel }: Props = $props();
+let { expense, onSuccess, onCancel }: Props = $props();
 
 // フォームの状態
 let date = $state(
@@ -74,7 +77,7 @@ async function selectReceipt() {
 			multiple: false,
 			filters: [
 				{
-					name: "Images",
+					name: "領収書",
 					extensions: ["png", "jpg", "jpeg", "pdf"],
 				},
 			],
@@ -84,30 +87,84 @@ async function selectReceipt() {
 			receiptFile = selected;
 			// 画像プレビュー用（PDFの場合はプレビューなし）
 			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
-				receiptPreview = `file://${selected}`;
+				// Tauriのファイルパスを変換してプレビュー表示
+				const { convertFileSrc } = await import("@tauri-apps/api/core");
+				receiptPreview = convertFileSrc(selected);
+			} else {
+				receiptPreview = undefined;
 			}
 		}
 	} catch (error) {
 		console.error("領収書ファイルの選択に失敗しました:", error);
+		toastStore.error("領収書ファイルの選択に失敗しました");
 	}
 }
 
+// 送信中フラグ
+let isSubmitting = $state(false);
+
 // フォーム送信
-function handleSubmit(event: Event) {
+async function handleSubmit(event: Event) {
 	event.preventDefault();
 
-	if (!validate()) {
+	if (!validate() || isSubmitting) {
 		return;
 	}
 
-	const expenseData: CreateExpenseDto = {
-		date: new Date(date).toISOString(),
-		amount: Number.parseFloat(amount),
-		category,
-		description: description || undefined,
-	};
+	isSubmitting = true;
 
-	onSave(expenseData, receiptFile);
+	try {
+		const expenseData = {
+			date: new Date(date).toISOString(),
+			amount: Number.parseFloat(amount),
+			category,
+			description: description || undefined,
+		};
+
+		// 経費を作成または更新
+		let success = false;
+		if (expense) {
+			// 更新
+			success = await expenseStore.modifyExpense(expense.id, expenseData);
+		} else {
+			// 新規作成
+			success = await expenseStore.addExpense(expenseData);
+		}
+
+		if (!success) {
+			toastStore.error(expenseStore.error || "経費の保存に失敗しました");
+			return;
+		}
+
+		// 領収書がある場合は保存
+		if (receiptFile && !expense) {
+			// 新規作成の場合のみ領収書を保存
+			// 最後に追加された経費のIDを取得
+			const lastExpense =
+				expenseStore.expenses[expenseStore.expenses.length - 1];
+			if (lastExpense) {
+				const result = await saveReceipt(lastExpense.id, receiptFile);
+				if (result.error) {
+					toastStore.error(`領収書の保存に失敗しました: ${result.error}`);
+				} else {
+					// 領収書パスを更新
+					await expenseStore.modifyExpense(lastExpense.id, {
+						receipt_path: result.data,
+					});
+				}
+			}
+		}
+
+		// 成功メッセージ
+		toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");
+
+		// 成功コールバック
+		onSuccess();
+	} catch (error) {
+		toastStore.error(`エラーが発生しました: ${error}`);
+	} finally {
+		isSubmitting = false;
+	}
 }
 </script>
 
@@ -223,13 +280,15 @@ function handleSubmit(event: Event) {
 			<button
 				type="submit"
 				class="btn btn-primary flex-1"
+				disabled={isSubmitting}
 			>
-				💾 保存
+				{isSubmitting ? '保存中...' : '💾 保存'}
 			</button>
 			<button
 				type="button"
 				onclick={onCancel}
 				class="btn bg-gray-300 text-gray-700 flex-1"
+				disabled={isSubmitting}
 			>
 				キャンセル
 			</button>

@@ -1,33 +1,55 @@
 <script lang="ts">
 import type { Subscription } from "$lib/types";
+import { expenseStore } from "$lib/stores/expenses.svelte";
+import { toastStore } from "$lib/stores/toast.svelte";
 
 // Props
 interface Props {
-	subscriptions: Subscription[];
 	onEdit: (subscription: Subscription) => void;
-	onToggleStatus: (id: number) => void;
 }
 
-let { subscriptions, onEdit, onToggleStatus }: Props = $props();
+let { onEdit }: Props = $props();
+
+// ストアからサブスクリプションデータを取得
+const subscriptions = $derived(expenseStore.subscriptions);
+
+// コンポーネントマウント時にサブスクリプションを読み込む
+$effect(() => {
+	expenseStore.loadSubscriptions();
+	expenseStore.loadMonthlySubscriptionTotal();
+});
 
 // アクティブなサブスクリプション
-const activeSubscriptions = $derived(() => {
+const activeSubscriptions = $derived.by(() => {
 	return subscriptions.filter((sub) => sub.is_active);
 });
 
 // 非アクティブなサブスクリプション
-const inactiveSubscriptions = $derived(() => {
+const inactiveSubscriptions = $derived.by(() => {
 	return subscriptions.filter((sub) => !sub.is_active);
 });
 
-// 月額合計
-const monthlyTotal = $derived(() => {
-	return activeSubscriptions().reduce((sum, sub) => {
-		const monthlyAmount =
-			sub.billing_cycle === "annual" ? sub.amount / 12 : sub.amount;
-		return sum + monthlyAmount;
-	}, 0);
-});
+// 月額合計（ストアから取得）
+const monthlyTotal = $derived(expenseStore.monthlySubscriptionTotal);
+
+// ステータス切り替え処理
+async function handleToggleStatus(id: number): Promise<void> {
+	const success = await expenseStore.toggleSubscription(id);
+	if (success) {
+		const subscription = subscriptions.find((sub) => sub.id === id);
+		if (subscription) {
+			toastStore.success(
+				subscription.is_active
+					? "サブスクリプションを停止しました"
+					: "サブスクリプションを再開しました",
+			);
+		}
+	} else {
+		toastStore.error(
+			expenseStore.error || "ステータスの切り替えに失敗しました",
+		);
+	}
+}
 
 // カテゴリアイコン
 const categoryIcons: Record<string, string> = {
@@ -102,22 +124,22 @@ function getNextBillingDate(subscription: Subscription): string {
 	<div class="card bg-gradient-to-br from-purple-50 to-pink-50">
 		<h3 class="text-lg font-bold mb-2">月額合計</h3>
 		<div class="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-			{formatAmount(monthlyTotal())}
+			{formatAmount(monthlyTotal)}
 		</div>
 		<p class="text-sm text-gray-600 mt-2">
-			アクティブなサブスクリプション: {activeSubscriptions().length}件
+			アクティブなサブスクリプション: {activeSubscriptions.length}件
 		</p>
 	</div>
 
 	<!-- アクティブなサブスクリプション -->
-	{#if activeSubscriptions().length > 0}
+	{#if activeSubscriptions.length > 0}
 		<div>
 			<h3 class="text-xl font-bold mb-4 flex items-center gap-2">
 				<span class="w-3 h-3 bg-green-500 rounded-full"></span>
 				アクティブ
 			</h3>
 			<div class="space-y-3">
-				{#each activeSubscriptions() as subscription (subscription.id)}
+				{#each activeSubscriptions as subscription (subscription.id)}
 					<div class="card hover:shadow-lg transition-all duration-200 relative overflow-hidden">
 						<!-- カテゴリカラーバー -->
 						<div class="absolute top-0 left-0 w-1 h-full {categoryColors[subscription.category] || 'bg-category-other'}"></div>
@@ -164,7 +186,7 @@ function getNextBillingDate(subscription: Subscription): string {
 									</button>
 									<button
 										type="button"
-										onclick={() => onToggleStatus(subscription.id)}
+										onclick={() => handleToggleStatus(subscription.id)}
 										class="btn bg-gray-500 hover:bg-gray-600 text-white text-sm px-3 py-1"
 										title="無効化"
 									>
@@ -180,14 +202,14 @@ function getNextBillingDate(subscription: Subscription): string {
 	{/if}
 
 	<!-- 非アクティブなサブスクリプション -->
-	{#if inactiveSubscriptions().length > 0}
+	{#if inactiveSubscriptions.length > 0}
 		<div>
 			<h3 class="text-xl font-bold mb-4 flex items-center gap-2">
 				<span class="w-3 h-3 bg-gray-400 rounded-full"></span>
 				停止中
 			</h3>
 			<div class="space-y-3">
-				{#each inactiveSubscriptions() as subscription (subscription.id)}
+				{#each inactiveSubscriptions as subscription (subscription.id)}
 					<div class="card opacity-60 hover:opacity-100 hover:shadow-lg transition-all duration-200 relative overflow-hidden">
 						<!-- カテゴリカラーバー -->
 						<div class="absolute top-0 left-0 w-1 h-full {categoryColors[subscription.category] || 'bg-category-other'}"></div>
@@ -227,7 +249,7 @@ function getNextBillingDate(subscription: Subscription): string {
 									</button>
 									<button
 										type="button"
-										onclick={() => onToggleStatus(subscription.id)}
+										onclick={() => handleToggleStatus(subscription.id)}
 										class="btn btn-success text-sm px-3 py-1"
 										title="有効化"
 									>

@@ -1,21 +1,28 @@
 <script lang="ts">
-import type { Expense, MonthlyTotal } from "$lib/types";
+import type { Expense } from "$lib/types";
+import { expenseStore } from "$lib/stores/expenses.svelte";
+import { toastStore } from "$lib/stores/toast.svelte";
 import ExpenseItem from "./ExpenseItem.svelte";
 
 // Props
 interface Props {
-	expenses: Expense[];
-	selectedMonth?: string;
 	onEdit: (expense: Expense) => void;
-	onDelete: (id: number) => void;
 	onViewReceipt?: (receiptPath: string) => void;
 }
 
-let { expenses, selectedMonth, onEdit, onDelete, onViewReceipt }: Props =
-	$props();
+let { onEdit, onViewReceipt }: Props = $props();
+
+// ストアから経費データを取得
+const expenses = $derived(expenseStore.filteredExpenses);
+const selectedMonth = $derived(expenseStore.selectedMonth);
+
+// コンポーネントマウント時に経費を読み込む
+$effect(() => {
+	expenseStore.loadExpenses();
+});
 
 // 日付でグループ化された経費
-const groupedExpenses = $derived(() => {
+const groupedExpenses = $derived.by(() => {
 	const groups: Record<string, Expense[]> = {};
 
 	for (const expense of expenses) {
@@ -36,26 +43,25 @@ const groupedExpenses = $derived(() => {
 	return result;
 });
 
-// カテゴリ別合計
-const categoryTotals = $derived(() => {
-	const totals: Record<string, number> = {};
-
-	for (const expense of expenses) {
-		if (!totals[expense.category]) {
-			totals[expense.category] = 0;
-		}
-		totals[expense.category] += expense.amount;
-	}
-
-	return Object.entries(totals)
+// カテゴリ別合計（ストアから取得）
+const categoryTotals = $derived(
+	Object.entries(expenseStore.categoryTotals)
 		.map(([category, total]) => ({ category, total }))
-		.sort((a, b) => b.total - a.total);
-});
+		.sort((a, b) => b.total - a.total),
+);
 
-// 総合計
-const grandTotal = $derived(() => {
-	return expenses.reduce((sum, expense) => sum + expense.amount, 0);
-});
+// 総合計（ストアから取得）
+const grandTotal = $derived(expenseStore.monthlyTotal);
+
+// 削除処理
+async function handleDelete(id: number): Promise<void> {
+	const success = await expenseStore.removeExpense(id);
+	if (success) {
+		toastStore.success("経費を削除しました");
+	} else {
+		toastStore.error(expenseStore.error || "経費の削除に失敗しました");
+	}
+}
 
 // 日付フォーマット
 function formatDate(dateStr: string): string {
@@ -96,7 +102,7 @@ const categoryIcons: Record<string, string> = {
 
 		<!-- カテゴリ別合計 -->
 		<div class="space-y-2 mb-4">
-			{#each categoryTotals() as { category, total }}
+			{#each categoryTotals as { category, total }}
 				<div class="flex items-center justify-between">
 					<span class="text-sm">
 						{categoryIcons[category] || '📋'} {category}
@@ -111,7 +117,7 @@ const categoryIcons: Record<string, string> = {
 			<div class="flex items-center justify-between">
 				<span class="text-lg font-bold">合計</span>
 				<span class="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-					{formatAmount(grandTotal())}
+					{formatAmount(grandTotal)}
 				</span>
 			</div>
 		</div>
@@ -125,7 +131,7 @@ const categoryIcons: Record<string, string> = {
 			<p class="text-gray-400 text-sm mt-2">新しい経費を追加してください</p>
 		</div>
 	{:else}
-		{#each Object.entries(groupedExpenses()) as [date, dayExpenses]}
+		{#each Object.entries(groupedExpenses) as [date, dayExpenses]}
 			<div class="space-y-3">
 				<!-- 日付ヘッダー -->
 				<div class="flex items-center gap-3">
@@ -143,7 +149,7 @@ const categoryIcons: Record<string, string> = {
 							<ExpenseItem
 								{expense}
 								{onEdit}
-								{onDelete}
+								onDelete={handleDelete}
 								{onViewReceipt}
 							/>
 						</div>

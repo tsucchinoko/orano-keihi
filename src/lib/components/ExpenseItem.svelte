@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { Expense } from "$lib/types";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 // Props
 interface Props {
@@ -10,6 +11,11 @@ interface Props {
 }
 
 let { expense, onEdit, onDelete, onViewReceipt }: Props = $props();
+
+// 領収書のサムネイルURL
+const receiptThumbnailUrl = $derived(
+	expense.receipt_path ? convertFileSrc(expense.receipt_path) : undefined,
+);
 
 // 削除確認ダイアログの状態
 let showDeleteConfirm = $state(false);
@@ -91,14 +97,32 @@ function handleViewReceipt() {
 				{/if}
 
 				<!-- 領収書サムネイル -->
-				{#if expense.receipt_path}
-					<button
-						type="button"
-						onclick={handleViewReceipt}
-						class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 transition-colors"
-					>
-						📎 領収書を表示
-					</button>
+				{#if expense.receipt_path && receiptThumbnailUrl}
+					<div class="mt-2">
+						{#if expense.receipt_path.match(/\.(png|jpg|jpeg)$/i)}
+							<!-- 画像の場合はサムネイル表示 -->
+							<button
+								type="button"
+								onclick={handleViewReceipt}
+								class="inline-block"
+							>
+								<img
+									src={receiptThumbnailUrl}
+									alt="領収書サムネイル"
+									class="h-20 w-auto rounded border-2 border-gray-200 hover:border-purple-400 transition-colors cursor-pointer"
+								/>
+							</button>
+						{:else}
+							<!-- PDFの場合はリンク表示 -->
+							<button
+								type="button"
+								onclick={handleViewReceipt}
+								class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+							>
+								📎 領収書を表示
+							</button>
+						{/if}
+					</div>
 				{/if}
 			</div>
 

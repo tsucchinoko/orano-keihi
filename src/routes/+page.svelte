@@ -187,9 +187,7 @@ function getCategoryColor(category: string): string {
 					</div>
 				</div>
 				<SubscriptionList 
-					{subscriptions} 
 					onEdit={handleEditSubscription}
-					onToggleStatus={handleToggleSubscription}
 				/>
 			</div>
 		</div>

@@ -151,26 +151,26 @@
   - Handle loading and error states
   - _Requirements: 1.5, 4.3, 8.4, 8.5_
 
-- [ ] 8. Wire up frontend and backend integration
-  - [ ] 8.1 Connect ExpenseForm to create_expense and update_expense commands
+- [x] 8. Wire up frontend and backend integration
+  - [x] 8.1 Connect ExpenseForm to create_expense and update_expense commands
     - Call Tauri commands on form submission
     - Handle success and error responses with toast notifications
     - Update local state after successful operations
     - _Requirements: 1.2, 1.5, 6.2, 8.5_
   
-  - [ ] 8.2 Connect ExpenseList to get_expenses and delete_expense commands
+  - [x] 8.2 Connect ExpenseList to get_expenses and delete_expense commands
     - Load expenses on component mount and when filters change
     - Implement delete confirmation and command invocation
     - Update UI after deletion
     - _Requirements: 4.1, 4.3, 6.5, 8.4_
   
-  - [ ] 8.3 Connect SubscriptionForm and SubscriptionList to subscription commands
+  - [x] 8.3 Connect SubscriptionForm and SubscriptionList to subscription commands
     - Implement create, update, and toggle status operations
     - Load subscriptions and calculate monthly total
     - Update UI reactively
     - _Requirements: 3.2, 3.3, 3.4, 3.5, 8.5_
   
-  - [ ] 8.4 Implement receipt file upload integration
+  - [x] 8.4 Implement receipt file upload integration
     - Use Tauri dialog API to select files
     - Call save_receipt command with selected file path
     - Display uploaded receipt thumbnail in ExpenseItem
