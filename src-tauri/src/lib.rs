@@ -19,14 +19,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // アプリ起動時にデータベースを初期化
-            let db_conn = db::initialize_database(app.handle())
-                .expect("データベースの初期化に失敗しました");
-            
+            let db_conn =
+                db::initialize_database(app.handle()).expect("データベースの初期化に失敗しました");
+
             // データベース接続をアプリ状態に保存
             app.manage(AppState {
                 db: Mutex::new(db_conn),
             });
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

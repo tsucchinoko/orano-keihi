@@ -13,11 +13,11 @@ pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {e}"))?;
 
     // アプリデータディレクトリが存在しない場合は作成
     std::fs::create_dir_all(&app_data_dir)
-        .map_err(|e| format!("アプリデータディレクトリの作成に失敗しました: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリの作成に失敗しました: {e}"))?;
 
     Ok(app_data_dir.join("expenses.db"))
 }
@@ -31,13 +31,13 @@ pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
 /// データベース接続、または失敗時はエラーメッセージ
 pub fn initialize_database(app_handle: &AppHandle) -> Result<Connection, String> {
     let db_path = get_db_path(app_handle)?;
-    
+
     let conn = Connection::open(&db_path)
-        .map_err(|e| format!("データベースのオープンに失敗しました: {}", e))?;
+        .map_err(|e| format!("データベースのオープンに失敗しました: {e}"))?;
 
     // マイグレーションを実行
     crate::db::migrations::run_migrations(&conn)
-        .map_err(|e| format!("マイグレーションの実行に失敗しました: {}", e))?;
+        .map_err(|e| format!("マイグレーションの実行に失敗しました: {e}"))?;
 
     Ok(conn)
 }

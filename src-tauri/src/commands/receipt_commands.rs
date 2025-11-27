@@ -28,9 +28,9 @@ pub async fn save_receipt(
     }
 
     // ファイルサイズの検証（10MB制限）
-    let metadata = fs::metadata(source_path)
-        .map_err(|e| format!("ファイル情報の取得に失敗しました: {}", e))?;
-    
+    let metadata =
+        fs::metadata(source_path).map_err(|e| format!("ファイル情報の取得に失敗しました: {e}"))?;
+
     const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
     if metadata.len() > MAX_FILE_SIZE {
         return Err("ファイルサイズが10MBを超えています".to_string());
@@ -51,21 +51,21 @@ pub async fn save_receipt(
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {e}"))?;
 
     // receiptsディレクトリを作成
     let receipts_dir = app_data_dir.join("receipts");
     fs::create_dir_all(&receipts_dir)
-        .map_err(|e| format!("receiptsディレクトリの作成に失敗しました: {}", e))?;
+        .map_err(|e| format!("receiptsディレクトリの作成に失敗しました: {e}"))?;
 
     // ユニークなファイル名を生成（expense_id_timestamp.ext）
     let timestamp = chrono::Utc::now().timestamp();
-    let filename = format!("{}_{}.{}", expense_id, timestamp, extension);
+    let filename = format!("{expense_id}_{timestamp}.{extension}");
     let dest_path = receipts_dir.join(&filename);
 
     // ファイルをコピー
     fs::copy(source_path, &dest_path)
-        .map_err(|e| format!("ファイルのコピーに失敗しました: {}", e))?;
+        .map_err(|e| format!("ファイルのコピーに失敗しました: {e}"))?;
 
     // データベースに領収書パスを保存
     let receipt_path_str = dest_path
@@ -76,10 +76,10 @@ pub async fn save_receipt(
     let db = state
         .db
         .lock()
-        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     expense_operations::set_receipt_path(&db, expense_id, receipt_path_str.clone())
-        .map_err(|e| format!("データベースへの保存に失敗しました: {}", e))?;
+        .map_err(|e| format!("データベースへの保存に失敗しました: {e}"))?;
 
     Ok(receipt_path_str)
 }

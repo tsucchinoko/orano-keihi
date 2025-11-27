@@ -28,9 +28,10 @@ pub async fn create_expense(
     }
 
     // バリデーション: 日付が未来でないことを確認
-    let expense_date = NaiveDate::parse_from_str(&dto.date, "%Y-%m-%d")
-        .map_err(|_| "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string())?;
-    
+    let expense_date = NaiveDate::parse_from_str(&dto.date, "%Y-%m-%d").map_err(|_| {
+        "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string()
+    })?;
+
     let today = Utc::now().date_naive();
     if expense_date > today {
         return Err("未来の日付は指定できません".to_string());
@@ -44,11 +45,14 @@ pub async fn create_expense(
     }
 
     // データベース接続を取得
-    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 経費を作成
     expense_operations::create_expense(&db, dto)
-        .map_err(|e| format!("経費の作成に失敗しました: {}", e))
+        .map_err(|e| format!("経費の作成に失敗しました: {e}"))
 }
 
 /// 経費一覧を取得する（月とカテゴリでフィルタリング可能）
@@ -67,11 +71,14 @@ pub async fn get_expenses(
     state: State<'_, AppState>,
 ) -> Result<Vec<Expense>, String> {
     // データベース接続を取得
-    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 経費一覧を取得
     expense_operations::get_expenses(&db, month, category)
-        .map_err(|e| format!("経費の取得に失敗しました: {}", e))
+        .map_err(|e| format!("経費の取得に失敗しました: {e}"))
 }
 
 /// 経費を更新する
@@ -101,9 +108,10 @@ pub async fn update_expense(
 
     // バリデーション: 日付が指定されている場合は未来でないことを確認
     if let Some(ref date) = dto.date {
-        let expense_date = NaiveDate::parse_from_str(date, "%Y-%m-%d")
-            .map_err(|_| "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string())?;
-        
+        let expense_date = NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| {
+            "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string()
+        })?;
+
         let today = Utc::now().date_naive();
         if expense_date > today {
             return Err("未来の日付は指定できません".to_string());
@@ -118,11 +126,14 @@ pub async fn update_expense(
     }
 
     // データベース接続を取得
-    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 経費を更新
     expense_operations::update_expense(&db, id, dto)
-        .map_err(|e| format!("経費の更新に失敗しました: {}", e))
+        .map_err(|e| format!("経費の更新に失敗しました: {e}"))
 }
 
 /// 経費を削除する
@@ -136,9 +147,12 @@ pub async fn update_expense(
 #[tauri::command]
 pub async fn delete_expense(id: i64, state: State<'_, AppState>) -> Result<(), String> {
     // データベース接続を取得
-    let db = state.db.lock().map_err(|e| format!("データベースロックエラー: {}", e))?;
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 経費を削除
     expense_operations::delete_expense(&db, id)
-        .map_err(|e| format!("経費の削除に失敗しました: {}", e))
+        .map_err(|e| format!("経費の削除に失敗しました: {e}"))
 }

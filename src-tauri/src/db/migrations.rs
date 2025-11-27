@@ -68,11 +68,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     )?;
 
     // テーブルが空の場合、初期カテゴリデータを挿入
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM categories",
-        [],
-        |row| row.get(0),
-    )?;
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))?;
 
     if count == 0 {
         let categories = [

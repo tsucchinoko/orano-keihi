@@ -45,11 +45,11 @@ pub async fn create_subscription(
     let db = state
         .db
         .lock()
-        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプションを作成
     subscription_operations::create_subscription(&db, dto)
-        .map_err(|e| format!("サブスクリプションの作成に失敗しました: {}", e))
+        .map_err(|e| format!("サブスクリプションの作成に失敗しました: {e}"))
 }
 
 /// サブスクリプション一覧を取得する
@@ -69,11 +69,11 @@ pub async fn get_subscriptions(
     let db = state
         .db
         .lock()
-        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプション一覧を取得
     subscription_operations::get_subscriptions(&db, active_only)
-        .map_err(|e| format!("サブスクリプションの取得に失敗しました: {}", e))
+        .map_err(|e| format!("サブスクリプションの取得に失敗しました: {e}"))
 }
 
 /// サブスクリプションを更新する
@@ -114,9 +114,7 @@ pub async fn update_subscription(
     // バリデーション: billing_cycleが指定されている場合は"monthly"または"annual"のみ
     if let Some(ref billing_cycle) = dto.billing_cycle {
         if billing_cycle != "monthly" && billing_cycle != "annual" {
-            return Err(
-                "支払いサイクルは'monthly'または'annual'である必要があります".to_string()
-            );
+            return Err("支払いサイクルは'monthly'または'annual'である必要があります".to_string());
         }
     }
 
@@ -124,11 +122,11 @@ pub async fn update_subscription(
     let db = state
         .db
         .lock()
-        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプションを更新
     subscription_operations::update_subscription(&db, id, dto)
-        .map_err(|e| format!("サブスクリプションの更新に失敗しました: {}", e))
+        .map_err(|e| format!("サブスクリプションの更新に失敗しました: {e}"))
 }
 
 /// サブスクリプションのアクティブ状態を切り替える
@@ -148,11 +146,11 @@ pub async fn toggle_subscription_status(
     let db = state
         .db
         .lock()
-        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプションのアクティブ状態を切り替え
     subscription_operations::toggle_subscription_status(&db, id)
-        .map_err(|e| format!("サブスクリプションの状態切り替えに失敗しました: {}", e))
+        .map_err(|e| format!("サブスクリプションの状態切り替えに失敗しました: {e}"))
 }
 
 /// アクティブなサブスクリプションの月額合計を取得する
@@ -168,9 +166,9 @@ pub async fn get_monthly_subscription_total(state: State<'_, AppState>) -> Resul
     let db = state
         .db
         .lock()
-        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 月額合計を計算
     subscription_operations::get_monthly_subscription_total(&db)
-        .map_err(|e| format!("月額合計の計算に失敗しました: {}", e))
+        .map_err(|e| format!("月額合計の計算に失敗しました: {e}"))
 }

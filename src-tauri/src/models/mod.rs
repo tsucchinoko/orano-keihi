@@ -1,5 +1,5 @@
 pub mod expense;
 pub mod subscription;
 
-pub use expense::{Expense, CreateExpenseDto, UpdateExpenseDto};
-pub use subscription::{Subscription, CreateSubscriptionDto, UpdateSubscriptionDto};
+pub use expense::{CreateExpenseDto, Expense, UpdateExpenseDto};
+pub use subscription::{CreateSubscriptionDto, Subscription, UpdateSubscriptionDto};
