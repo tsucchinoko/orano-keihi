@@ -78,11 +78,11 @@
 				]
 			});
 
-			if (selected) {
-				receiptFile = selected.path;
+			if (selected && typeof selected === 'string') {
+				receiptFile = selected;
 				// 画像プレビュー用（PDFの場合はプレビューなし）
-				if (selected.path.match(/\.(png|jpg|jpeg)$/i)) {
-					receiptPreview = `file://${selected.path}`;
+				if (selected.match(/\.(png|jpg|jpeg)$/i)) {
+					receiptPreview = `file://${selected}`;
 				}
 			}
 		} catch (error) {

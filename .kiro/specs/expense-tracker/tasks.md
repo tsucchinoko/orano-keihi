@@ -123,21 +123,21 @@
     - Include close button
     - _Requirements: 2.3, 2.4_
 
-- [ ] 6. Build main application pages and layout
-  - [ ] 6.1 Update +layout.svelte with gradient background
+- [x] 6. Build main application pages and layout
+  - [x] 6.1 Update +layout.svelte with gradient background
     - Apply global gradient background styling
     - Set up navigation structure
     - Configure Inter font family
     - _Requirements: 7.1, 7.3, 7.5_
   
-  - [ ] 6.2 Create main dashboard page (+page.svelte)
+  - [x] 6.2 Create main dashboard page (+page.svelte)
     - Display monthly expense summary with category breakdown
     - Show subscription list with total monthly cost
     - Add quick action buttons for adding expenses and subscriptions
     - Apply gradient card styling
     - _Requirements: 3.5, 4.2, 4.5, 7.1_
   
-  - [ ] 6.3 Create expenses page (expenses/+page.svelte)
+  - [x] 6.3 Create expenses page (expenses/+page.svelte)
     - Integrate MonthSelector and CategoryFilter components
     - Integrate ExpenseList component
     - Add floating action button for new expense with gradient styling

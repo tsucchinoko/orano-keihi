@@ -46,3 +46,17 @@ pub fn get_user(user_id: i64) -> Option<User> {
 - 設計書（design.md）は日本語で記述
 - タスクリスト（tasks.md）は日本語で記述
 - 技術的な用語は必要に応じて英語を併記（例：「データベース（Database）」）
+
+## コマンド実行規則
+
+### フロントエンド開発
+- フロントエンド関連のコマンド（npm、npx、node等）は必ず`deno`を使用すること
+- 例：
+  - `npm run dev` → `deno task dev`
+  - `npm run build` → `deno task build`
+  - `npm run check` → `deno task check`
+  - `npx svelte-check` → `deno task check`
+
+### バックエンド開発
+- Rust/Tauri関連のコマンドは通常通り`cargo`を使用すること
+- 例：`cargo build`, `cargo tauri dev`
