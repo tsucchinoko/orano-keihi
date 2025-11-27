@@ -1,1 +1,178 @@
 @import "tailwindcss";
+
+/* グラデーション定義 */
+:root {
+  /* プライマリグラデーション */
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-success: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --gradient-info: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  --gradient-warning: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+
+  /* カテゴリカラー */
+  --color-transport: #3B82F6;
+  --color-meals: #EF4444;
+  --color-communication: #8B5CF6;
+  --color-supplies: #10B981;
+  --color-entertainment: #F59E0B;
+  --color-other: #6B7280;
+
+  /* 背景グラデーション */
+  --bg-gradient-light: linear-gradient(to bottom right, #fafafa, #e5e7eb);
+  --bg-gradient-dark: linear-gradient(to bottom right, #1f2937, #111827);
+}
+
+/* グラデーションユーティリティクラス */
+.gradient-primary {
+  background: var(--gradient-primary);
+}
+
+.gradient-success {
+  background: var(--gradient-success);
+}
+
+.gradient-info {
+  background: var(--gradient-info);
+}
+
+.gradient-warning {
+  background: var(--gradient-warning);
+}
+
+.bg-gradient-light {
+  background: var(--bg-gradient-light);
+}
+
+.bg-gradient-dark {
+  background: var(--bg-gradient-dark);
+}
+
+/* カテゴリカラークラス */
+.category-transport {
+  color: var(--color-transport);
+}
+
+.category-meals {
+  color: var(--color-meals);
+}
+
+.category-communication {
+  color: var(--color-communication);
+}
+
+.category-supplies {
+  color: var(--color-supplies);
+}
+
+.category-entertainment {
+  color: var(--color-entertainment);
+}
+
+.category-other {
+  color: var(--color-other);
+}
+
+.bg-category-transport {
+  background-color: var(--color-transport);
+}
+
+.bg-category-meals {
+  background-color: var(--color-meals);
+}
+
+.bg-category-communication {
+  background-color: var(--color-communication);
+}
+
+.bg-category-supplies {
+  background-color: var(--color-supplies);
+}
+
+.bg-category-entertainment {
+  background-color: var(--color-entertainment);
+}
+
+.bg-category-other {
+  background-color: var(--color-other);
+}
+
+/* グローバルスタイル */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-gradient-light);
+  min-height: 100vh;
+}
+
+/* スムーズトランジション */
+* {
+  transition: all 0.2s ease-in-out;
+}
+
+/* カード共通スタイル */
+.card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 1.5rem;
+}
+
+.card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* ボタン共通スタイル */
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  color: white;
+  transition: all 0.2s ease-in-out;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  background: var(--gradient-primary);
+}
+
+.btn-success {
+  background: var(--gradient-success);
+}
+
+.btn-info {
+  background: var(--gradient-info);
+}
+
+.btn-warning {
+  background: var(--gradient-warning);
+}
+
+/* インプット共通スタイル */
+.input {
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  width: 100%;
+  transition: all 0.2s ease-in-out;
+}
+
+.input:focus {
+  outline: none;
+  border-image: var(--gradient-primary) 1;
+  border-image-slice: 1;
+}
+
+/* レスポンシブデザイン */
+@media (max-width: 768px) {
+  .card {
+    padding: 1rem;
+  }
+}

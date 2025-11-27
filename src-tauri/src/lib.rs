@@ -16,6 +16,7 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // アプリ起動時にデータベースを初期化
             let db_conn = db::initialize_database(app.handle())
