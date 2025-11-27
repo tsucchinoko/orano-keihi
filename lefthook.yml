@@ -3,7 +3,7 @@ pre-push:
     - name: format frontend
       tags:
         - frontend
-      run: deno task format
+      run: deno task fmt
     - name: lint frontend
       tags:
         - frontend
