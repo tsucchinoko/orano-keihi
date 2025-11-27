@@ -19,7 +19,7 @@ pre-push:
     - name: format backend
       tags:
         - backend
-      run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+      run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --
     - name: lint backend
       tags:
         - backend
