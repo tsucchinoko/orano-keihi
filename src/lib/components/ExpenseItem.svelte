@@ -1,69 +1,69 @@
 <script lang="ts">
-	import type { Expense } from '$lib/types';
+import type { Expense } from "$lib/types";
 
-	// Props
-	interface Props {
-		expense: Expense;
-		onEdit: (expense: Expense) => void;
-		onDelete: (id: number) => void;
-		onViewReceipt?: (receiptPath: string) => void;
+// Props
+interface Props {
+	expense: Expense;
+	onEdit: (expense: Expense) => void;
+	onDelete: (id: number) => void;
+	onViewReceipt?: (receiptPath: string) => void;
+}
+
+let { expense, onEdit, onDelete, onViewReceipt }: Props = $props();
+
+// 削除確認ダイアログの状態
+let showDeleteConfirm = $state(false);
+
+// カテゴリごとのアイコンとカラー
+const categoryConfig: Record<string, { icon: string; colorClass: string }> = {
+	交通費: { icon: "🚗", colorClass: "bg-category-transport" },
+	飲食費: { icon: "🍽️", colorClass: "bg-category-meals" },
+	通信費: { icon: "📱", colorClass: "bg-category-communication" },
+	消耗品費: { icon: "📦", colorClass: "bg-category-supplies" },
+	接待交際費: { icon: "🤝", colorClass: "bg-category-entertainment" },
+	その他: { icon: "📋", colorClass: "bg-category-other" },
+};
+
+// 日付フォーマット
+function formatDate(dateStr: string): string {
+	const date = new Date(dateStr);
+	return date.toLocaleDateString("ja-JP", {
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+	});
+}
+
+// 金額フォーマット
+function formatAmount(amount: number): string {
+	return new Intl.NumberFormat("ja-JP", {
+		style: "currency",
+		currency: "JPY",
+	}).format(amount);
+}
+
+// 削除確認
+function confirmDelete() {
+	showDeleteConfirm = true;
+}
+
+// 削除実行
+function handleDelete() {
+	onDelete(expense.id);
+	showDeleteConfirm = false;
+}
+
+// 削除キャンセル
+function cancelDelete() {
+	showDeleteConfirm = false;
+}
+
+// 領収書表示
+function handleViewReceipt() {
+	if (expense.receipt_path && onViewReceipt) {
+		onViewReceipt(expense.receipt_path);
 	}
-
-	let { expense, onEdit, onDelete, onViewReceipt }: Props = $props();
-
-	// 削除確認ダイアログの状態
-	let showDeleteConfirm = $state(false);
-
-	// カテゴリごとのアイコンとカラー
-	const categoryConfig: Record<string, { icon: string; colorClass: string }> = {
-		'交通費': { icon: '🚗', colorClass: 'bg-category-transport' },
-		'飲食費': { icon: '🍽️', colorClass: 'bg-category-meals' },
-		'通信費': { icon: '📱', colorClass: 'bg-category-communication' },
-		'消耗品費': { icon: '📦', colorClass: 'bg-category-supplies' },
-		'接待交際費': { icon: '🤝', colorClass: 'bg-category-entertainment' },
-		'その他': { icon: '📋', colorClass: 'bg-category-other' }
-	};
-
-	// 日付フォーマット
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
-		return date.toLocaleDateString('ja-JP', {
-			year: 'numeric',
-			month: 'long',
-			day: 'numeric'
-		});
-	}
-
-	// 金額フォーマット
-	function formatAmount(amount: number): string {
-		return new Intl.NumberFormat('ja-JP', {
-			style: 'currency',
-			currency: 'JPY'
-		}).format(amount);
-	}
-
-	// 削除確認
-	function confirmDelete() {
-		showDeleteConfirm = true;
-	}
-
-	// 削除実行
-	function handleDelete() {
-		onDelete(expense.id);
-		showDeleteConfirm = false;
-	}
-
-	// 削除キャンセル
-	function cancelDelete() {
-		showDeleteConfirm = false;
-	}
-
-	// 領収書表示
-	function handleViewReceipt() {
-		if (expense.receipt_path && onViewReceipt) {
-			onViewReceipt(expense.receipt_path);
-		}
-	}
+}
 </script>
 
 <div class="card hover:shadow-lg transition-shadow duration-200 relative overflow-hidden">

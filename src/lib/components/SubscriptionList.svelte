@@ -1,83 +1,100 @@
 <script lang="ts">
-	import type { Subscription } from '$lib/types';
+import type { Subscription } from "$lib/types";
 
-	// Props
-	interface Props {
-		subscriptions: Subscription[];
-		onEdit: (subscription: Subscription) => void;
-		onToggleStatus: (id: number) => void;
+// Props
+interface Props {
+	subscriptions: Subscription[];
+	onEdit: (subscription: Subscription) => void;
+	onToggleStatus: (id: number) => void;
+}
+
+let { subscriptions, onEdit, onToggleStatus }: Props = $props();
+
+// アクティブなサブスクリプション
+const activeSubscriptions = $derived(() => {
+	return subscriptions.filter((sub) => sub.is_active);
+});
+
+// 非アクティブなサブスクリプション
+const inactiveSubscriptions = $derived(() => {
+	return subscriptions.filter((sub) => !sub.is_active);
+});
+
+// 月額合計
+const monthlyTotal = $derived(() => {
+	return activeSubscriptions().reduce((sum, sub) => {
+		const monthlyAmount =
+			sub.billing_cycle === "annual" ? sub.amount / 12 : sub.amount;
+		return sum + monthlyAmount;
+	}, 0);
+});
+
+// カテゴリアイコン
+const categoryIcons: Record<string, string> = {
+	交通費: "🚗",
+	飲食費: "🍽️",
+	通信費: "📱",
+	消耗品費: "📦",
+	接待交際費: "🤝",
+	その他: "📋",
+};
+
+// カテゴリカラー
+const categoryColors: Record<string, string> = {
+	交通費: "bg-category-transport",
+	飲食費: "bg-category-meals",
+	通信費: "bg-category-communication",
+	消耗品費: "bg-category-supplies",
+	接待交際費: "bg-category-entertainment",
+	その他: "bg-category-other",
+};
+
+// 金額フォーマット
+function formatAmount(amount: number): string {
+	return new Intl.NumberFormat("ja-JP", {
+		style: "currency",
+		currency: "JPY",
+	}).format(amount);
+}
+
+// 月額換算
+function getMonthlyAmount(subscription: Subscription): number {
+	return subscription.billing_cycle === "annual"
+		? subscription.amount / 12
+		: subscription.amount;
+}
+
+// 次回支払日計算
+function getNextBillingDate(subscription: Subscription): string {
+	const startDate = new Date(subscription.start_date);
+	const today = new Date();
+
+	if (subscription.billing_cycle === "monthly") {
+		// 月払い：次の月の同じ日
+		const nextDate = new Date(
+			today.getFullYear(),
+			today.getMonth() + 1,
+			startDate.getDate(),
+		);
+		return nextDate.toLocaleDateString("ja-JP", {
+			year: "numeric",
+			month: "long",
+			day: "numeric",
+		});
+	} else {
+		// 年払い：次の年の同じ日
+		const nextDate = new Date(
+			today.getFullYear() + 1,
+			startDate.getMonth(),
+			startDate.getDate(),
+		);
+		return nextDate.toLocaleDateString("ja-JP", {
+			year: "numeric",
+			month: "long",
+			day: "numeric",
+		});
 	}
-
-	let { subscriptions, onEdit, onToggleStatus }: Props = $props();
-
-	// アクティブなサブスクリプション
-	const activeSubscriptions = $derived(() => {
-		return subscriptions.filter(sub => sub.is_active);
-	});
-
-	// 非アクティブなサブスクリプション
-	const inactiveSubscriptions = $derived(() => {
-		return subscriptions.filter(sub => !sub.is_active);
-	});
-
-	// 月額合計
-	const monthlyTotal = $derived(() => {
-		return activeSubscriptions().reduce((sum, sub) => {
-			const monthlyAmount = sub.billing_cycle === 'annual' ? sub.amount / 12 : sub.amount;
-			return sum + monthlyAmount;
-		}, 0);
-	});
-
-	// カテゴリアイコン
-	const categoryIcons: Record<string, string> = {
-		'交通費': '🚗',
-		'飲食費': '🍽️',
-		'通信費': '📱',
-		'消耗品費': '📦',
-		'接待交際費': '🤝',
-		'その他': '📋'
-	};
-
-	// カテゴリカラー
-	const categoryColors: Record<string, string> = {
-		'交通費': 'bg-category-transport',
-		'飲食費': 'bg-category-meals',
-		'通信費': 'bg-category-communication',
-		'消耗品費': 'bg-category-supplies',
-		'接待交際費': 'bg-category-entertainment',
-		'その他': 'bg-category-other'
-	};
-
-	// 金額フォーマット
-	function formatAmount(amount: number): string {
-		return new Intl.NumberFormat('ja-JP', {
-			style: 'currency',
-			currency: 'JPY'
-		}).format(amount);
-	}
-
-	// 月額換算
-	function getMonthlyAmount(subscription: Subscription): number {
-		return subscription.billing_cycle === 'annual' 
-			? subscription.amount / 12 
-			: subscription.amount;
-	}
-
-	// 次回支払日計算
-	function getNextBillingDate(subscription: Subscription): string {
-		const startDate = new Date(subscription.start_date);
-		const today = new Date();
-		
-		if (subscription.billing_cycle === 'monthly') {
-			// 月払い：次の月の同じ日
-			const nextDate = new Date(today.getFullYear(), today.getMonth() + 1, startDate.getDate());
-			return nextDate.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
-		} else {
-			// 年払い：次の年の同じ日
-			const nextDate = new Date(today.getFullYear() + 1, startDate.getMonth(), startDate.getDate());
-			return nextDate.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' });
-		}
-	}
+}
 </script>
 
 <div class="space-y-6">

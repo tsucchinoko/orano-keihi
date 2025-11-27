@@ -1,5 +1,5 @@
 <script lang="ts">
-	import "../app.css";
+import "../app.css";
 </script>
 
 <!-- グローバルレイアウト: グラデーション背景とナビゲーション構造 -->

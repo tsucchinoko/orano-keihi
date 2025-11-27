@@ -1,112 +1,114 @@
 <script lang="ts">
-	import type { Expense, CreateExpenseDto } from '$lib/types';
-	import { open } from '@tauri-apps/plugin-dialog';
+import type { Expense, CreateExpenseDto } from "$lib/types";
+import { open } from "@tauri-apps/plugin-dialog";
 
-	// Props
-	interface Props {
-		expense?: Expense;
-		onSave: (expense: CreateExpenseDto, receiptFile?: string) => void;
-		onCancel: () => void;
+// Props
+interface Props {
+	expense?: Expense;
+	onSave: (expense: CreateExpenseDto, receiptFile?: string) => void;
+	onCancel: () => void;
+}
+
+let { expense, onSave, onCancel }: Props = $props();
+
+// フォームの状態
+let date = $state(
+	expense?.date.split("T")[0] || new Date().toISOString().split("T")[0],
+);
+let amount = $state(expense?.amount.toString() || "");
+let category = $state(expense?.category || "");
+let description = $state(expense?.description || "");
+let receiptFile = $state<string | undefined>(undefined);
+let receiptPreview = $state<string | undefined>(expense?.receipt_path);
+
+// バリデーションエラー
+let errors = $state<Record<string, string>>({});
+
+// カテゴリ一覧
+const categories = [
+	{ name: "交通費", icon: "🚗" },
+	{ name: "飲食費", icon: "🍽️" },
+	{ name: "通信費", icon: "📱" },
+	{ name: "消耗品費", icon: "📦" },
+	{ name: "接待交際費", icon: "🤝" },
+	{ name: "その他", icon: "📋" },
+];
+
+// バリデーション関数
+function validate(): boolean {
+	const newErrors: Record<string, string> = {};
+
+	// 金額のバリデーション
+	const amountNum = Number.parseFloat(amount);
+	if (!amount || Number.isNaN(amountNum)) {
+		newErrors.amount = "金額を入力してください";
+	} else if (amountNum <= 0) {
+		newErrors.amount = "金額は正の数値である必要があります";
 	}
 
-	let { expense, onSave, onCancel }: Props = $props();
-
-	// フォームの状態
-	let date = $state(expense?.date.split('T')[0] || new Date().toISOString().split('T')[0]);
-	let amount = $state(expense?.amount.toString() || '');
-	let category = $state(expense?.category || '');
-	let description = $state(expense?.description || '');
-	let receiptFile = $state<string | undefined>(undefined);
-	let receiptPreview = $state<string | undefined>(expense?.receipt_path);
-
-	// バリデーションエラー
-	let errors = $state<Record<string, string>>({});
-
-	// カテゴリ一覧
-	const categories = [
-		{ name: '交通費', icon: '🚗' },
-		{ name: '飲食費', icon: '🍽️' },
-		{ name: '通信費', icon: '📱' },
-		{ name: '消耗品費', icon: '📦' },
-		{ name: '接待交際費', icon: '🤝' },
-		{ name: 'その他', icon: '📋' }
-	];
-
-	// バリデーション関数
-	function validate(): boolean {
-		const newErrors: Record<string, string> = {};
-
-		// 金額のバリデーション
-		const amountNum = Number.parseFloat(amount);
-		if (!amount || Number.isNaN(amountNum)) {
-			newErrors.amount = '金額を入力してください';
-		} else if (amountNum <= 0) {
-			newErrors.amount = '金額は正の数値である必要があります';
+	// 日付のバリデーション
+	if (!date) {
+		newErrors.date = "日付を入力してください";
+	} else {
+		const selectedDate = new Date(date);
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		if (selectedDate > today) {
+			newErrors.date = "未来の日付は選択できません";
 		}
+	}
 
-		// 日付のバリデーション
-		if (!date) {
-			newErrors.date = '日付を入力してください';
-		} else {
-			const selectedDate = new Date(date);
-			const today = new Date();
-			today.setHours(0, 0, 0, 0);
-			if (selectedDate > today) {
-				newErrors.date = '未来の日付は選択できません';
+	// カテゴリのバリデーション
+	if (!category) {
+		newErrors.category = "カテゴリを選択してください";
+	}
+
+	errors = newErrors;
+	return Object.keys(newErrors).length === 0;
+}
+
+// 領収書ファイル選択
+async function selectReceipt() {
+	try {
+		const selected = await open({
+			multiple: false,
+			filters: [
+				{
+					name: "Images",
+					extensions: ["png", "jpg", "jpeg", "pdf"],
+				},
+			],
+		});
+
+		if (selected && typeof selected === "string") {
+			receiptFile = selected;
+			// 画像プレビュー用（PDFの場合はプレビューなし）
+			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
+				receiptPreview = `file://${selected}`;
 			}
 		}
+	} catch (error) {
+		console.error("領収書ファイルの選択に失敗しました:", error);
+	}
+}
 
-		// カテゴリのバリデーション
-		if (!category) {
-			newErrors.category = 'カテゴリを選択してください';
-		}
+// フォーム送信
+function handleSubmit(event: Event) {
+	event.preventDefault();
 
-		errors = newErrors;
-		return Object.keys(newErrors).length === 0;
+	if (!validate()) {
+		return;
 	}
 
-	// 領収書ファイル選択
-	async function selectReceipt() {
-		try {
-			const selected = await open({
-				multiple: false,
-				filters: [
-					{
-						name: 'Images',
-						extensions: ['png', 'jpg', 'jpeg', 'pdf']
-					}
-				]
-			});
+	const expenseData: CreateExpenseDto = {
+		date: new Date(date).toISOString(),
+		amount: Number.parseFloat(amount),
+		category,
+		description: description || undefined,
+	};
 
-			if (selected && typeof selected === 'string') {
-				receiptFile = selected;
-				// 画像プレビュー用（PDFの場合はプレビューなし）
-				if (selected.match(/\.(png|jpg|jpeg)$/i)) {
-					receiptPreview = `file://${selected}`;
-				}
-			}
-		} catch (error) {
-			console.error('領収書ファイルの選択に失敗しました:', error);
-		}
-	}
-
-	// フォーム送信
-	function handleSubmit(event: Event) {
-		event.preventDefault();
-		
-		if (!validate()) {
-			return;
-		}
-
-		const expenseData: CreateExpenseDto = {
-			date: new Date(date).toISOString(),
-			amount: Number.parseFloat(amount),
-			category,
-			description: description || undefined
-		};
-
-		onSave(expenseData, receiptFile);
-	}
+	onSave(expenseData, receiptFile);
+}
 </script>
 
 <div class="card max-w-2xl mx-auto">

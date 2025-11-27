@@ -1,56 +1,56 @@
 <script lang="ts">
-	// Props
-	interface Props {
-		receiptPath: string;
-		onClose: () => void;
+// Props
+interface Props {
+	receiptPath: string;
+	onClose: () => void;
+}
+
+let { receiptPath, onClose }: Props = $props();
+
+// ズームレベル
+let zoomLevel = $state(100);
+
+// ファイルタイプ判定
+const isPdf = $derived(() => {
+	return receiptPath.toLowerCase().endsWith(".pdf");
+});
+
+const isImage = $derived(() => {
+	return /\.(png|jpg|jpeg)$/i.test(receiptPath);
+});
+
+// ズームイン
+function zoomIn() {
+	if (zoomLevel < 200) {
+		zoomLevel += 25;
 	}
+}
 
-	let { receiptPath, onClose }: Props = $props();
-
-	// ズームレベル
-	let zoomLevel = $state(100);
-
-	// ファイルタイプ判定
-	const isPdf = $derived(() => {
-		return receiptPath.toLowerCase().endsWith('.pdf');
-	});
-
-	const isImage = $derived(() => {
-		return /\.(png|jpg|jpeg)$/i.test(receiptPath);
-	});
-
-	// ズームイン
-	function zoomIn() {
-		if (zoomLevel < 200) {
-			zoomLevel += 25;
-		}
+// ズームアウト
+function zoomOut() {
+	if (zoomLevel > 50) {
+		zoomLevel -= 25;
 	}
+}
 
-	// ズームアウト
-	function zoomOut() {
-		if (zoomLevel > 50) {
-			zoomLevel -= 25;
-		}
-	}
+// リセット
+function resetZoom() {
+	zoomLevel = 100;
+}
 
-	// リセット
-	function resetZoom() {
-		zoomLevel = 100;
+// ESCキーで閉じる
+function handleKeydown(event: KeyboardEvent) {
+	if (event.key === "Escape") {
+		onClose();
 	}
+}
 
-	// ESCキーで閉じる
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			onClose();
-		}
+// 背景クリックで閉じる
+function handleBackdropClick(event: MouseEvent) {
+	if (event.target === event.currentTarget) {
+		onClose();
 	}
-
-	// 背景クリックで閉じる
-	function handleBackdropClick(event: MouseEvent) {
-		if (event.target === event.currentTarget) {
-			onClose();
-		}
-	}
+}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

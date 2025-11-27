@@ -1,89 +1,90 @@
 <script lang="ts">
-	import type { Expense, MonthlyTotal } from '$lib/types';
-	import ExpenseItem from './ExpenseItem.svelte';
+import type { Expense, MonthlyTotal } from "$lib/types";
+import ExpenseItem from "./ExpenseItem.svelte";
 
-	// Props
-	interface Props {
-		expenses: Expense[];
-		selectedMonth?: string;
-		onEdit: (expense: Expense) => void;
-		onDelete: (id: number) => void;
-		onViewReceipt?: (receiptPath: string) => void;
+// Props
+interface Props {
+	expenses: Expense[];
+	selectedMonth?: string;
+	onEdit: (expense: Expense) => void;
+	onDelete: (id: number) => void;
+	onViewReceipt?: (receiptPath: string) => void;
+}
+
+let { expenses, selectedMonth, onEdit, onDelete, onViewReceipt }: Props =
+	$props();
+
+// 日付でグループ化された経費
+const groupedExpenses = $derived(() => {
+	const groups: Record<string, Expense[]> = {};
+
+	for (const expense of expenses) {
+		const dateKey = expense.date.split("T")[0];
+		if (!groups[dateKey]) {
+			groups[dateKey] = [];
+		}
+		groups[dateKey].push(expense);
 	}
 
-	let { expenses, selectedMonth, onEdit, onDelete, onViewReceipt }: Props = $props();
-
-	// 日付でグループ化された経費
-	const groupedExpenses = $derived(() => {
-		const groups: Record<string, Expense[]> = {};
-
-		for (const expense of expenses) {
-			const dateKey = expense.date.split('T')[0];
-			if (!groups[dateKey]) {
-				groups[dateKey] = [];
-			}
-			groups[dateKey].push(expense);
-		}
-
-		// 日付の降順でソート
-		const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
-		const result: Record<string, Expense[]> = {};
-		for (const date of sortedDates) {
-			result[date] = groups[date];
-		}
-
-		return result;
-	});
-
-	// カテゴリ別合計
-	const categoryTotals = $derived(() => {
-		const totals: Record<string, number> = {};
-
-		for (const expense of expenses) {
-			if (!totals[expense.category]) {
-				totals[expense.category] = 0;
-			}
-			totals[expense.category] += expense.amount;
-		}
-
-		return Object.entries(totals)
-			.map(([category, total]) => ({ category, total }))
-			.sort((a, b) => b.total - a.total);
-	});
-
-	// 総合計
-	const grandTotal = $derived(() => {
-		return expenses.reduce((sum, expense) => sum + expense.amount, 0);
-	});
-
-	// 日付フォーマット
-	function formatDate(dateStr: string): string {
-		const date = new Date(dateStr);
-		return date.toLocaleDateString('ja-JP', {
-			year: 'numeric',
-			month: 'long',
-			day: 'numeric',
-			weekday: 'short'
-		});
+	// 日付の降順でソート
+	const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+	const result: Record<string, Expense[]> = {};
+	for (const date of sortedDates) {
+		result[date] = groups[date];
 	}
 
-	// 金額フォーマット
-	function formatAmount(amount: number): string {
-		return new Intl.NumberFormat('ja-JP', {
-			style: 'currency',
-			currency: 'JPY'
-		}).format(amount);
+	return result;
+});
+
+// カテゴリ別合計
+const categoryTotals = $derived(() => {
+	const totals: Record<string, number> = {};
+
+	for (const expense of expenses) {
+		if (!totals[expense.category]) {
+			totals[expense.category] = 0;
+		}
+		totals[expense.category] += expense.amount;
 	}
 
-	// カテゴリアイコン
-	const categoryIcons: Record<string, string> = {
-		'交通費': '🚗',
-		'飲食費': '🍽️',
-		'通信費': '📱',
-		'消耗品費': '📦',
-		'接待交際費': '🤝',
-		'その他': '📋'
-	};
+	return Object.entries(totals)
+		.map(([category, total]) => ({ category, total }))
+		.sort((a, b) => b.total - a.total);
+});
+
+// 総合計
+const grandTotal = $derived(() => {
+	return expenses.reduce((sum, expense) => sum + expense.amount, 0);
+});
+
+// 日付フォーマット
+function formatDate(dateStr: string): string {
+	const date = new Date(dateStr);
+	return date.toLocaleDateString("ja-JP", {
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+		weekday: "short",
+	});
+}
+
+// 金額フォーマット
+function formatAmount(amount: number): string {
+	return new Intl.NumberFormat("ja-JP", {
+		style: "currency",
+		currency: "JPY",
+	}).format(amount);
+}
+
+// カテゴリアイコン
+const categoryIcons: Record<string, string> = {
+	交通費: "🚗",
+	飲食費: "🍽️",
+	通信費: "📱",
+	消耗品費: "📦",
+	接待交際費: "🤝",
+	その他: "📋",
+};
 </script>
 
 <div class="space-y-6">

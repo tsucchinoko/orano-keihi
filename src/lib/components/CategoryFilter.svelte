@@ -1,45 +1,45 @@
 <script lang="ts">
-	// Props
-	interface Props {
-		selectedCategories: string[];
-		onFilterChange: (categories: string[]) => void;
-	}
+// Props
+interface Props {
+	selectedCategories: string[];
+	onFilterChange: (categories: string[]) => void;
+}
 
-	let { selectedCategories, onFilterChange }: Props = $props();
+let { selectedCategories, onFilterChange }: Props = $props();
 
-	// カテゴリ定義
-	const categories = [
-		{ name: '交通費', icon: '🚗', color: 'bg-category-transport' },
-		{ name: '飲食費', icon: '🍽️', color: 'bg-category-meals' },
-		{ name: '通信費', icon: '📱', color: 'bg-category-communication' },
-		{ name: '消耗品費', icon: '📦', color: 'bg-category-supplies' },
-		{ name: '接待交際費', icon: '🤝', color: 'bg-category-entertainment' },
-		{ name: 'その他', icon: '📋', color: 'bg-category-other' }
-	];
+// カテゴリ定義
+const categories = [
+	{ name: "交通費", icon: "🚗", color: "bg-category-transport" },
+	{ name: "飲食費", icon: "🍽️", color: "bg-category-meals" },
+	{ name: "通信費", icon: "📱", color: "bg-category-communication" },
+	{ name: "消耗品費", icon: "📦", color: "bg-category-supplies" },
+	{ name: "接待交際費", icon: "🤝", color: "bg-category-entertainment" },
+	{ name: "その他", icon: "📋", color: "bg-category-other" },
+];
 
-	// チェックボックスの変更ハンドラ
-	function handleToggle(categoryName: string) {
-		const newSelected = selectedCategories.includes(categoryName)
-			? selectedCategories.filter(c => c !== categoryName)
-			: [...selectedCategories, categoryName];
-		
-		onFilterChange(newSelected);
-	}
+// チェックボックスの変更ハンドラ
+function handleToggle(categoryName: string) {
+	const newSelected = selectedCategories.includes(categoryName)
+		? selectedCategories.filter((c) => c !== categoryName)
+		: [...selectedCategories, categoryName];
 
-	// 全選択
-	function selectAll() {
-		onFilterChange(categories.map(c => c.name));
-	}
+	onFilterChange(newSelected);
+}
 
-	// 全解除
-	function clearAll() {
-		onFilterChange([]);
-	}
+// 全選択
+function selectAll() {
+	onFilterChange(categories.map((c) => c.name));
+}
 
-	// 全選択状態かどうか
-	const isAllSelected = $derived(() => {
-		return selectedCategories.length === categories.length;
-	});
+// 全解除
+function clearAll() {
+	onFilterChange([]);
+}
+
+// 全選択状態かどうか
+const isAllSelected = $derived(() => {
+	return selectedCategories.length === categories.length;
+});
 </script>
 
 <div class="card">

@@ -144,7 +144,7 @@
     - Show ExpenseForm in modal or side panel
     - _Requirements: 1.1, 4.1, 4.3, 5.4, 7.1, 7.2_
 
-- [ ] 7. Implement state management with Svelte 5 runes
+- [x] 7. Implement state management with Svelte 5 runes
   - Create expenses.svelte.ts store using $state and $derived runes
   - Implement reactive state for expenses, subscriptions, selected month, and filters
   - Add functions to call Tauri commands and update state

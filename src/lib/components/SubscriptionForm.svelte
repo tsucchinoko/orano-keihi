@@ -1,91 +1,96 @@
 <script lang="ts">
-	import type { Subscription, CreateSubscriptionDto } from '$lib/types';
+import type { Subscription, CreateSubscriptionDto } from "$lib/types";
 
-	// Props
-	interface Props {
-		subscription?: Subscription;
-		onSave: (subscription: CreateSubscriptionDto) => void;
-		onCancel: () => void;
+// Props
+interface Props {
+	subscription?: Subscription;
+	onSave: (subscription: CreateSubscriptionDto) => void;
+	onCancel: () => void;
+}
+
+let { subscription, onSave, onCancel }: Props = $props();
+
+// フォームの状態
+let name = $state(subscription?.name || "");
+let amount = $state(subscription?.amount.toString() || "");
+let billingCycle = $state<"monthly" | "annual">(
+	subscription?.billing_cycle || "monthly",
+);
+let startDate = $state(
+	subscription?.start_date.split("T")[0] ||
+		new Date().toISOString().split("T")[0],
+);
+let category = $state(subscription?.category || "");
+
+// バリデーションエラー
+let errors = $state<Record<string, string>>({});
+
+// カテゴリ一覧
+const categories = [
+	{ name: "交通費", icon: "🚗" },
+	{ name: "飲食費", icon: "🍽️" },
+	{ name: "通信費", icon: "📱" },
+	{ name: "消耗品費", icon: "📦" },
+	{ name: "接待交際費", icon: "🤝" },
+	{ name: "その他", icon: "📋" },
+];
+
+// バリデーション関数
+function validate(): boolean {
+	const newErrors: Record<string, string> = {};
+
+	// サービス名のバリデーション
+	if (!name.trim()) {
+		newErrors.name = "サービス名を入力してください";
 	}
 
-	let { subscription, onSave, onCancel }: Props = $props();
-
-	// フォームの状態
-	let name = $state(subscription?.name || '');
-	let amount = $state(subscription?.amount.toString() || '');
-	let billingCycle = $state<'monthly' | 'annual'>(subscription?.billing_cycle || 'monthly');
-	let startDate = $state(subscription?.start_date.split('T')[0] || new Date().toISOString().split('T')[0]);
-	let category = $state(subscription?.category || '');
-
-	// バリデーションエラー
-	let errors = $state<Record<string, string>>({});
-
-	// カテゴリ一覧
-	const categories = [
-		{ name: '交通費', icon: '🚗' },
-		{ name: '飲食費', icon: '🍽️' },
-		{ name: '通信費', icon: '📱' },
-		{ name: '消耗品費', icon: '📦' },
-		{ name: '接待交際費', icon: '🤝' },
-		{ name: 'その他', icon: '📋' }
-	];
-
-	// バリデーション関数
-	function validate(): boolean {
-		const newErrors: Record<string, string> = {};
-
-		// サービス名のバリデーション
-		if (!name.trim()) {
-			newErrors.name = 'サービス名を入力してください';
-		}
-
-		// 金額のバリデーション
-		const amountNum = Number.parseFloat(amount);
-		if (!amount || Number.isNaN(amountNum)) {
-			newErrors.amount = '金額を入力してください';
-		} else if (amountNum <= 0) {
-			newErrors.amount = '金額は正の数値である必要があります';
-		}
-
-		// 開始日のバリデーション
-		if (!startDate) {
-			newErrors.startDate = '開始日を入力してください';
-		}
-
-		// カテゴリのバリデーション
-		if (!category) {
-			newErrors.category = 'カテゴリを選択してください';
-		}
-
-		errors = newErrors;
-		return Object.keys(newErrors).length === 0;
+	// 金額のバリデーション
+	const amountNum = Number.parseFloat(amount);
+	if (!amount || Number.isNaN(amountNum)) {
+		newErrors.amount = "金額を入力してください";
+	} else if (amountNum <= 0) {
+		newErrors.amount = "金額は正の数値である必要があります";
 	}
 
-	// フォーム送信
-	function handleSubmit(event: Event) {
-		event.preventDefault();
-		
-		if (!validate()) {
-			return;
-		}
-
-		const subscriptionData: CreateSubscriptionDto = {
-			name: name.trim(),
-			amount: Number.parseFloat(amount),
-			billing_cycle: billingCycle,
-			start_date: new Date(startDate).toISOString(),
-			category
-		};
-
-		onSave(subscriptionData);
+	// 開始日のバリデーション
+	if (!startDate) {
+		newErrors.startDate = "開始日を入力してください";
 	}
 
-	// 月額換算表示
-	const monthlyAmount = $derived(() => {
-		const amountNum = Number.parseFloat(amount);
-		if (Number.isNaN(amountNum)) return 0;
-		return billingCycle === 'annual' ? amountNum / 12 : amountNum;
-	});
+	// カテゴリのバリデーション
+	if (!category) {
+		newErrors.category = "カテゴリを選択してください";
+	}
+
+	errors = newErrors;
+	return Object.keys(newErrors).length === 0;
+}
+
+// フォーム送信
+function handleSubmit(event: Event) {
+	event.preventDefault();
+
+	if (!validate()) {
+		return;
+	}
+
+	const subscriptionData: CreateSubscriptionDto = {
+		name: name.trim(),
+		amount: Number.parseFloat(amount),
+		billing_cycle: billingCycle,
+		start_date: new Date(startDate).toISOString(),
+		category,
+	};
+
+	onSave(subscriptionData);
+}
+
+// 月額換算表示
+const monthlyAmount = $derived(() => {
+	const amountNum = Number.parseFloat(amount);
+	if (Number.isNaN(amountNum)) return 0;
+	return billingCycle === "annual" ? amountNum / 12 : amountNum;
+});
 </script>
 
 <div class="card max-w-2xl mx-auto">

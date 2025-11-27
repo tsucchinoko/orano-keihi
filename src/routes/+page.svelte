@@ -1,111 +1,115 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import SubscriptionList from '$lib/components/SubscriptionList.svelte';
-	import type { Expense, Subscription } from '$lib/types';
-	import { getExpenses, getSubscriptions, getMonthlySubscriptionTotal } from '$lib/utils/tauri';
+import { onMount } from "svelte";
+import SubscriptionList from "$lib/components/SubscriptionList.svelte";
+import type { Expense, Subscription } from "$lib/types";
+import {
+	getExpenses,
+	getSubscriptions,
+	getMonthlySubscriptionTotal,
+} from "$lib/utils/tauri";
 
-	// 状態管理
-	let expenses = $state<Expense[]>([]);
-	let subscriptions = $state<Subscription[]>([]);
-	let monthlySubscriptionTotal = $state<number>(0);
-	let loading = $state(true);
-	let error = $state<string | null>(null);
+// 状態管理
+let expenses = $state<Expense[]>([]);
+let subscriptions = $state<Subscription[]>([]);
+let monthlySubscriptionTotal = $state<number>(0);
+let loading = $state(true);
+let error = $state<string | null>(null);
 
-	// 今月の経費サマリー
-	let currentMonth = $derived(new Date().toISOString().slice(0, 7)); // YYYY-MM形式
-	let monthlyExpenses = $derived(
-		expenses.filter((expense) => expense.date.startsWith(currentMonth))
-	);
+// 今月の経費サマリー
+let currentMonth = $derived(new Date().toISOString().slice(0, 7)); // YYYY-MM形式
+let monthlyExpenses = $derived(
+	expenses.filter((expense) => expense.date.startsWith(currentMonth)),
+);
 
-	// カテゴリ別集計
-	let categoryTotals = $derived(() => {
-		const totals = new Map<string, number>();
-		for (const expense of monthlyExpenses) {
-			const current = totals.get(expense.category) || 0;
-			totals.set(expense.category, current + expense.amount);
+// カテゴリ別集計
+let categoryTotals = $derived(() => {
+	const totals = new Map<string, number>();
+	for (const expense of monthlyExpenses) {
+		const current = totals.get(expense.category) || 0;
+		totals.set(expense.category, current + expense.amount);
+	}
+	return Array.from(totals.entries()).map(([category, total]) => ({
+		category,
+		total,
+	}));
+});
+
+// 今月の合計金額
+let monthlyTotal = $derived(
+	monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+);
+
+// データ読み込み
+async function loadData() {
+	loading = true;
+	error = null;
+
+	try {
+		// 今月の経費を取得
+		const expensesResult = await getExpenses(currentMonth);
+		if (expensesResult.error) {
+			throw new Error(expensesResult.error);
 		}
-		return Array.from(totals.entries()).map(([category, total]) => ({
-			category,
-			total
-		}));
-	});
+		expenses = expensesResult.data || [];
 
-	// 今月の合計金額
-	let monthlyTotal = $derived(
-		monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0)
-	);
-
-	// データ読み込み
-	async function loadData() {
-		loading = true;
-		error = null;
-
-		try {
-			// 今月の経費を取得
-			const expensesResult = await getExpenses(currentMonth);
-			if (expensesResult.error) {
-				throw new Error(expensesResult.error);
-			}
-			expenses = expensesResult.data || [];
-
-			// サブスクリプションを取得
-			const subscriptionsResult = await getSubscriptions(true);
-			if (subscriptionsResult.error) {
-				throw new Error(subscriptionsResult.error);
-			}
-			subscriptions = subscriptionsResult.data || [];
-
-			// 月額サブスクリプション合計を取得
-			const totalResult = await getMonthlySubscriptionTotal();
-			if (totalResult.error) {
-				throw new Error(totalResult.error);
-			}
-			monthlySubscriptionTotal = totalResult.data || 0;
-		} catch (e) {
-			error = e instanceof Error ? e.message : '不明なエラーが発生しました';
-			console.error('データ読み込みエラー:', e);
-		} finally {
-			loading = false;
+		// サブスクリプションを取得
+		const subscriptionsResult = await getSubscriptions(true);
+		if (subscriptionsResult.error) {
+			throw new Error(subscriptionsResult.error);
 		}
-	}
+		subscriptions = subscriptionsResult.data || [];
 
-	// サブスクリプション編集ハンドラー（TODO: 実装）
-	function handleEditSubscription(subscription: Subscription) {
-		console.log('Edit subscription:', subscription);
-		// TODO: サブスクリプション編集モーダルを表示
+		// 月額サブスクリプション合計を取得
+		const totalResult = await getMonthlySubscriptionTotal();
+		if (totalResult.error) {
+			throw new Error(totalResult.error);
+		}
+		monthlySubscriptionTotal = totalResult.data || 0;
+	} catch (e) {
+		error = e instanceof Error ? e.message : "不明なエラーが発生しました";
+		console.error("データ読み込みエラー:", e);
+	} finally {
+		loading = false;
 	}
+}
 
-	// サブスクリプションステータス切り替えハンドラー（TODO: 実装）
-	async function handleToggleSubscription(id: number) {
-		console.log('Toggle subscription:', id);
-		// TODO: toggleSubscriptionStatus を呼び出す
-		await loadData();
-	}
+// サブスクリプション編集ハンドラー（TODO: 実装）
+function handleEditSubscription(subscription: Subscription) {
+	console.log("Edit subscription:", subscription);
+	// TODO: サブスクリプション編集モーダルを表示
+}
 
-	onMount(() => {
-		loadData();
-	});
+// サブスクリプションステータス切り替えハンドラー（TODO: 実装）
+async function handleToggleSubscription(id: number) {
+	console.log("Toggle subscription:", id);
+	// TODO: toggleSubscriptionStatus を呼び出す
+	await loadData();
+}
 
-	// 金額フォーマット
-	function formatCurrency(amount: number): string {
-		return new Intl.NumberFormat('ja-JP', {
-			style: 'currency',
-			currency: 'JPY'
-		}).format(amount);
-	}
+onMount(() => {
+	loadData();
+});
 
-	// カテゴリカラー取得
-	function getCategoryColor(category: string): string {
-		const colorMap: Record<string, string> = {
-			交通費: 'var(--color-transport)',
-			飲食費: 'var(--color-meals)',
-			通信費: 'var(--color-communication)',
-			消耗品費: 'var(--color-supplies)',
-			接待交際費: 'var(--color-entertainment)',
-			その他: 'var(--color-other)'
-		};
-		return colorMap[category] || 'var(--color-other)';
-	}
+// 金額フォーマット
+function formatCurrency(amount: number): string {
+	return new Intl.NumberFormat("ja-JP", {
+		style: "currency",
+		currency: "JPY",
+	}).format(amount);
+}
+
+// カテゴリカラー取得
+function getCategoryColor(category: string): string {
+	const colorMap: Record<string, string> = {
+		交通費: "var(--color-transport)",
+		飲食費: "var(--color-meals)",
+		通信費: "var(--color-communication)",
+		消耗品費: "var(--color-supplies)",
+		接待交際費: "var(--color-entertainment)",
+		その他: "var(--color-other)",
+	};
+	return colorMap[category] || "var(--color-other)";
+}
 </script>
 
 <!-- ダッシュボードページ -->

@@ -1,123 +1,124 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import MonthSelector from '$lib/components/MonthSelector.svelte';
-	import CategoryFilter from '$lib/components/CategoryFilter.svelte';
-	import ExpenseList from '$lib/components/ExpenseList.svelte';
-	import ExpenseForm from '$lib/components/ExpenseForm.svelte';
-	import type { Expense } from '$lib/types';
-	import { getExpenses, deleteExpense } from '$lib/utils/tauri';
+import { onMount } from "svelte";
+import MonthSelector from "$lib/components/MonthSelector.svelte";
+import CategoryFilter from "$lib/components/CategoryFilter.svelte";
+import ExpenseList from "$lib/components/ExpenseList.svelte";
+import ExpenseForm from "$lib/components/ExpenseForm.svelte";
+import type { Expense } from "$lib/types";
+import { getExpenses, deleteExpense } from "$lib/utils/tauri";
 
-	// 状態管理
-	let expenses = $state<Expense[]>([]);
-	let selectedMonth = $state<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM形式
-	let selectedCategories = $state<string[]>([]);
-	let loading = $state(true);
-	let error = $state<string | null>(null);
+// 状態管理
+let expenses = $state<Expense[]>([]);
+let selectedMonth = $state<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM形式
+let selectedCategories = $state<string[]>([]);
+let loading = $state(true);
+let error = $state<string | null>(null);
 
-	// モーダル状態
-	let showExpenseForm = $state(false);
-	let editingExpense = $state<Expense | undefined>(undefined);
+// モーダル状態
+let showExpenseForm = $state(false);
+let editingExpense = $state<Expense | undefined>(undefined);
 
-	// フィルタリングされた経費
-	let filteredExpenses = $derived(() => {
-		let result = expenses;
+// フィルタリングされた経費
+let filteredExpenses = $derived(() => {
+	let result = expenses;
 
-		// 月でフィルタリング
-		if (selectedMonth) {
-			result = result.filter((expense) => expense.date.startsWith(selectedMonth));
+	// 月でフィルタリング
+	if (selectedMonth) {
+		result = result.filter((expense) => expense.date.startsWith(selectedMonth));
+	}
+
+	// カテゴリでフィルタリング
+	if (selectedCategories.length > 0) {
+		result = result.filter((expense) =>
+			selectedCategories.includes(expense.category),
+		);
+	}
+
+	return result;
+});
+
+// 経費データの読み込み
+async function loadExpenses() {
+	loading = true;
+	error = null;
+
+	try {
+		const result = await getExpenses(selectedMonth);
+		if (result.error) {
+			throw new Error(result.error);
+		}
+		expenses = result.data || [];
+	} catch (e) {
+		error = e instanceof Error ? e.message : "不明なエラーが発生しました";
+		console.error("経費読み込みエラー:", e);
+	} finally {
+		loading = false;
+	}
+}
+
+// 月変更ハンドラー
+function handleMonthChange(month: string) {
+	selectedMonth = month;
+	loadExpenses();
+}
+
+// カテゴリフィルター変更ハンドラー
+function handleCategoryFilterChange(categories: string[]) {
+	selectedCategories = categories;
+}
+
+// 経費追加ボタンクリック
+function handleAddExpense() {
+	editingExpense = undefined;
+	showExpenseForm = true;
+}
+
+// 経費編集ハンドラー
+function handleEditExpense(expense: Expense) {
+	editingExpense = expense;
+	showExpenseForm = true;
+}
+
+// 経費削除ハンドラー
+async function handleDeleteExpense(expenseId: number) {
+	if (!confirm("この経費を削除してもよろしいですか？")) {
+		return;
+	}
+
+	try {
+		const result = await deleteExpense(expenseId);
+		if (result.error) {
+			throw new Error(result.error);
 		}
 
-		// カテゴリでフィルタリング
-		if (selectedCategories.length > 0) {
-			result = result.filter((expense) => selectedCategories.includes(expense.category));
-		}
-
-		return result;
-	});
-
-	// 経費データの読み込み
-	async function loadExpenses() {
-		loading = true;
-		error = null;
-
-		try {
-			const result = await getExpenses(selectedMonth);
-			if (result.error) {
-				throw new Error(result.error);
-			}
-			expenses = result.data || [];
-		} catch (e) {
-			error = e instanceof Error ? e.message : '不明なエラーが発生しました';
-			console.error('経費読み込みエラー:', e);
-		} finally {
-			loading = false;
-		}
-	}
-
-	// 月変更ハンドラー
-	function handleMonthChange(month: string) {
-		selectedMonth = month;
-		loadExpenses();
-	}
-
-	// カテゴリフィルター変更ハンドラー
-	function handleCategoryFilterChange(categories: string[]) {
-		selectedCategories = categories;
-	}
-
-	// 経費追加ボタンクリック
-	function handleAddExpense() {
-		editingExpense = undefined;
-		showExpenseForm = true;
-	}
-
-	// 経費編集ハンドラー
-	function handleEditExpense(expense: Expense) {
-		editingExpense = expense;
-		showExpenseForm = true;
-	}
-
-	// 経費削除ハンドラー
-	async function handleDeleteExpense(expenseId: number) {
-
-		if (!confirm('この経費を削除してもよろしいですか？')) {
-			return;
-		}
-
-		try {
-			const result = await deleteExpense(expenseId);
-			if (result.error) {
-				throw new Error(result.error);
-			}
-
-			// 削除成功後、リストを更新
-			await loadExpenses();
-		} catch (e) {
-			const errorMessage = e instanceof Error ? e.message : '削除に失敗しました';
-			alert(`エラー: ${errorMessage}`);
-			console.error('経費削除エラー:', e);
-		}
-	}
-
-	// フォーム保存ハンドラー
-	async function handleFormSave(expenseData: any, receiptFile?: string) {
-		// TODO: 実際の保存処理を実装
-		// createExpense または updateExpense を呼び出す
-		showExpenseForm = false;
-		editingExpense = undefined;
+		// 削除成功後、リストを更新
 		await loadExpenses();
+	} catch (e) {
+		const errorMessage = e instanceof Error ? e.message : "削除に失敗しました";
+		alert(`エラー: ${errorMessage}`);
+		console.error("経費削除エラー:", e);
 	}
+}
 
-	// フォームキャンセルハンドラー
-	function handleFormCancel() {
-		showExpenseForm = false;
-		editingExpense = undefined;
-	}
+// フォーム保存ハンドラー
+async function handleFormSave(expenseData: any, receiptFile?: string) {
+	// TODO: 実際の保存処理を実装
+	// createExpense または updateExpense を呼び出す
+	showExpenseForm = false;
+	editingExpense = undefined;
+	await loadExpenses();
+}
 
-	// 初期データ読み込み
-	onMount(() => {
-		loadExpenses();
-	});
+// フォームキャンセルハンドラー
+function handleFormCancel() {
+	showExpenseForm = false;
+	editingExpense = undefined;
+}
+
+// 初期データ読み込み
+onMount(() => {
+	loadExpenses();
+});
 </script>
 
 <!-- 経費一覧ページ -->
