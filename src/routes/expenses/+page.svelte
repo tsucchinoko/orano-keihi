@@ -1,9 +1,11 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import MonthSelector from "$lib/components/MonthSelector.svelte";
-import CategoryFilter from "$lib/components/CategoryFilter.svelte";
-import ExpenseList from "$lib/components/ExpenseList.svelte";
-import ExpenseForm from "$lib/components/ExpenseForm.svelte";
+import {
+	MonthSelector,
+	CategoryFilter,
+	ExpenseList,
+	ExpenseForm,
+} from "$features/expenses";
 import type { Expense } from "$lib/types";
 import { getExpenses, deleteExpense } from "$lib/utils/tauri";
 

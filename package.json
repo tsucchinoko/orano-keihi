@@ -10,8 +10,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"tauri": "tauri",
-		"format": "deno run -A npm:@biomejs/biome format --write .",
-		"format:check": "deno run -A npm:@biomejs/biome format .",
+		"fmt": "deno run -A npm:@biomejs/biome format --write .",
+		"fmt:check": "deno run -A npm:@biomejs/biome format .",
 		"lint": "deno run -A npm:@biomejs/biome lint --write .",
 		"lint:check": "deno run -A npm:@biomejs/biome lint ."
 	},

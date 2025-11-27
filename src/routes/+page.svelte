@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import SubscriptionList from "$lib/components/SubscriptionList.svelte";
+import { SubscriptionList } from "$features/subscriptions";
 import type { Expense, Subscription } from "$lib/types";
 import {
 	getExpenses,
