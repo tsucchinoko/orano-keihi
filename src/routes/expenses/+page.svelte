@@ -132,11 +132,11 @@ onMount(() => {
 	<div class="filters-section">
 		<div class="filter-row">
 			<div class="filter-item">
-				<label class="filter-label">月を選択</label>
+				<span class="filter-label">月を選択</span>
 				<MonthSelector {selectedMonth} onMonthChange={handleMonthChange} />
 			</div>
 			<div class="filter-item">
-				<label class="filter-label">カテゴリでフィルター</label>
+				<span class="filter-label">カテゴリでフィルター</span>
 				<CategoryFilter {selectedCategories} onFilterChange={handleCategoryFilterChange} />
 			</div>
 		</div>
@@ -167,8 +167,22 @@ onMount(() => {
 
 	<!-- 経費フォームモーダル -->
 	{#if showExpenseForm}
-		<div class="modal-overlay" onclick={handleFormCancel}>
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+		<div 
+			class="modal-overlay" 
+			onclick={handleFormCancel}
+			onkeydown={(e) => e.key === 'Enter' && handleFormCancel()}
+			role="button"
+			tabindex="0"
+			aria-label="モーダルを閉じる"
+		>
+			<div 
+				class="modal-content" 
+				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => e.stopPropagation()}
+				role="dialog"
+				aria-modal="true"
+				tabindex="-1"
+			>
 				<div class="modal-header">
 					<h2 class="modal-title">{editingExpense ? '経費を編集' : '経費を追加'}</h2>
 					<button class="modal-close" onclick={handleFormCancel} aria-label="閉じる">×</button>

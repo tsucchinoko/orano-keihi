@@ -44,6 +44,8 @@ function validate(): boolean {
 	// サービス名のバリデーション
 	if (!name.trim()) {
 		newErrors.name = "サービス名を入力してください";
+	} else if (name.trim().length > 100) {
+		newErrors.name = "サービス名は100文字以内で入力してください";
 	}
 
 	// 金額のバリデーション
@@ -52,6 +54,8 @@ function validate(): boolean {
 		newErrors.amount = "金額を入力してください";
 	} else if (amountNum <= 0) {
 		newErrors.amount = "金額は正の数値である必要があります";
+	} else if (amountNum > 9999999999) {
+		newErrors.amount = "金額は10桁以内で入力してください";
 	}
 
 	// 開始日のバリデーション
@@ -151,6 +155,7 @@ const monthlyAmount = $derived(() => {
 				bind:value={name}
 				class="input {errors.name ? 'border-red-500' : ''}"
 				placeholder="例: Netflix, Spotify"
+				maxlength="100"
 			/>
 			{#if errors.name}
 				<p class="text-red-500 text-sm mt-1">{errors.name}</p>
@@ -180,29 +185,31 @@ const monthlyAmount = $derived(() => {
 
 		<!-- 支払いサイクル選択 -->
 		<div>
-			<label class="block text-sm font-semibold mb-2">
-				支払いサイクル <span class="text-red-500">*</span>
-			</label>
-			<div class="flex gap-4">
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input
-						type="radio"
-						bind:group={billingCycle}
-						value="monthly"
-						class="w-4 h-4"
-					/>
-					<span>月払い</span>
-				</label>
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input
-						type="radio"
-						bind:group={billingCycle}
-						value="annual"
-						class="w-4 h-4"
-					/>
-					<span>年払い</span>
-				</label>
-			</div>
+			<fieldset>
+				<legend class="block text-sm font-semibold mb-2">
+					支払いサイクル <span class="text-red-500">*</span>
+				</legend>
+				<div class="flex gap-4">
+					<label class="flex items-center gap-2 cursor-pointer">
+						<input
+							type="radio"
+							bind:group={billingCycle}
+							value="monthly"
+							class="w-4 h-4"
+						/>
+						<span>月払い</span>
+					</label>
+					<label class="flex items-center gap-2 cursor-pointer">
+						<input
+							type="radio"
+							bind:group={billingCycle}
+							value="annual"
+							class="w-4 h-4"
+						/>
+						<span>年払い</span>
+					</label>
+				</div>
+			</fieldset>
 			{#if billingCycle === 'annual' && monthlyAmount() > 0}
 				<p class="text-sm text-gray-600 mt-2">
 					月額換算: ¥{monthlyAmount().toLocaleString('ja-JP', { maximumFractionDigits: 0 })}

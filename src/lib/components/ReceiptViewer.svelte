@@ -64,8 +64,10 @@ function handleBackdropClick(event: MouseEvent) {
 <div
 	class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
 	onclick={handleBackdropClick}
+	onkeydown={(e) => e.key === 'Enter' && handleBackdropClick(e as any)}
 	role="dialog"
 	aria-modal="true"
+	tabindex="-1"
 >
 	<!-- モーダルコンテンツ -->
 	<div class="relative max-w-6xl max-h-[90vh] w-full bg-white rounded-lg shadow-2xl overflow-hidden">

@@ -1,31 +1,37 @@
 <script lang="ts">
 import "../app.css";
+import ErrorBoundary from "$lib/components/ErrorBoundary.svelte";
 import ToastContainer from "$lib/components/ToastContainer.svelte";
 </script>
 
-<!-- グローバルレイアウト: グラデーション背景とナビゲーション構造 -->
-<div class="app-container">
-	<!-- ナビゲーションヘッダー -->
-	<header class="header">
-		<nav class="nav-container">
-			<div class="nav-brand">
-				<h1 class="brand-title">経費管理</h1>
-			</div>
-			<div class="nav-links">
-				<a href="/" class="nav-link">ダッシュボード</a>
-				<a href="/expenses" class="nav-link">経費一覧</a>
-			</div>
-		</nav>
-	</header>
+<!-- エラーバウンダリでアプリ全体をラップ -->
+<ErrorBoundary>
+	{#snippet children()}
+		<!-- グローバルレイアウト: グラデーション背景とナビゲーション構造 -->
+		<div class="app-container">
+			<!-- ナビゲーションヘッダー -->
+			<header class="header">
+				<nav class="nav-container">
+					<div class="nav-brand">
+						<h1 class="brand-title">経費管理</h1>
+					</div>
+					<div class="nav-links">
+						<a href="/" class="nav-link">ダッシュボード</a>
+						<a href="/expenses" class="nav-link">経費一覧</a>
+					</div>
+				</nav>
+			</header>
 
-	<!-- メインコンテンツエリア -->
-	<main class="main-content">
-		<slot />
-	</main>
+			<!-- メインコンテンツエリア -->
+			<main class="main-content">
+				<slot />
+			</main>
 
-	<!-- トースト通知コンテナ -->
-	<ToastContainer />
-</div>
+			<!-- トースト通知コンテナ -->
+			<ToastContainer />
+		</div>
+	{/snippet}
+</ErrorBoundary>
 
 <style>
 	/* アプリケーション全体のコンテナ */

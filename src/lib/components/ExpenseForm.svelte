@@ -47,6 +47,8 @@ function validate(): boolean {
 		newErrors.amount = "金額を入力してください";
 	} else if (amountNum <= 0) {
 		newErrors.amount = "金額は正の数値である必要があります";
+	} else if (amountNum > 9999999999) {
+		newErrors.amount = "金額は10桁以内で入力してください";
 	}
 
 	// 日付のバリデーション
@@ -64,6 +66,11 @@ function validate(): boolean {
 	// カテゴリのバリデーション
 	if (!category) {
 		newErrors.category = "カテゴリを選択してください";
+	}
+
+	// 説明のバリデーション（最大500文字）
+	if (description && description.length > 500) {
+		newErrors.description = "説明は500文字以内で入力してください";
 	}
 
 	errors = newErrors;
@@ -242,19 +249,25 @@ async function handleSubmit(event: Event) {
 			<textarea
 				id="description"
 				bind:value={description}
-				class="input min-h-24"
+				class="input min-h-24 {errors.description ? 'border-red-500' : ''}"
 				placeholder="経費の詳細を入力してください（任意）"
 				maxlength="500"
 			></textarea>
-			<p class="text-gray-500 text-xs mt-1">{description.length}/500文字</p>
+			<div class="flex justify-between items-center mt-1">
+				<p class="text-gray-500 text-xs">{description.length}/500文字</p>
+				{#if errors.description}
+					<p class="text-red-500 text-xs">{errors.description}</p>
+				{/if}
+			</div>
 		</div>
 
 		<!-- 領収書アップロード -->
 		<div>
-			<label class="block text-sm font-semibold mb-2">
+			<label for="receipt-upload" class="block text-sm font-semibold mb-2">
 				領収書
 			</label>
 			<button
+				id="receipt-upload"
 				type="button"
 				onclick={selectReceipt}
 				class="btn btn-info w-full"

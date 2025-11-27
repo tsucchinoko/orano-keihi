@@ -10,6 +10,33 @@ import type {
 } from "../types";
 
 /**
+ * エラーメッセージをユーザーフレンドリーな形式にフォーマットする
+ *
+ * @param error - エラーオブジェクトまたはメッセージ
+ * @returns フォーマットされたエラーメッセージ
+ */
+export function formatErrorMessage(error: unknown): string {
+	if (typeof error === "string") {
+		return error;
+	}
+
+	if (error instanceof Error) {
+		return error.message;
+	}
+
+	// オブジェクトの場合、JSONとして表示
+	if (typeof error === "object" && error !== null) {
+		try {
+			return JSON.stringify(error);
+		} catch {
+			return "不明なエラーが発生しました";
+		}
+	}
+
+	return "不明なエラーが発生しました";
+}
+
+/**
  * Tauriコマンドのエラーハンドリングラッパー
  *
  * @param command - 実行するTauriコマンドのPromise
@@ -23,7 +50,8 @@ export async function handleTauriCommand<T>(
 		return { data };
 	} catch (error) {
 		console.error("Tauriコマンドエラー:", error);
-		return { error: String(error) };
+		const errorMessage = formatErrorMessage(error);
+		return { error: errorMessage };
 	}
 }
 

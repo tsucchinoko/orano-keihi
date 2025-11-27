@@ -16,9 +16,24 @@ pub async fn create_subscription(
     dto: CreateSubscriptionDto,
     state: State<'_, AppState>,
 ) -> Result<Subscription, String> {
+    // バリデーション: サービス名は必須
+    if dto.name.trim().is_empty() {
+        return Err("サービス名を入力してください".to_string());
+    }
+
+    // バリデーション: サービス名は100文字以内
+    if dto.name.len() > 100 {
+        return Err("サービス名は100文字以内で入力してください".to_string());
+    }
+
     // バリデーション: 金額は正の数値
     if dto.amount <= 0.0 {
         return Err("金額は正の数値である必要があります".to_string());
+    }
+
+    // バリデーション: 金額は10桁以内
+    if dto.amount > 9999999999.0 {
+        return Err("金額は10桁以内で入力してください".to_string());
     }
 
     // バリデーション: billing_cycleは"monthly"または"annual"のみ
@@ -76,10 +91,23 @@ pub async fn update_subscription(
     dto: UpdateSubscriptionDto,
     state: State<'_, AppState>,
 ) -> Result<Subscription, String> {
+    // バリデーション: サービス名が指定されている場合は必須かつ100文字以内
+    if let Some(ref name) = dto.name {
+        if name.trim().is_empty() {
+            return Err("サービス名を入力してください".to_string());
+        }
+        if name.len() > 100 {
+            return Err("サービス名は100文字以内で入力してください".to_string());
+        }
+    }
+
     // バリデーション: 金額が指定されている場合は正の数値
     if let Some(amount) = dto.amount {
         if amount <= 0.0 {
             return Err("金額は正の数値である必要があります".to_string());
+        }
+        if amount > 9999999999.0 {
+            return Err("金額は10桁以内で入力してください".to_string());
         }
     }
 

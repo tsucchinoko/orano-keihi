@@ -22,6 +22,11 @@ pub async fn create_expense(
         return Err("金額は正の数値である必要があります".to_string());
     }
 
+    // バリデーション: 金額は10桁以内
+    if dto.amount > 9999999999.0 {
+        return Err("金額は10桁以内で入力してください".to_string());
+    }
+
     // バリデーション: 日付が未来でないことを確認
     let expense_date = NaiveDate::parse_from_str(&dto.date, "%Y-%m-%d")
         .map_err(|_| "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string())?;
@@ -29,6 +34,13 @@ pub async fn create_expense(
     let today = Utc::now().date_naive();
     if expense_date > today {
         return Err("未来の日付は指定できません".to_string());
+    }
+
+    // バリデーション: 説明は500文字以内
+    if let Some(ref description) = dto.description {
+        if description.len() > 500 {
+            return Err("説明は500文字以内で入力してください".to_string());
+        }
     }
 
     // データベース接続を取得
@@ -82,6 +94,9 @@ pub async fn update_expense(
         if amount <= 0.0 {
             return Err("金額は正の数値である必要があります".to_string());
         }
+        if amount > 9999999999.0 {
+            return Err("金額は10桁以内で入力してください".to_string());
+        }
     }
 
     // バリデーション: 日付が指定されている場合は未来でないことを確認
@@ -92,6 +107,13 @@ pub async fn update_expense(
         let today = Utc::now().date_naive();
         if expense_date > today {
             return Err("未来の日付は指定できません".to_string());
+        }
+    }
+
+    // バリデーション: 説明が指定されている場合は500文字以内
+    if let Some(ref description) = dto.description {
+        if description.len() > 500 {
+            return Err("説明は500文字以内で入力してください".to_string());
         }
     }
 
