@@ -55,10 +55,9 @@ function validate(): boolean {
 	if (!date) {
 		newErrors.date = "日付を入力してください";
 	} else {
-		const selectedDate = new Date(date);
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-		if (selectedDate > today) {
+		// YYYY-MM-DD形式の文字列を直接比較
+		const today = new Date().toISOString().split('T')[0];
+		if (date > today) {
 			newErrors.date = "未来の日付は選択できません";
 		}
 	}
@@ -122,7 +121,7 @@ async function handleSubmit(event: Event) {
 
 	try {
 		const expenseData = {
-			date: new Date(date).toISOString(),
+			date: date, // YYYY-MM-DD形式のまま送信
 			amount: Number.parseFloat(amount),
 			category,
 			description: description || undefined,
@@ -210,7 +209,7 @@ async function handleSubmit(event: Event) {
 					type="number"
 					step="0.01"
 					bind:value={amount}
-					class="input pl-8 {errors.amount ? 'border-red-500' : ''}"
+					class="input pl-6 {errors.amount ? 'border-red-500' : ''}"
 					placeholder="0"
 				/>
 			</div>

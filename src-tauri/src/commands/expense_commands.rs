@@ -1,7 +1,8 @@
 use crate::db::expense_operations;
 use crate::models::{CreateExpenseDto, Expense, UpdateExpenseDto};
 use crate::AppState;
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
+use chrono_tz::Asia::Tokyo;
 use tauri::State;
 
 /// 経費を作成する
@@ -32,7 +33,9 @@ pub async fn create_expense(
         "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string()
     })?;
 
-    let today = Utc::now().date_naive();
+    // JSTで今日の日付を取得
+    let now_jst = chrono::Utc::now().with_timezone(&Tokyo);
+    let today = now_jst.date_naive();
     if expense_date > today {
         return Err("未来の日付は指定できません".to_string());
     }
@@ -112,7 +115,9 @@ pub async fn update_expense(
             "日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）".to_string()
         })?;
 
-        let today = Utc::now().date_naive();
+        // JSTで今日の日付を取得
+        let now_jst = chrono::Utc::now().with_timezone(&Tokyo);
+        let today = now_jst.date_naive();
         if expense_date > today {
             return Err("未来の日付は指定できません".to_string());
         }

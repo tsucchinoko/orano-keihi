@@ -1,5 +1,6 @@
 use crate::models::{CreateExpenseDto, Expense, UpdateExpenseDto};
 use chrono::Utc;
+use chrono_tz::Asia::Tokyo;
 use rusqlite::{params, Connection, Result};
 
 /// 経費を作成する
@@ -11,7 +12,8 @@ use rusqlite::{params, Connection, Result};
 /// # 戻り値
 /// 作成された経費、または失敗時はエラー
 pub fn create_expense(conn: &Connection, dto: CreateExpenseDto) -> Result<Expense> {
-    let now = Utc::now().to_rfc3339();
+    // JSTで現在時刻を取得
+    let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
     conn.execute(
         "INSERT INTO expenses (date, amount, category, description, receipt_path, created_at, updated_at)
@@ -115,7 +117,8 @@ pub fn get_expenses(
 /// # 戻り値
 /// 更新された経費、または失敗時はエラー
 pub fn update_expense(conn: &Connection, id: i64, dto: UpdateExpenseDto) -> Result<Expense> {
-    let now = Utc::now().to_rfc3339();
+    // JSTで現在時刻を取得
+    let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
     // 既存の経費を取得
     let existing = get_expense_by_id(conn, id)?;
@@ -158,7 +161,8 @@ pub fn delete_expense(conn: &Connection, id: i64) -> Result<()> {
 /// # 戻り値
 /// 更新された経費、または失敗時はエラー
 pub fn set_receipt_path(conn: &Connection, id: i64, receipt_path: String) -> Result<Expense> {
-    let now = Utc::now().to_rfc3339();
+    // JSTで現在時刻を取得
+    let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
     conn.execute(
         "UPDATE expenses SET receipt_path = ?1, updated_at = ?2 WHERE id = ?3",
