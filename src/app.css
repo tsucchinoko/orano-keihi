@@ -101,17 +101,14 @@
 
 
 
-/* グローバルスタイル */
-body {
-	font-family:
-		"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-	background: var(--bg-gradient-light);
-	min-height: 100vh;
-}
-
-/* スムーズトランジション */
-* {
-	transition: all 0.2s ease-in-out;
+/* ベーススタイル */
+@layer base {
+	body {
+		font-family:
+			"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		background: var(--bg-gradient-light);
+		min-height: 100vh;
+	}
 }
 
 /* コンポーネントクラス */
@@ -181,12 +178,5 @@ body {
 		outline: none;
 		box-shadow: 0 0 0 2px #a855f7; /* ring-2 ring-purple-500 */
 		border-color: transparent;
-	}
-}
-
-/* レスポンシブデザイン */
-@media (max-width: 768px) {
-	.card {
-		padding: 1rem;
 	}
 }
