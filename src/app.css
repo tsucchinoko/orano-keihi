@@ -99,8 +99,6 @@
 	}
 }
 
-
-
 /* ベーススタイル */
 @layer base {
 	body {
@@ -117,14 +115,18 @@
 	.card {
 		background-color: white;
 		border-radius: 0.75rem; /* rounded-xl */
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+		box-shadow:
+			0 4px 6px -1px rgba(0, 0, 0, 0.1),
+			0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
 		padding: 1.5rem; /* p-6 */
 		transition-property: box-shadow;
 		transition-duration: 200ms;
 	}
 
 	.card:hover {
-		box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
+		box-shadow:
+			0 10px 15px -3px rgba(0, 0, 0, 0.1),
+			0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
 	}
 
 	/* ボタン共通スタイル */
@@ -141,7 +143,9 @@
 
 	.btn:hover {
 		transform: translateY(-0.125rem); /* -translate-y-0.5 */
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+		box-shadow:
+			0 4px 6px -1px rgba(0, 0, 0, 0.1),
+			0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
 	}
 
 	.btn:active {

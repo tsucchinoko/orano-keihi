@@ -68,7 +68,9 @@ export async function handleTauriCommand<T>(
 export async function createExpense(
 	expense: CreateExpenseDto,
 ): Promise<TauriResult<Expense>> {
-	return handleTauriCommand(invoke<Expense>("create_expense", { dto: expense }));
+	return handleTauriCommand(
+		invoke<Expense>("create_expense", { dto: expense }),
+	);
 }
 
 /**
@@ -98,7 +100,9 @@ export async function updateExpense(
 	id: number,
 	expense: UpdateExpenseDto,
 ): Promise<TauriResult<Expense>> {
-	return handleTauriCommand(invoke<Expense>("update_expense", { id, dto: expense }));
+	return handleTauriCommand(
+		invoke<Expense>("update_expense", { id, dto: expense }),
+	);
 }
 
 /**
