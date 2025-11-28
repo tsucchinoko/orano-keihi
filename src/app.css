@@ -1,99 +1,105 @@
 @import "tailwindcss";
 
-/* グラデーション定義 */
+/* CSS変数定義 */
 :root {
+	/* カテゴリカラー */
+	--color-category-transport: #3b82f6;
+	--color-category-meals: #ef4444;
+	--color-category-communication: #8b5cf6;
+	--color-category-supplies: #10b981;
+	--color-category-entertainment: #f59e0b;
+	--color-category-other: #6b7280;
+
 	/* プライマリグラデーション */
 	--gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 	--gradient-success: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 	--gradient-info: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 	--gradient-warning: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
 
-	/* カテゴリカラー */
-	--color-transport: #3b82f6;
-	--color-meals: #ef4444;
-	--color-communication: #8b5cf6;
-	--color-supplies: #10b981;
-	--color-entertainment: #f59e0b;
-	--color-other: #6b7280;
-
 	/* 背景グラデーション */
 	--bg-gradient-light: linear-gradient(to bottom right, #fafafa, #e5e7eb);
 	--bg-gradient-dark: linear-gradient(to bottom right, #1f2937, #111827);
 }
 
-/* グラデーションユーティリティクラス */
-.gradient-primary {
-	background: var(--gradient-primary);
+/* カスタムユーティリティクラス */
+@layer utilities {
+	/* グラデーションユーティリティ */
+	.gradient-primary {
+		background: var(--gradient-primary);
+	}
+
+	.gradient-success {
+		background: var(--gradient-success);
+	}
+
+	.gradient-info {
+		background: var(--gradient-info);
+	}
+
+	.gradient-warning {
+		background: var(--gradient-warning);
+	}
+
+	.bg-gradient-light {
+		background: var(--bg-gradient-light);
+	}
+
+	.bg-gradient-dark {
+		background: var(--bg-gradient-dark);
+	}
+
+	/* カテゴリカラークラス（後方互換性のため維持） */
+	.category-transport {
+		color: var(--color-category-transport);
+	}
+
+	.category-meals {
+		color: var(--color-category-meals);
+	}
+
+	.category-communication {
+		color: var(--color-category-communication);
+	}
+
+	.category-supplies {
+		color: var(--color-category-supplies);
+	}
+
+	.category-entertainment {
+		color: var(--color-category-entertainment);
+	}
+
+	.category-other {
+		color: var(--color-category-other);
+	}
+
+	/* 背景カテゴリカラークラス（後方互換性のため維持） */
+	.bg-category-transport {
+		background-color: var(--color-category-transport);
+	}
+
+	.bg-category-meals {
+		background-color: var(--color-category-meals);
+	}
+
+	.bg-category-communication {
+		background-color: var(--color-category-communication);
+	}
+
+	.bg-category-supplies {
+		background-color: var(--color-category-supplies);
+	}
+
+	.bg-category-entertainment {
+		background-color: var(--color-category-entertainment);
+	}
+
+	.bg-category-other {
+		background-color: var(--color-category-other);
+	}
 }
 
-.gradient-success {
-	background: var(--gradient-success);
-}
 
-.gradient-info {
-	background: var(--gradient-info);
-}
-
-.gradient-warning {
-	background: var(--gradient-warning);
-}
-
-.bg-gradient-light {
-	background: var(--bg-gradient-light);
-}
-
-.bg-gradient-dark {
-	background: var(--bg-gradient-dark);
-}
-
-/* カテゴリカラークラス */
-.category-transport {
-	color: var(--color-transport);
-}
-
-.category-meals {
-	color: var(--color-meals);
-}
-
-.category-communication {
-	color: var(--color-communication);
-}
-
-.category-supplies {
-	color: var(--color-supplies);
-}
-
-.category-entertainment {
-	color: var(--color-entertainment);
-}
-
-.category-other {
-	color: var(--color-other);
-}
-
-.bg-category-transport {
-	background-color: var(--color-transport);
-}
-
-.bg-category-meals {
-	background-color: var(--color-meals);
-}
-
-.bg-category-communication {
-	background-color: var(--color-communication);
-}
-
-.bg-category-supplies {
-	background-color: var(--color-supplies);
-}
-
-.bg-category-entertainment {
-	background-color: var(--color-entertainment);
-}
-
-.bg-category-other {
-	background-color: var(--color-other);
-}
 
 /* グローバルスタイル */
 body {
