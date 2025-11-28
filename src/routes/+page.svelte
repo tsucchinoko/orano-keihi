@@ -1,6 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { SubscriptionList } from "$features/subscriptions";
+import { SubscriptionForm, SubscriptionList } from "$features/subscriptions";
 import type { Expense, Subscription } from "$lib/types";
 import {
 	getExpenses,
@@ -14,6 +14,10 @@ let subscriptions = $state<Subscription[]>([]);
 let monthlySubscriptionTotal = $state<number>(0);
 let loading = $state(true);
 let error = $state<string | null>(null);
+
+// モーダル表示状態
+let showEditModal = $state(false);
+let editingSubscription = $state<Subscription | undefined>(undefined);
 
 // 今月の経費サマリー
 let currentMonth = $derived(new Date().toISOString().slice(0, 7)); // YYYY-MM形式
@@ -73,17 +77,24 @@ async function loadData() {
 	}
 }
 
-// サブスクリプション編集ハンドラー（TODO: 実装）
+// サブスクリプション編集ハンドラー
 function handleEditSubscription(subscription: Subscription) {
-	console.log("Edit subscription:", subscription);
-	// TODO: サブスクリプション編集モーダルを表示
+	editingSubscription = subscription;
+	showEditModal = true;
 }
 
-// サブスクリプションステータス切り替えハンドラー（TODO: 実装）
-async function handleToggleSubscription(id: number) {
-	console.log("Toggle subscription:", id);
-	// TODO: toggleSubscriptionStatus を呼び出す
-	await loadData();
+// フォーム成功時
+function handleFormSuccess() {
+	showEditModal = false;
+	editingSubscription = undefined;
+	// データを再読み込み
+	loadData();
+}
+
+// フォームキャンセル時
+function handleFormCancel() {
+	showEditModal = false;
+	editingSubscription = undefined;
 }
 
 onMount(() => {
@@ -193,6 +204,19 @@ function getCategoryColor(category: string): string {
 				</div>
 				<SubscriptionList 
 					onEdit={handleEditSubscription}
+				/>
+			</div>
+		</div>
+	{/if}
+
+	<!-- 編集モーダル -->
+	{#if showEditModal}
+		<div class="modal-overlay" onclick={handleFormCancel}>
+			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+				<SubscriptionForm
+					subscription={editingSubscription}
+					onSuccess={handleFormSuccess}
+					onCancel={handleFormCancel}
 				/>
 			</div>
 		</div>
@@ -410,6 +434,55 @@ function getCategoryColor(category: string): string {
 		font-weight: 700;
 	}
 
+	/* モーダル */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		padding: 1rem;
+		backdrop-filter: blur(4px);
+		animation: fadeIn 0.2s ease-out;
+	}
+
+	.modal-content {
+		background: white;
+		border-radius: 16px;
+		padding: 2rem;
+		max-width: 600px;
+		width: 100%;
+		max-height: 90vh;
+		overflow-y: auto;
+		box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+		animation: modalSlideIn 0.3s ease-out;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes modalSlideIn {
+		from {
+			opacity: 0;
+			transform: translateY(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
 	/* レスポンシブデザイン */
 	@media (max-width: 768px) {
 		.page-title {
@@ -434,6 +507,11 @@ function getCategoryColor(category: string): string {
 
 		.total-amount {
 			font-size: 1.5rem;
+		}
+
+		.modal-content {
+			padding: 1.5rem;
+			max-height: 95vh;
 		}
 	}
 </style>
