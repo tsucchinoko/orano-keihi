@@ -1,5 +1,7 @@
 use crate::db::expense_operations;
 use crate::AppState;
+use chrono::Utc;
+use chrono_tz::Asia::Tokyo;
 use std::fs;
 use std::path::Path;
 use tauri::{AppHandle, Manager, State};
@@ -59,7 +61,8 @@ pub async fn save_receipt(
         .map_err(|e| format!("receiptsディレクトリの作成に失敗しました: {e}"))?;
 
     // ユニークなファイル名を生成（expense_id_timestamp.ext）
-    let timestamp = chrono::Utc::now().timestamp();
+    // JSTでタイムスタンプを取得
+    let timestamp = Utc::now().with_timezone(&Tokyo).timestamp();
     let filename = format!("{expense_id}_{timestamp}.{extension}");
     let dest_path = receipts_dir.join(&filename);
 

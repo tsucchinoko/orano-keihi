@@ -1,5 +1,6 @@
 use crate::models::{CreateSubscriptionDto, Subscription, UpdateSubscriptionDto};
 use chrono::Utc;
+use chrono_tz::Asia::Tokyo;
 use rusqlite::{params, Connection, Result};
 
 /// サブスクリプションを作成する
@@ -11,7 +12,8 @@ use rusqlite::{params, Connection, Result};
 /// # 戻り値
 /// 作成されたサブスクリプション、または失敗時はエラー
 pub fn create_subscription(conn: &Connection, dto: CreateSubscriptionDto) -> Result<Subscription> {
-    let now = Utc::now().to_rfc3339();
+    // JSTで現在時刻を取得
+    let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
     conn.execute(
         "INSERT INTO subscriptions (name, amount, billing_cycle, start_date, category, is_active, created_at, updated_at)
@@ -101,7 +103,8 @@ pub fn update_subscription(
     id: i64,
     dto: UpdateSubscriptionDto,
 ) -> Result<Subscription> {
-    let now = Utc::now().to_rfc3339();
+    // JSTで現在時刻を取得
+    let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
     // 既存のサブスクリプションを取得
     let existing = get_subscription_by_id(conn, id)?;
@@ -132,7 +135,8 @@ pub fn update_subscription(
 /// # 戻り値
 /// 更新されたサブスクリプション、または失敗時はエラー
 pub fn toggle_subscription_status(conn: &Connection, id: i64) -> Result<Subscription> {
-    let now = Utc::now().to_rfc3339();
+    // JSTで現在時刻を取得
+    let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
     conn.execute(
         "UPDATE subscriptions SET is_active = NOT is_active, updated_at = ?1 WHERE id = ?2",
