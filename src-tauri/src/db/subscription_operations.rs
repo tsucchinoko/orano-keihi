@@ -16,8 +16,8 @@ pub fn create_subscription(conn: &Connection, dto: CreateSubscriptionDto) -> Res
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
     conn.execute(
-        "INSERT INTO subscriptions (name, amount, billing_cycle, start_date, category, is_active, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
+        "INSERT INTO subscriptions (name, amount, billing_cycle, start_date, category, is_active, receipt_path, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 1, NULL, ?6, ?7)",
         params![dto.name, dto.amount, dto.billing_cycle, dto.start_date, dto.category, now, now],
     )?;
 
@@ -35,7 +35,7 @@ pub fn create_subscription(conn: &Connection, dto: CreateSubscriptionDto) -> Res
 /// サブスクリプション、または失敗時はエラー
 pub fn get_subscription_by_id(conn: &Connection, id: i64) -> Result<Subscription> {
     conn.query_row(
-        "SELECT id, name, amount, billing_cycle, start_date, category, is_active, created_at, updated_at
+        "SELECT id, name, amount, billing_cycle, start_date, category, is_active, receipt_path, created_at, updated_at
          FROM subscriptions WHERE id = ?1",
         params![id],
         |row| {
@@ -47,8 +47,9 @@ pub fn get_subscription_by_id(conn: &Connection, id: i64) -> Result<Subscription
                 start_date: row.get(4)?,
                 category: row.get(5)?,
                 is_active: row.get::<_, i64>(6)? != 0,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                receipt_path: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         },
     )
@@ -64,10 +65,10 @@ pub fn get_subscription_by_id(conn: &Connection, id: i64) -> Result<Subscription
 /// サブスクリプションのリスト、または失敗時はエラー
 pub fn get_subscriptions(conn: &Connection, active_only: bool) -> Result<Vec<Subscription>> {
     let query = if active_only {
-        "SELECT id, name, amount, billing_cycle, start_date, category, is_active, created_at, updated_at
+        "SELECT id, name, amount, billing_cycle, start_date, category, is_active, receipt_path, created_at, updated_at
          FROM subscriptions WHERE is_active = 1 ORDER BY name"
     } else {
-        "SELECT id, name, amount, billing_cycle, start_date, category, is_active, created_at, updated_at
+        "SELECT id, name, amount, billing_cycle, start_date, category, is_active, receipt_path, created_at, updated_at
          FROM subscriptions ORDER BY name"
     };
 
@@ -81,8 +82,9 @@ pub fn get_subscriptions(conn: &Connection, active_only: bool) -> Result<Vec<Sub
             start_date: row.get(4)?,
             category: row.get(5)?,
             is_active: row.get::<_, i64>(6)? != 0,
-            created_at: row.get(7)?,
-            updated_at: row.get(8)?,
+            receipt_path: row.get(7)?,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
         })
     })?;
 
@@ -180,4 +182,25 @@ pub fn get_monthly_subscription_total(conn: &Connection) -> Result<f64> {
     });
 
     Ok(total)
+}
+
+/// サブスクリプションの領収書パスを設定する
+///
+/// # 引数
+/// * `conn` - データベース接続
+/// * `id` - サブスクリプションID
+/// * `receipt_path` - 領収書ファイルパス
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+pub fn set_receipt_path(conn: &Connection, id: i64, receipt_path: String) -> Result<()> {
+    // JSTで現在時刻を取得
+    let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
+
+    conn.execute(
+        "UPDATE subscriptions SET receipt_path = ?1, updated_at = ?2 WHERE id = ?3",
+        params![receipt_path, now, id],
+    )?;
+
+    Ok(())
 }

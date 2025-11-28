@@ -203,3 +203,19 @@ export async function getMonthlySubscriptionTotal(): Promise<
 > {
 	return handleTauriCommand(invoke<number>("get_monthly_subscription_total"));
 }
+
+/**
+ * サブスクリプションの領収書ファイルを保存する
+ *
+ * @param subscriptionId - サブスクリプションID
+ * @param filePath - 保存するファイルのパス
+ * @returns 保存されたファイルパスまたはエラー
+ */
+export async function saveSubscriptionReceipt(
+	subscriptionId: number,
+	filePath: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("save_subscription_receipt", { subscriptionId, filePath }),
+	);
+}

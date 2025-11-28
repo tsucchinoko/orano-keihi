@@ -44,11 +44,17 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             start_date TEXT NOT NULL,
             category TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
+            receipt_path TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )",
         [],
     )?;
+
+    // 既存のサブスクリプションテーブルにreceipt_pathカラムを追加（存在しない場合）
+    // SQLiteはALTER TABLE ADD COLUMN IF NOT EXISTSをサポートしていないため、
+    // エラーを無視する方法で対応
+    let _ = conn.execute("ALTER TABLE subscriptions ADD COLUMN receipt_path TEXT", []);
 
     // サブスクリプションテーブルのインデックスを作成
     conn.execute(

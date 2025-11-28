@@ -35,6 +35,7 @@ export interface Subscription {
 	start_date: string;
 	category: string;
 	is_active: boolean;
+	receipt_path?: string;
 	created_at: string;
 	updated_at: string;
 }
