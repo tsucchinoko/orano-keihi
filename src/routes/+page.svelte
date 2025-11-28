@@ -141,6 +141,11 @@ function getCategoryColor(category: string): string {
 				<h3 class="action-title">経費一覧</h3>
 				<p class="action-description">経費を確認・編集する</p>
 			</a>
+			<a href="/subscriptions" class="action-card gradient-warning">
+				<div class="action-icon">💳</div>
+				<h3 class="action-title">サブスクリプション</h3>
+				<p class="action-description">定期支払いを管理する</p>
+			</a>
 		</div>
 
 		<!-- 今月の経費サマリー -->

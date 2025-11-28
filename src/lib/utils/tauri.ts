@@ -141,7 +141,7 @@ export async function createSubscription(
 	subscription: CreateSubscriptionDto,
 ): Promise<TauriResult<Subscription>> {
 	return handleTauriCommand(
-		invoke<Subscription>("create_subscription", { subscription }),
+		invoke<Subscription>("create_subscription", { dto: subscription }),
 	);
 }
 
@@ -171,7 +171,7 @@ export async function updateSubscription(
 	subscription: UpdateSubscriptionDto,
 ): Promise<TauriResult<Subscription>> {
 	return handleTauriCommand(
-		invoke<Subscription>("update_subscription", { id, subscription }),
+		invoke<Subscription>("update_subscription", { id, dto: subscription }),
 	);
 }
 

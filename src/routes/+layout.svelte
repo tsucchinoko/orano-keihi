@@ -18,6 +18,7 @@ import ToastContainer from "$lib/components/ToastContainer.svelte";
 					<div class="nav-links">
 						<a href="/" class="nav-link">ダッシュボード</a>
 						<a href="/expenses" class="nav-link">経費一覧</a>
+						<a href="/subscriptions" class="nav-link">サブスクリプション</a>
 					</div>
 				</nav>
 			</header>
