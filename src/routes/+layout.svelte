@@ -13,10 +13,11 @@ import ToastContainer from "$lib/components/ToastContainer.svelte";
 			<header class="header">
 				<nav class="nav-container">
 					<div class="nav-brand">
-						<h1 class="brand-title">経費管理</h1>
+						<a href="/" class="brand-link">
+							<h1 class="brand-title">オラの経費だゾ</h1>
+						</a>
 					</div>
 					<div class="nav-links">
-						<a href="/" class="nav-link">ダッシュボード</a>
 						<a href="/expenses" class="nav-link">経費一覧</a>
 						<a href="/subscriptions" class="nav-link">サブスクリプション</a>
 					</div>
@@ -65,6 +66,16 @@ import ToastContainer from "$lib/components/ToastContainer.svelte";
 		align-items: center;
 	}
 
+	.brand-link {
+		text-decoration: none;
+		transition: transform 0.2s ease-in-out;
+		display: inline-block;
+	}
+
+	.brand-link:hover {
+		transform: scale(1.05);
+	}
+
 	.brand-title {
 		font-size: 1.5rem;
 		font-weight: 700;
@@ -73,6 +84,7 @@ import ToastContainer from "$lib/components/ToastContainer.svelte";
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 		margin: 0;
+		cursor: pointer;
 	}
 
 	.nav-links {
