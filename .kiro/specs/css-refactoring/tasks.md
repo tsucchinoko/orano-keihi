@@ -12,7 +12,7 @@
   - カスタムユーティリティクラスを`@layer utilities`で定義
   - _要件: 1.1, 1.2, 1.3, 1.4_
 
-- [ ] 3. コンポーネントクラスを`@layer components`で再実装
+- [x] 3. コンポーネントクラスを`@layer components`で再実装
   - `.card`クラスをTailwindユーティリティで定義
   - `.btn`および`.btn-*`バリアントを定義
   - `.input`クラスを定義
