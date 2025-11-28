@@ -209,7 +209,7 @@ async function handleSubmit(event: Event) {
 					type="number"
 					step="0.01"
 					bind:value={amount}
-					class="input pl-[2.5rem] {errors.amount ? 'border-red-500' : ''}"
+					class="input pl-6 {errors.amount ? 'border-red-500' : ''}"
 					placeholder="0"
 				/>
 			</div>
