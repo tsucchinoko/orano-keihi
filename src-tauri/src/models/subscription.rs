@@ -10,6 +10,7 @@ pub struct Subscription {
     pub start_date: String,
     pub category: String,
     pub is_active: bool,
+    pub receipt_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -126,8 +126,17 @@ onMount(() => {
 <!-- 経費一覧ページ -->
 <div class="expenses-page">
 	<div class="page-header">
-		<h1 class="page-title">経費一覧</h1>
-		<p class="page-subtitle">月別・カテゴリ別に経費を確認できます</p>
+		<div>
+			<h1 class="page-title">経費一覧</h1>
+			<p class="page-subtitle">月別・カテゴリ別に経費を確認できます</p>
+		</div>
+		<button
+			type="button"
+			onclick={handleAddExpense}
+			class="btn btn-primary"
+		>
+			➕ 新規追加
+		</button>
 	</div>
 
 	<!-- フィルターセクション -->
@@ -161,11 +170,6 @@ onMount(() => {
 			/>
 		{/if}
 	</div>
-
-	<!-- フローティングアクションボタン -->
-	<button class="fab gradient-primary" onclick={handleAddExpense} aria-label="経費を追加">
-		<span class="fab-icon">+</span>
-	</button>
 
 	<!-- 経費フォームモーダル -->
 	{#if showExpenseForm}
@@ -209,7 +213,10 @@ onMount(() => {
 
 	/* ページヘッダー */
 	.page-header {
-		text-align: center;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 2rem;
 		margin-bottom: 1rem;
 	}
 
@@ -273,39 +280,6 @@ onMount(() => {
 	.error-message {
 		color: #ef4444;
 		margin-bottom: 1rem;
-	}
-
-	/* フローティングアクションボタン */
-	.fab {
-		position: fixed;
-		bottom: 2rem;
-		right: 2rem;
-		width: 64px;
-		height: 64px;
-		border-radius: 50%;
-		border: none;
-		color: white;
-		font-size: 2rem;
-		cursor: pointer;
-		box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-		transition: all 0.3s ease-in-out;
-		z-index: 40;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.fab:hover {
-		transform: scale(1.1) rotate(90deg);
-		box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
-	}
-
-	.fab:active {
-		transform: scale(0.95) rotate(90deg);
-	}
-
-	.fab-icon {
-		line-height: 1;
 	}
 
 	/* モーダル */
@@ -375,20 +349,17 @@ onMount(() => {
 
 	/* レスポンシブデザイン */
 	@media (max-width: 768px) {
+		.page-header {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
 		.page-title {
 			font-size: 2rem;
 		}
 
 		.filter-row {
 			grid-template-columns: 1fr;
-		}
-
-		.fab {
-			bottom: 1rem;
-			right: 1rem;
-			width: 56px;
-			height: 56px;
-			font-size: 1.75rem;
 		}
 
 		.modal-content {

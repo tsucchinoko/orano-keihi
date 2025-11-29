@@ -56,7 +56,7 @@ function validate(): boolean {
 		newErrors.date = "日付を入力してください";
 	} else {
 		// YYYY-MM-DD形式の文字列を直接比較
-		const today = new Date().toISOString().split('T')[0];
+		const today = new Date().toISOString().split("T")[0];
 		if (date > today) {
 			newErrors.date = "未来の日付は選択できません";
 		}

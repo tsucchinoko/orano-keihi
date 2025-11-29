@@ -2,6 +2,8 @@
 import type { Subscription } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
+import { saveSubscriptionReceipt } from "$lib/utils/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
 interface Props {
@@ -23,6 +25,8 @@ let startDate = $state(
 		new Date().toISOString().split("T")[0],
 );
 let category = $state(subscription?.category || "");
+let receiptFile = $state<string | undefined>(undefined);
+let receiptPreview = $state<string | undefined>(subscription?.receipt_path);
 
 // バリデーションエラー
 let errors = $state<Record<string, string>>({});
@@ -75,6 +79,28 @@ function validate(): boolean {
 // 送信中フラグ
 let isSubmitting = $state(false);
 
+// 領収書ファイル選択
+async function selectReceipt() {
+	try {
+		const selected = await open({
+			multiple: false,
+			filters: [
+				{
+					name: "画像・PDF",
+					extensions: ["png", "jpg", "jpeg", "pdf"],
+				},
+			],
+		});
+
+		if (selected) {
+			receiptFile = selected;
+			receiptPreview = selected;
+		}
+	} catch (error) {
+		toastStore.error(`ファイル選択エラー: ${error}`);
+	}
+}
+
 // フォーム送信
 async function handleSubmit(event: Event) {
 	event.preventDefault();
@@ -96,15 +122,24 @@ async function handleSubmit(event: Event) {
 
 		// サブスクリプションを作成または更新
 		let success = false;
+		let savedSubscriptionId: number | undefined;
+
 		if (subscription) {
 			// 更新
 			success = await expenseStore.modifySubscription(
 				subscription.id,
 				subscriptionData,
 			);
+			savedSubscriptionId = subscription.id;
 		} else {
 			// 新規作成
 			success = await expenseStore.addSubscription(subscriptionData);
+			// 新規作成の場合、最後に追加されたサブスクリプションのIDを取得
+			if (success && expenseStore.subscriptions.length > 0) {
+				const lastSubscription =
+					expenseStore.subscriptions[expenseStore.subscriptions.length - 1];
+				savedSubscriptionId = lastSubscription.id;
+			}
 		}
 
 		if (!success) {
@@ -112,6 +147,17 @@ async function handleSubmit(event: Event) {
 				expenseStore.error || "サブスクリプションの保存に失敗しました",
 			);
 			return;
+		}
+
+		// 領収書ファイルがある場合は保存
+		if (receiptFile && savedSubscriptionId) {
+			const receiptResult = await saveSubscriptionReceipt(
+				savedSubscriptionId,
+				receiptFile,
+			);
+			if (receiptResult.error) {
+				toastStore.error(`領収書の保存に失敗しました: ${receiptResult.error}`);
+			}
 		}
 
 		// 成功メッセージ
@@ -252,6 +298,27 @@ const monthlyAmount = $derived(() => {
 			</select>
 			{#if errors.category}
 				<p class="text-red-500 text-sm mt-1">{errors.category}</p>
+			{/if}
+		</div>
+
+		<!-- 領収書アップロード -->
+		<div>
+			<label class="block text-sm font-semibold mb-2">
+				領収書（オプション）
+			</label>
+			<button
+				type="button"
+				onclick={selectReceipt}
+				class="btn bg-gray-200 text-gray-700 w-full"
+			>
+				📎 領収書を選択
+			</button>
+			{#if receiptPreview}
+				<div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+					<p class="text-sm text-gray-600 truncate">
+						📄 {receiptPreview.split('/').pop() || receiptPreview.split('\\').pop()}
+					</p>
+				</div>
 			{/if}
 		</div>
 

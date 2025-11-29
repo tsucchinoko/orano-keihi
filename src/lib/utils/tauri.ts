@@ -68,7 +68,9 @@ export async function handleTauriCommand<T>(
 export async function createExpense(
 	expense: CreateExpenseDto,
 ): Promise<TauriResult<Expense>> {
-	return handleTauriCommand(invoke<Expense>("create_expense", { dto: expense }));
+	return handleTauriCommand(
+		invoke<Expense>("create_expense", { dto: expense }),
+	);
 }
 
 /**
@@ -98,7 +100,9 @@ export async function updateExpense(
 	id: number,
 	expense: UpdateExpenseDto,
 ): Promise<TauriResult<Expense>> {
-	return handleTauriCommand(invoke<Expense>("update_expense", { id, dto: expense }));
+	return handleTauriCommand(
+		invoke<Expense>("update_expense", { id, dto: expense }),
+	);
 }
 
 /**
@@ -141,7 +145,7 @@ export async function createSubscription(
 	subscription: CreateSubscriptionDto,
 ): Promise<TauriResult<Subscription>> {
 	return handleTauriCommand(
-		invoke<Subscription>("create_subscription", { subscription }),
+		invoke<Subscription>("create_subscription", { dto: subscription }),
 	);
 }
 
@@ -171,7 +175,7 @@ export async function updateSubscription(
 	subscription: UpdateSubscriptionDto,
 ): Promise<TauriResult<Subscription>> {
 	return handleTauriCommand(
-		invoke<Subscription>("update_subscription", { id, subscription }),
+		invoke<Subscription>("update_subscription", { id, dto: subscription }),
 	);
 }
 
@@ -198,4 +202,20 @@ export async function getMonthlySubscriptionTotal(): Promise<
 	TauriResult<number>
 > {
 	return handleTauriCommand(invoke<number>("get_monthly_subscription_total"));
+}
+
+/**
+ * サブスクリプションの領収書ファイルを保存する
+ *
+ * @param subscriptionId - サブスクリプションID
+ * @param filePath - 保存するファイルのパス
+ * @returns 保存されたファイルパスまたはエラー
+ */
+export async function saveSubscriptionReceipt(
+	subscriptionId: number,
+	filePath: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("save_subscription_receipt", { subscriptionId, filePath }),
+	);
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
 import { onMount } from "svelte";
-import { SubscriptionList } from "$features/subscriptions";
+import { SubscriptionForm, SubscriptionList } from "$features/subscriptions";
+import { ExpenseForm } from "$features/expenses";
 import type { Expense, Subscription } from "$lib/types";
 import {
 	getExpenses,
@@ -14,6 +15,13 @@ let subscriptions = $state<Subscription[]>([]);
 let monthlySubscriptionTotal = $state<number>(0);
 let loading = $state(true);
 let error = $state<string | null>(null);
+
+// モーダル表示状態（サブスクリプション編集）
+let showEditModal = $state(false);
+let editingSubscription = $state<Subscription | undefined>(undefined);
+
+// モーダル表示状態（経費追加）
+let showExpenseModal = $state(false);
 
 // 今月の経費サマリー
 let currentMonth = $derived(new Date().toISOString().slice(0, 7)); // YYYY-MM形式
@@ -73,17 +81,41 @@ async function loadData() {
 	}
 }
 
-// サブスクリプション編集ハンドラー（TODO: 実装）
-function handleEditSubscription(subscription: Subscription) {
-	console.log("Edit subscription:", subscription);
-	// TODO: サブスクリプション編集モーダルを表示
+// 経費追加ハンドラー
+function handleAddExpense() {
+	showExpenseModal = true;
 }
 
-// サブスクリプションステータス切り替えハンドラー（TODO: 実装）
-async function handleToggleSubscription(id: number) {
-	console.log("Toggle subscription:", id);
-	// TODO: toggleSubscriptionStatus を呼び出す
-	await loadData();
+// 経費フォーム成功時
+function handleExpenseFormSuccess() {
+	showExpenseModal = false;
+	// データを再読み込み
+	loadData();
+}
+
+// 経費フォームキャンセル時
+function handleExpenseFormCancel() {
+	showExpenseModal = false;
+}
+
+// サブスクリプション編集ハンドラー
+function handleEditSubscription(subscription: Subscription) {
+	editingSubscription = subscription;
+	showEditModal = true;
+}
+
+// サブスクリプションフォーム成功時
+function handleSubscriptionFormSuccess() {
+	showEditModal = false;
+	editingSubscription = undefined;
+	// データを再読み込み
+	loadData();
+}
+
+// サブスクリプションフォームキャンセル時
+function handleSubscriptionFormCancel() {
+	showEditModal = false;
+	editingSubscription = undefined;
 }
 
 onMount(() => {
@@ -131,15 +163,24 @@ function getCategoryColor(category: string): string {
 	{:else}
 		<!-- クイックアクションボタン -->
 		<div class="quick-actions">
-			<a href="/expenses" class="action-card gradient-primary">
+			<button
+				type="button"
+				onclick={handleAddExpense}
+				class="action-card gradient-primary"
+			>
 				<div class="action-icon">💰</div>
 				<h3 class="action-title">経費を追加</h3>
 				<p class="action-description">新しい経費を記録する</p>
-			</a>
+			</button>
 			<a href="/expenses" class="action-card gradient-info">
 				<div class="action-icon">📊</div>
 				<h3 class="action-title">経費一覧</h3>
 				<p class="action-description">経費を確認・編集する</p>
+			</a>
+			<a href="/subscriptions" class="action-card gradient-warning">
+				<div class="action-icon">💳</div>
+				<h3 class="action-title">サブスクリプション</h3>
+				<p class="action-description">定期支払いを管理する</p>
 			</a>
 		</div>
 
@@ -188,6 +229,31 @@ function getCategoryColor(category: string): string {
 				</div>
 				<SubscriptionList 
 					onEdit={handleEditSubscription}
+				/>
+			</div>
+		</div>
+	{/if}
+
+	<!-- 経費追加モーダル -->
+	{#if showExpenseModal}
+		<div class="modal-overlay" onclick={handleExpenseFormCancel}>
+			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+				<ExpenseForm
+					onSuccess={handleExpenseFormSuccess}
+					onCancel={handleExpenseFormCancel}
+				/>
+			</div>
+		</div>
+	{/if}
+
+	<!-- サブスクリプション編集モーダル -->
+	{#if showEditModal}
+		<div class="modal-overlay" onclick={handleSubscriptionFormCancel}>
+			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+				<SubscriptionForm
+					subscription={editingSubscription}
+					onSuccess={handleSubscriptionFormSuccess}
+					onCancel={handleSubscriptionFormCancel}
 				/>
 			</div>
 		</div>
@@ -251,6 +317,10 @@ function getCategoryColor(category: string): string {
 		text-align: center;
 		transition: all 0.3s ease-in-out;
 		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+		border: none;
+		cursor: pointer;
+		width: 100%;
+		font-family: inherit;
 	}
 
 	.action-card:hover {
@@ -405,6 +475,55 @@ function getCategoryColor(category: string): string {
 		font-weight: 700;
 	}
 
+	/* モーダル */
+	.modal-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1000;
+		padding: 1rem;
+		backdrop-filter: blur(4px);
+		animation: fadeIn 0.2s ease-out;
+	}
+
+	.modal-content {
+		background: white;
+		border-radius: 16px;
+		padding: 2rem;
+		max-width: 600px;
+		width: 100%;
+		max-height: 90vh;
+		overflow-y: auto;
+		box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+		animation: modalSlideIn 0.3s ease-out;
+	}
+
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes modalSlideIn {
+		from {
+			opacity: 0;
+			transform: translateY(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
 	/* レスポンシブデザイン */
 	@media (max-width: 768px) {
 		.page-title {
@@ -429,6 +548,11 @@ function getCategoryColor(category: string): string {
 
 		.total-amount {
 			font-size: 1.5rem;
+		}
+
+		.modal-content {
+			padding: 1.5rem;
+			max-height: 95vh;
 		}
 	}
 </style>
