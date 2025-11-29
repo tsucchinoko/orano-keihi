@@ -22,7 +22,16 @@ let amount = $state(expense?.amount.toString() || "");
 let category = $state(expense?.category || "");
 let description = $state(expense?.description || "");
 let receiptFile = $state<string | undefined>(undefined);
-let receiptPreview = $state<string | undefined>(expense?.receipt_path);
+let receiptPreview = $state<string | undefined>(undefined);
+
+// 既存の領収書パスを変換してプレビュー表示
+$effect(() => {
+	if (expense?.receipt_path) {
+		import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+			receiptPreview = convertFileSrc(expense.receipt_path!);
+		});
+	}
+});
 
 // バリデーションエラー
 let errors = $state<Record<string, string>>({});
