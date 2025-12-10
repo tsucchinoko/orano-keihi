@@ -4,7 +4,7 @@ mod db;
 mod models;
 mod services;
 
-use commands::{expense_commands, receipt_commands, subscription_commands};
+use commands::{expense_commands, migration_commands, receipt_commands, subscription_commands};
 use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -55,6 +55,11 @@ pub fn run() {
             receipt_commands::delete_receipt,
             receipt_commands::delete_subscription_receipt,
             receipt_commands::test_r2_connection,
+            // マイグレーションコマンド
+            migration_commands::check_migration_status,
+            migration_commands::execute_receipt_url_migration,
+            migration_commands::restore_database_from_backup,
+            migration_commands::list_backup_files,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");
