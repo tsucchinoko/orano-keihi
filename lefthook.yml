@@ -3,19 +3,19 @@ pre-push:
     - name: format frontend
       tags:
         - frontend
-      run: deno task fmt
+      run: pnpm run fmt
     - name: lint frontend
       tags:
         - frontend
-      run: deno task lint
+      run: pnpm run lint
     - name: check frontend 
       tags:
         - frontend
-      run: deno task check
+      run: pnpm run check
     - name: build frontend
       tags:
         - frontend
-      run: deno task build
+      run: pnpm run build
     - name: format backend
       tags:
         - backend

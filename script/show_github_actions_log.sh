@@ -1,0 +1,1 @@
+gh run view $(gh run list --limit 1 --json databaseId -q '.[0].databaseId') --log

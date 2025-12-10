@@ -1,0 +1,26 @@
+{
+	"tasks": {
+		"dev": "deno run -A npm:vite dev",
+		"build": "deno run -A npm:vite build",
+		"preview": "deno run -A npm:vite preview",
+		"check": "deno run -A npm:svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "deno run -A npm:svelte-check --tsconfig ./tsconfig.json --watch",
+		"tauri": "deno run -A npm:@tauri-apps/cli",
+		"fmt": "deno run -A npm:@biomejs/biome format --write .",
+		"fmt:check": "deno run -A npm:@biomejs/biome format .",
+		"lint": "deno run -A npm:@biomejs/biome lint --write .",
+		"lint:check": "deno run -A npm:@biomejs/biome lint ."
+	},
+	"imports": {
+		"@tauri-apps/api": "npm:@tauri-apps/api@^2",
+		"@tauri-apps/plugin-dialog": "npm:@tauri-apps/plugin-dialog@^2.4.2",
+		"@tauri-apps/plugin-opener": "npm:@tauri-apps/plugin-opener@^2"
+	},
+	"compilerOptions": {
+		"allowJs": true,
+		"lib": ["dom", "dom.iterable", "es2022"],
+		"strict": true,
+		"moduleResolution": "bundler"
+	},
+	"exclude": ["node_modules", "build", ".svelte-kit", "src-tauri/target"]
+}

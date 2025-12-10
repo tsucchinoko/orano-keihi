@@ -1,0 +1,18 @@
+# パフォーマンス最適化
+store-dir=~/.pnpm-store
+verify-store-integrity=false
+
+# Hoisting設定
+hoist-pattern[]=*eslint*
+hoist-pattern[]=*prettier*
+hoist-pattern[]=*biome*
+
+# Node.js互換性
+node-linker=isolated
+
+# 自動インストール設定
+auto-install-peers=true
+strict-peer-dependencies=false
+
+# ログレベル設定
+loglevel=warn
