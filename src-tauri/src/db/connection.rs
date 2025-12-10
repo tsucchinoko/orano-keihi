@@ -15,6 +15,7 @@ use tauri::AppHandle;
 /// 新しい初期化システムを使用してデータベースパスを取得する。
 /// この関数は後方互換性のために残されているが、
 /// 新しいコードでは initialize_database を直接使用することを推奨する。
+#[allow(dead_code)] // 後方互換性のために保持
 pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     let init_result = initialize_application(app_handle)?;
     Ok(init_result.database_path)

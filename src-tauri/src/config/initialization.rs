@@ -10,6 +10,7 @@ pub struct InitializationResult {
     /// 初回起動かどうか
     pub is_first_run: bool,
     /// アプリケーションデータディレクトリのパス
+    #[allow(dead_code)] // 将来の機能拡張で使用予定
     pub app_data_dir: PathBuf,
     /// データベースファイルのパス
     pub database_path: PathBuf,
@@ -78,10 +79,7 @@ fn ensure_app_data_directory(app_handle: &AppHandle) -> Result<PathBuf, String> 
         fs::create_dir_all(&app_data_dir)
             .map_err(|e| format!("アプリデータディレクトリの作成に失敗しました: {e}"))?;
 
-        println!(
-            "アプリケーションデータディレクトリを作成しました: {:?}",
-            app_data_dir
-        );
+        println!("アプリケーションデータディレクトリを作成しました: {app_data_dir:?}");
     }
 
     Ok(app_data_dir)
@@ -103,7 +101,7 @@ fn initialize_database_file(database_path: &PathBuf) -> Result<(), String> {
     crate::db::migrations::run_migrations(&conn)
         .map_err(|e| format!("データベースマイグレーションの実行に失敗しました: {e}"))?;
 
-    println!("データベースファイルを初期化しました: {:?}", database_path);
+    println!("データベースファイルを初期化しました: {database_path:?}");
 
     Ok(())
 }
@@ -120,9 +118,9 @@ fn log_first_run_initialization(
     database_path: &PathBuf,
 ) {
     println!("=== アプリケーション初回起動 ===");
-    println!("実行環境: {:?}", environment);
-    println!("アプリデータディレクトリ: {:?}", app_data_dir);
-    println!("データベースファイル: {:?}", database_path);
+    println!("実行環境: {environment:?}");
+    println!("アプリデータディレクトリ: {app_data_dir:?}");
+    println!("データベースファイル: {database_path:?}");
     println!("初期化を開始します...");
 }
 
@@ -181,7 +179,7 @@ mod tests {
             environment: Environment::Production,
         };
 
-        assert_eq!(result.is_first_run, true);
+        assert!(result.is_first_run);
         assert_eq!(result.environment, Environment::Production);
     }
 }
