@@ -87,7 +87,8 @@ build_frontend() {
     
     # deno.jsonの存在確認
     if [ ! -f "deno.json" ]; then
-        log_warning "deno.jsonが見つかりません"
+        log_error "deno.jsonが見つかりません。Denoプロジェクトの設定が必要です。"
+        return 1
     fi
     
     # ビルドの実行

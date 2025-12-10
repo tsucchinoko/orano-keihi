@@ -51,6 +51,10 @@ jobs:
         echo "利用可能なタスクを確認..."
         deno task --help || echo "タスクヘルプの表示に失敗"
         
+        echo "Denoの依存関係をキャッシュ中..."
+        # Denoの依存関係を事前にダウンロード
+        deno cache --reload deno.json || echo "依存関係のキャッシュに失敗"
+        
     - name: ビルドヘルパースクリプトの実行権限設定
       run: chmod +x .github/scripts/build-helper.sh
       

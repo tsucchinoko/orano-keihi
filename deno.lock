@@ -997,6 +997,11 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "npm:@tauri-apps/api@2",
+      "npm:@tauri-apps/plugin-dialog@^2.4.2",
+      "npm:@tauri-apps/plugin-opener@2"
+    ],
     "packageJson": {
       "dependencies": [
         "npm:@biomejs/biome@^2.3.7",
