@@ -1,6 +1,7 @@
 <script lang="ts">
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
+import { getReceiptFromR2, getReceiptOffline } from "$lib/utils/tauri";
 
 // Props
 interface Props {
@@ -20,6 +21,9 @@ let loadError = $state<string | null>(null);
 
 // ファイルデータ（Base64）
 let fileData = $state<string | null>(null);
+
+// オフラインモード状態
+let isOfflineMode = $state(false);
 
 // ファイルタイプ判定
 const isPdf = $derived(() => {
@@ -59,24 +63,58 @@ const dataUrl = $derived.by(() => {
 	return null;
 });
 
-// R2からファイルを取得
+// R2からファイルを取得（オンライン時）
 async function loadFromR2() {
 	if (!receiptUrl) return;
 	
 	isLoading = true;
 	loadError = null;
+	isOfflineMode = false;
 	
 	try {
-		const base64Data = await invoke<string>("get_receipt_from_r2", {
-			receiptUrl: receiptUrl
-		});
-		fileData = base64Data;
+		const result = await getReceiptFromR2(receiptUrl);
+		if (result.error) {
+			throw new Error(result.error);
+		}
+		fileData = result.data || null;
 	} catch (error) {
-		console.error("領収書の取得に失敗しました:", error);
-		loadError = error instanceof Error ? error.message : "領収書の取得に失敗しました";
+		console.error("R2からの領収書取得に失敗しました:", error);
+		// オンライン取得に失敗した場合、オフラインキャッシュを試行
+		await tryLoadFromCache();
 	} finally {
 		isLoading = false;
 	}
+}
+
+// キャッシュからファイルを取得（オフライン時）
+async function tryLoadFromCache() {
+	if (!receiptUrl) return;
+	
+	try {
+		const result = await getReceiptOffline(receiptUrl);
+		if (result.error) {
+			throw new Error(result.error);
+		}
+		fileData = result.data || null;
+		isOfflineMode = true;
+		loadError = null;
+	} catch (error) {
+		console.error("キャッシュからの領収書取得に失敗しました:", error);
+		loadError = error instanceof Error ? error.message : "領収書の取得に失敗しました（オフライン時）";
+		isOfflineMode = false;
+	}
+}
+
+// 手動でオフラインモードを試行
+async function tryOfflineMode() {
+	if (!receiptUrl) return;
+	
+	isLoading = true;
+	loadError = null;
+	
+	await tryLoadFromCache();
+	
+	isLoading = false;
 }
 
 // コンポーネント初期化時にR2からファイルを取得
@@ -135,7 +173,14 @@ function handleBackdropClick(event: MouseEvent) {
 	<div class="relative max-w-6xl max-h-[90vh] w-full bg-white rounded-lg shadow-2xl overflow-hidden">
 		<!-- ヘッダー -->
 		<div class="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
-			<h3 class="text-xl font-bold">領収書</h3>
+			<div class="flex items-center gap-3">
+				<h3 class="text-xl font-bold">領収書</h3>
+				{#if isOfflineMode}
+					<span class="px-2 py-1 text-xs font-semibold bg-orange-100 text-orange-800 rounded-full">
+						オフライン
+					</span>
+				{/if}
+			</div>
 			
 			<!-- コントロールボタン -->
 			<div class="flex items-center gap-2">
@@ -200,13 +245,24 @@ function handleBackdropClick(event: MouseEvent) {
 					<div class="text-6xl mb-4 text-red-500">⚠️</div>
 					<p class="text-lg font-semibold mb-2 text-red-600">読み込みエラー</p>
 					<p class="text-gray-600 mb-4">{loadError}</p>
-					<button
-						type="button"
-						onclick={() => receiptUrl && loadFromR2()}
-						class="btn btn-primary"
-					>
-						再試行
-					</button>
+					<div class="flex gap-2 justify-center">
+						<button
+							type="button"
+							onclick={() => receiptUrl && loadFromR2()}
+							class="btn btn-primary"
+						>
+							再試行
+						</button>
+						{#if receiptUrl && !isOfflineMode}
+							<button
+								type="button"
+								onclick={tryOfflineMode}
+								class="btn bg-orange-500 hover:bg-orange-600 text-white"
+							>
+								オフラインで表示
+							</button>
+						{/if}
+					</div>
 				</div>
 			{:else if isImage()}
 				<!-- 画像表示 -->

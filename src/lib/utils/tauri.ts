@@ -301,3 +301,39 @@ export async function deleteReceiptFromR2(
 export async function testR2Connection(): Promise<TauriResult<boolean>> {
 	return handleTauriCommand(invoke<boolean>("test_r2_connection"));
 }
+
+// ========================================
+// キャッシュ関連のコマンド
+// ========================================
+
+/**
+ * オフライン時に領収書をキャッシュから取得する
+ *
+ * @param receiptUrl - 領収書のHTTPS URL
+ * @returns Base64エンコードされたキャッシュファイルデータまたはエラー
+ */
+export async function getReceiptOffline(
+	receiptUrl: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("get_receipt_offline", { receiptUrl }),
+	);
+}
+
+/**
+ * オンライン復帰時にキャッシュを同期する
+ *
+ * @returns 同期されたキャッシュ数またはエラー
+ */
+export async function syncCacheOnOnline(): Promise<TauriResult<number>> {
+	return handleTauriCommand(invoke<number>("sync_cache_on_online"));
+}
+
+/**
+ * キャッシュ統計情報を取得する
+ *
+ * @returns キャッシュ統計情報またはエラー
+ */
+export async function getCacheStats(): Promise<TauriResult<import("../types").CacheStats>> {
+	return handleTauriCommand(invoke<import("../types").CacheStats>("get_cache_stats"));
+}

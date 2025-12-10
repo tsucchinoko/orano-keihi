@@ -2,7 +2,7 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { saveReceipt, deleteReceipt, uploadReceiptToR2, deleteReceiptFromR2 } from "$lib/utils/tauri";
+import { saveReceipt, deleteReceipt, uploadReceiptToR2, deleteReceiptFromR2, syncCacheOnOnline } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -261,6 +261,17 @@ async function handleSubmit(event: Event) {
 				await uploadReceiptWithProgress(lastExpense.id, receiptFile);
 			}
 		}
+
+		// キャッシュ同期を実行（バックグラウンドで）
+		syncCacheOnOnline().then((result) => {
+			if (result.error) {
+				console.warn("キャッシュ同期エラー:", result.error);
+			} else {
+				console.log("キャッシュ同期完了:", result.data, "個のファイルを処理");
+			}
+		}).catch((error) => {
+			console.warn("キャッシュ同期エラー:", error);
+		});
 
 		// 成功メッセージ
 		toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");

@@ -104,3 +104,11 @@ export interface ReceiptCache {
 	file_size: number;
 	last_accessed: string;
 }
+
+// キャッシュ統計情報型
+export interface CacheStats {
+	total_files: number;
+	total_size_bytes: number;
+	max_size_bytes: number;
+	cache_hit_rate: number;
+}
