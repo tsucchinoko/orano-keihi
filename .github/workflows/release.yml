@@ -58,6 +58,10 @@ jobs:
       with:
         toolchain: stable
         
+    - name: Tauri CLIのインストール
+      run: |
+        cargo install tauri-cli --version "^2.0" --locked
+        
     - name: Cargoキャッシュの設定
       uses: actions/cache@v4
       with:
@@ -80,3 +84,49 @@ jobs:
         # Tauriの依存関係を事前にチェック
         cd src-tauri
         cargo check
+        
+    # Tauriアプリケーションビルド
+    - name: Tauriアプリケーションのビルド
+      run: |
+        echo "Tauriアプリケーションビルドを開始..."
+        cd src-tauri
+        cargo tauri build --verbose
+      env:
+        RUST_BACKTRACE: 1
+        RUST_LOG: debug
+        
+    - name: ビルド成果物の確認
+      run: |
+        echo "ビルド成果物を確認中..."
+        find src-tauri/target/release/bundle -name "*.dmg" -type f
+        ls -la src-tauri/target/release/bundle/dmg/ || echo "dmgディレクトリが見つかりません"
+        
+    # dmgファイルの成果物アップロード
+    - name: dmgファイルのアップロード
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-dmg-${{ github.sha }}
+        path: src-tauri/target/release/bundle/dmg/*.dmg
+        if-no-files-found: error
+        retention-days: 30
+        
+    - name: ビルド失敗時のログ収集
+      if: failure()
+      run: |
+        echo "ビルドが失敗しました。詳細ログを収集中..."
+        echo "=== Cargo ビルドログ ==="
+        find src-tauri/target -name "*.log" -type f -exec cat {} \; || echo "ログファイルが見つかりません"
+        echo "=== 環境情報 ==="
+        rustc --version
+        cargo --version
+        deno --version
+        echo "=== ディスク使用量 ==="
+        df -h
+        echo "=== メモリ使用量 ==="
+        free -h || vm_stat
+        
+    - name: ビルド完了通知
+      if: success()
+      run: |
+        echo "ビルド完了: $(date)"
+        echo "成果物がアップロードされました"
