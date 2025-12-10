@@ -1,6 +1,6 @@
 mod commands;
 mod config;
-mod db;
+pub mod db;
 mod models;
 mod services;
 
