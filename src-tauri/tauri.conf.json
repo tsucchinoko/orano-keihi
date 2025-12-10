@@ -54,7 +54,7 @@
 			"frameworks": [],
 			"minimumSystemVersion": "10.15",
 			"exceptionDomain": "",
-			"signingIdentity": "Developer ID Application",
+			"signingIdentity": null,
 			"providerShortName": null,
 			"entitlements": "entitlements.plist",
 			"dmg": {
