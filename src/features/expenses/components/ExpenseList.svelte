@@ -7,7 +7,7 @@ import ExpenseItem from "./ExpenseItem.svelte";
 // Props
 interface Props {
 	onEdit: (expense: Expense) => void;
-	onViewReceipt?: (receiptPath: string) => void;
+	onViewReceipt?: (receiptUrl?: string, receiptPath?: string) => void;
 }
 
 let { onEdit, onViewReceipt }: Props = $props();

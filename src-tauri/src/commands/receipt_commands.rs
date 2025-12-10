@@ -317,10 +317,11 @@ pub async fn upload_receipt_to_r2(
     Ok(receipt_url)
 }
 
-/// R2から領収書を取得する
+/// R2から領収書を取得する（キャッシュ対応）
 ///
 /// # 引数
 /// * `receipt_url` - 領収書のHTTPS URL
+/// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
 ///
 /// # 戻り値
@@ -328,11 +329,91 @@ pub async fn upload_receipt_to_r2(
 #[tauri::command]
 pub async fn get_receipt_from_r2(
     receipt_url: String,
-    _state: State<'_, AppState>,
+    app: AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
+    // URLの検証
+    if !receipt_url.starts_with("https://") {
+        return Err("無効なreceipt_URLです（HTTPS URLである必要があります）".to_string());
+    }
+
+    // キャッシュマネージャーを初期化
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
+    
+    let cache_dir = app_data_dir.join("receipt_cache");
+    let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100); // 100MB制限
+
+    // まずキャッシュから取得を試行
+    let cached_result = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        cache_manager.get_cached_file(&receipt_url, &db)
+    };
+
+    match cached_result {
+        Ok(Some(cached_data)) => {
+            // キャッシュヒット - Base64エンコードして返却
+            use base64::{Engine as _, engine::general_purpose};
+            let base64_data = general_purpose::STANDARD.encode(&cached_data);
+            return Ok(base64_data);
+        }
+        Ok(None) => {
+            // キャッシュミス - R2から取得
+        }
+        Err(e) => {
+            // キャッシュエラーはログに記録するが、R2からの取得を続行
+            eprintln!("キャッシュ取得エラー: {}", e);
+        }
+    }
+
+    // R2から取得
+    let file_data = match download_from_r2(&receipt_url).await {
+        Ok(data) => data,
+        Err(e) => {
+            // R2からの取得に失敗した場合のフォールバック
+            return Err(format!("領収書の取得に失敗しました: {}。ネットワーク接続を確認してください。", e));
+        }
+    };
+
+    // 取得したファイルをキャッシュに保存（エラーは無視）
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        
+        if let Err(e) = cache_manager.cache_file(&receipt_url, file_data.clone(), &db) {
+            eprintln!("キャッシュ保存エラー: {}", e);
+        }
+
+        // キャッシュサイズ管理（エラーは無視）
+        if let Err(e) = cache_manager.manage_cache_size(&db) {
+            eprintln!("キャッシュサイズ管理エラー: {}", e);
+        }
+    }
+
+    // Base64エンコードして返却
+    use base64::{Engine as _, engine::general_purpose};
+    let base64_data = general_purpose::STANDARD.encode(&file_data);
+    Ok(base64_data)
+}
+
+/// R2からファイルをダウンロードする内部関数
+///
+/// # 引数
+/// * `receipt_url` - 領収書のHTTPS URL
+///
+/// # 戻り値
+/// ファイルデータ、または失敗時はエラーメッセージ
+async fn download_from_r2(receipt_url: &str) -> Result<Vec<u8>, String> {
     // URLからファイルキーを抽出
     let url_parts: Vec<&str> = receipt_url.split('/').collect();
-    if url_parts.len() < 2 {
+    if url_parts.len() < 4 {
         return Err("無効なreceipt_URLです".to_string());
     }
 
@@ -345,37 +426,66 @@ pub async fn get_receipt_from_r2(
         .await
         .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
 
+    // ファイルキーを抽出（receipts/expense_id/filename形式を想定）
+    let file_key = if url_parts.len() >= 6 {
+        // https://account_id.r2.cloudflarestorage.com/bucket_name/receipts/expense_id/filename
+        url_parts[url_parts.len() - 3..].join("/")
+    } else {
+        return Err("URLからファイルキーを抽出できません".to_string());
+    };
+
     // Presigned URLを生成（1時間有効）
-    let file_key = url_parts[url_parts.len() - 2..].join("/");
     let presigned_url = client
         .generate_presigned_url(&file_key, Duration::from_secs(3600))
         .await
         .map_err(|e| format!("Presigned URL生成に失敗しました: {}", e))?;
 
-    // HTTPクライアントでファイルをダウンロード
-    let response = reqwest::get(&presigned_url)
-        .await
-        .map_err(|e| format!("ファイルダウンロードに失敗しました: {}", e))?;
+    // リトライ機能付きでHTTPクライアントでファイルをダウンロード
+    let mut attempts = 0;
+    const MAX_RETRIES: u32 = 3;
 
-    if !response.status().is_success() {
-        return Err(format!("ファイルダウンロードエラー: {}", response.status()));
+    loop {
+        match reqwest::get(&presigned_url).await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.bytes().await {
+                        Ok(file_data) => return Ok(file_data.to_vec()),
+                        Err(e) => {
+                            if attempts < MAX_RETRIES {
+                                attempts += 1;
+                                let delay = Duration::from_secs(2_u64.pow(attempts));
+                                tokio::time::sleep(delay).await;
+                                continue;
+                            } else {
+                                return Err(format!("ファイルデータの取得に失敗しました: {}", e));
+                            }
+                        }
+                    }
+                } else if response.status().as_u16() == 404 {
+                    return Err("領収書ファイルが見つかりません".to_string());
+                } else {
+                    return Err(format!("ファイルダウンロードエラー: {}", response.status()));
+                }
+            }
+            Err(e) => {
+                if attempts < MAX_RETRIES {
+                    attempts += 1;
+                    let delay = Duration::from_secs(2_u64.pow(attempts));
+                    tokio::time::sleep(delay).await;
+                    continue;
+                } else {
+                    return Err(format!("ファイルダウンロードに失敗しました: {}", e));
+                }
+            }
+        }
     }
-
-    let file_data = response
-        .bytes()
-        .await
-        .map_err(|e| format!("ファイルデータの取得に失敗しました: {}", e))?;
-
-    // Base64エンコードして返却
-    use base64::{Engine as _, engine::general_purpose};
-    let base64_data = general_purpose::STANDARD.encode(&file_data);
-    Ok(base64_data)
 }
 
-/// R2から領収書を削除する
+/// R2から領収書を削除する（キャッシュ対応）
 ///
 /// # 引数
 /// * `expense_id` - 経費ID
+/// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
 ///
 /// # 戻り値
@@ -383,6 +493,7 @@ pub async fn get_receipt_from_r2(
 #[tauri::command]
 pub async fn delete_receipt_from_r2(
     expense_id: i64,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     // 現在のreceipt_urlを取得
@@ -397,40 +508,110 @@ pub async fn delete_receipt_from_r2(
     };
 
     if let Some(receipt_url) = current_receipt_url {
-        // URLからファイルキーを抽出
-        let url_parts: Vec<&str> = receipt_url.split('/').collect();
-        if url_parts.len() >= 2 {
-            let file_key = url_parts[url_parts.len() - 2..].join("/");
-
-            // R2設定を読み込み
-            let config = R2Config::from_env()
-                .map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
-
-            // R2クライアントを初期化
-            let client = R2Client::new(config)
-                .await
-                .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
-
-            // R2からファイルを削除
-            client
-                .delete_file(&file_key)
-                .await
-                .map_err(|e| format!("R2からのファイル削除に失敗しました: {}", e))?;
-        }
-    }
-
-    // データベースからreceipt_urlを削除（空文字列に設定）
-    {
-        let db = state
-            .db
-            .lock()
-            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+        // キャッシュマネージャーを初期化
+        let app_data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
         
-        expense_operations::set_receipt_url(&db, expense_id, "".to_string())
-            .map_err(|e| format!("データベースからのreceipt_url削除に失敗しました: {}", e))?;
+        let cache_dir = app_data_dir.join("receipt_cache");
+        let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
+
+        // R2からファイルを削除（トランザクション的な削除処理：R2→DB順）
+        let deletion_result = delete_from_r2_with_retry(&receipt_url).await;
+        
+        match deletion_result {
+            Ok(_) => {
+                // R2削除成功 - キャッシュからも削除
+                {
+                    let db = state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+                    
+                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
+                        eprintln!("キャッシュ削除エラー: {}", e);
+                    }
+                } // dbのスコープを終了
+
+                // データベースからreceipt_urlを削除
+                {
+                    let db = state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+                    
+                    expense_operations::set_receipt_url(&db, expense_id, "".to_string())
+                        .map_err(|e| format!("データベースからのreceipt_url削除に失敗しました: {}", e))?;
+                }
+
+                // 削除操作のログ記録
+                let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
+                println!("領収書削除完了: expense_id={}, receipt_url={}, timestamp={}", 
+                    expense_id, receipt_url, now);
+            }
+            Err(e) => {
+                // R2削除失敗 - データベースの状態は変更しない
+                return Err(format!("R2からのファイル削除に失敗しました。データベースの状態は保持されます: {}", e));
+            }
+        }
+    } else {
+        // receipt_urlが存在しない場合は何もしない
+        println!("削除対象の領収書URLが存在しません: expense_id={}", expense_id);
     }
 
     Ok(true)
+}
+
+/// R2からファイルを削除する内部関数（リトライ機能付き）
+///
+/// # 引数
+/// * `receipt_url` - 領収書のHTTPS URL
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラーメッセージ
+async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> {
+    // URLからファイルキーを抽出
+    let url_parts: Vec<&str> = receipt_url.split('/').collect();
+    if url_parts.len() < 4 {
+        return Err("無効なreceipt_URLです".to_string());
+    }
+
+    // ファイルキーを抽出
+    let file_key = if url_parts.len() >= 6 {
+        url_parts[url_parts.len() - 3..].join("/")
+    } else {
+        return Err("URLからファイルキーを抽出できません".to_string());
+    };
+
+    // R2設定を読み込み
+    let config = R2Config::from_env()
+        .map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+
+    // R2クライアントを初期化
+    let client = R2Client::new(config)
+        .await
+        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
+
+    // リトライ機能付きでR2からファイルを削除
+    let mut attempts = 0;
+    const MAX_RETRIES: u32 = 3;
+
+    loop {
+        match client.delete_file(&file_key).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                if attempts < MAX_RETRIES {
+                    attempts += 1;
+                    let delay = Duration::from_secs(2_u64.pow(attempts));
+                    tokio::time::sleep(delay).await;
+                    continue;
+                } else {
+                    return Err(format!("R2削除エラー（最大リトライ回数に到達）: {}", e));
+                }
+            }
+        }
+    }
 }
 
 /// R2接続をテストする

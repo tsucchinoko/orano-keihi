@@ -6,6 +6,7 @@ import {
 	ExpenseList,
 	ExpenseForm,
 } from "$features/expenses";
+import { ReceiptViewer } from "$features/receipts";
 import type { Expense } from "$lib/types";
 import { getExpenses, deleteExpense } from "$lib/utils/tauri";
 
@@ -19,6 +20,11 @@ let error = $state<string | null>(null);
 // モーダル状態
 let showExpenseForm = $state(false);
 let editingExpense = $state<Expense | undefined>(undefined);
+
+// 領収書表示状態
+let showReceiptViewer = $state(false);
+let currentReceiptUrl = $state<string | undefined>(undefined);
+let currentReceiptPath = $state<string | undefined>(undefined);
 
 // フィルタリングされた経費
 let filteredExpenses = $derived(() => {
@@ -117,6 +123,20 @@ function handleFormCancel() {
 	editingExpense = undefined;
 }
 
+// 領収書表示ハンドラー
+function handleViewReceipt(receiptUrl?: string, receiptPath?: string) {
+	currentReceiptUrl = receiptUrl;
+	currentReceiptPath = receiptPath;
+	showReceiptViewer = true;
+}
+
+// 領収書表示を閉じる
+function handleCloseReceiptViewer() {
+	showReceiptViewer = false;
+	currentReceiptUrl = undefined;
+	currentReceiptPath = undefined;
+}
+
 // 初期データ読み込み
 onMount(() => {
 	loadExpenses();
@@ -167,6 +187,7 @@ onMount(() => {
 		{:else}
 			<ExpenseList
 				onEdit={handleEditExpense}
+				onViewReceipt={handleViewReceipt}
 			/>
 		{/if}
 	</div>
@@ -198,6 +219,15 @@ onMount(() => {
 				</div>
 			</div>
 		</div>
+	{/if}
+
+	<!-- 領収書表示モーダル -->
+	{#if showReceiptViewer && (currentReceiptUrl || currentReceiptPath)}
+		<ReceiptViewer
+			receiptUrl={currentReceiptUrl}
+			receiptPath={currentReceiptPath}
+			onClose={handleCloseReceiptViewer}
+		/>
 	{/if}
 </div>
 

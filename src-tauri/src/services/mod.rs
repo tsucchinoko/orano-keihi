@@ -2,6 +2,7 @@
 
 pub mod r2_client;
 pub mod config;
+pub mod cache_manager;
 
 // エラー型の定義
 use thiserror::Error;
