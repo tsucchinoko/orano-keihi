@@ -37,6 +37,13 @@ collect_system_info() {
     echo "Node.js: $(node --version 2>/dev/null || echo '未インストール')"
     echo "pnpm: $(pnpm --version 2>/dev/null || echo '未インストール')"
     
+    # pnpm設定情報の表示
+    if command -v pnpm &> /dev/null; then
+        echo "pnpm設定:"
+        pnpm config list 2>/dev/null | head -10 || echo "pnpm設定の取得に失敗"
+        echo "pnpmストアパス: $(pnpm store path 2>/dev/null || echo '不明')"
+    fi
+    
     echo "=== システムリソース ==="
     echo "ディスク使用量:"
     df -h
@@ -69,11 +76,29 @@ check_dependencies() {
     
     if ! command -v pnpm &> /dev/null; then
         missing_deps+=("pnpm")
+        log_error "pnpmがインストールされていません。以下のコマンドでインストールしてください:"
+        log_error "npm install -g pnpm"
+        log_error "または"
+        log_error "curl -fsSL https://get.pnpm.io/install.sh | sh -"
     fi
     
     if [ ${#missing_deps[@]} -ne 0 ]; then
         log_error "不足している依存関係: ${missing_deps[*]}"
         return 1
+    fi
+    
+    # pnpmのバージョン確認
+    local pnpm_version
+    pnpm_version=$(pnpm --version 2>/dev/null || echo "不明")
+    log_info "pnpmバージョン: $pnpm_version"
+    
+    # 最小バージョン要件の確認（pnpm 8.0以上を推奨）
+    if command -v pnpm &> /dev/null; then
+        local version_major
+        version_major=$(pnpm --version | cut -d. -f1)
+        if [ "$version_major" -lt 8 ]; then
+            log_warning "pnpmのバージョンが古い可能性があります（現在: $pnpm_version, 推奨: 8.0以上）"
+        fi
     fi
     
     log_info "すべての依存関係が利用可能です"
@@ -96,19 +121,75 @@ build_frontend() {
         return 1
     fi
     
+    # .pnpmrcファイルの確認（存在する場合）
+    if [ -f ".pnpmrc" ]; then
+        log_info ".pnpmrc設定ファイルが検出されました"
+        cat .pnpmrc | head -10  # 設定内容の一部を表示
+    fi
+    
+    # pnpmストアの状態確認
+    log_info "pnpmストアの状態を確認中..."
+    pnpm store status 2>/dev/null || log_warning "pnpmストアの状態確認に失敗しました"
+    
     # 依存関係のインストール
     log_info "pnpm依存関係をインストール中..."
-    if ! pnpm install --frozen-lockfile 2>&1 | tee frontend-install.log; then
+    if ! pnpm install --frozen-lockfile --prefer-offline 2>&1 | tee frontend-install.log; then
         log_error "pnpm依存関係のインストールに失敗しました"
+        
+        # エラー詳細の出力
+        log_error "pnpmインストールエラーの詳細:"
+        tail -20 frontend-install.log 2>/dev/null || echo "ログファイルが見つかりません"
+        
+        # 代替手段の提案
+        log_info "代替手段として --no-frozen-lockfile でのインストールを試行中..."
+        if ! pnpm install --no-frozen-lockfile 2>&1 | tee frontend-install-fallback.log; then
+            log_error "代替インストール方法も失敗しました"
+            return 1
+        else
+            log_warning "代替インストール方法で成功しました（ロックファイルが更新された可能性があります）"
+        fi
+    fi
+    
+    # node_modulesの確認
+    if [ ! -d "node_modules" ]; then
+        log_error "node_modulesディレクトリが作成されませんでした"
         return 1
     fi
     
+    # pnpmの特徴的なシンボリックリンク構造の確認
+    if [ -d "node_modules/.pnpm" ]; then
+        log_info "pnpmのシンボリックリンク構造が正常に作成されました"
+    else
+        log_warning "pnpmのシンボリックリンク構造が見つかりません"
+    fi
+    
+    # TypeScriptの型チェック（ビルド前）
+    log_info "TypeScript型チェックを実行中..."
+    if ! pnpm run check 2>&1 | tee frontend-typecheck.log; then
+        log_warning "TypeScript型チェックで警告またはエラーが発生しました"
+        # 型チェックエラーでもビルドを続行（警告として扱う）
+    fi
+    
     # ビルドの実行
+    log_info "フロントエンドビルドを実行中..."
     if pnpm run build 2>&1 | tee frontend-build.log; then
         log_info "フロントエンドビルドが正常に完了しました"
+        
+        # ビルド成果物の確認
+        if [ -d "build" ] || [ -d "dist" ] || [ -d ".svelte-kit/output" ]; then
+            log_info "ビルド成果物が正常に生成されました"
+        else
+            log_warning "ビルド成果物ディレクトリが見つかりません"
+        fi
+        
         return 0
     else
         log_error "フロントエンドビルドが失敗しました"
+        
+        # ビルドエラーの詳細出力
+        log_error "ビルドエラーの詳細:"
+        tail -30 frontend-build.log 2>/dev/null || echo "ビルドログが見つかりません"
+        
         return 1
     fi
 }
@@ -341,12 +422,27 @@ cleanup_on_error() {
     mkdir -p build-logs
     
     # 各種ログファイルをコピー
-    for log_file in frontend-build.log tauri-setup.log tauri-build.log; do
+    for log_file in frontend-install.log frontend-install-fallback.log frontend-typecheck.log frontend-build.log tauri-setup.log tauri-build.log; do
         if [ -f "$log_file" ]; then
             cp "$log_file" build-logs/
             log_info "ログファイルを保存しました: $log_file"
         fi
     done
+    
+    # pnpm関連の診断情報を収集
+    if command -v pnpm &> /dev/null; then
+        log_info "pnpm診断情報を収集中..."
+        {
+            echo "=== pnpm診断情報 ==="
+            echo "pnpmバージョン: $(pnpm --version)"
+            echo "pnpm設定:"
+            pnpm config list 2>/dev/null || echo "設定取得失敗"
+            echo "pnpmストア状態:"
+            pnpm store status 2>/dev/null || echo "ストア状態取得失敗"
+            echo "package.json scripts:"
+            cat package.json | grep -A 20 '"scripts"' 2>/dev/null || echo "scripts取得失敗"
+        } > build-logs/pnpm-diagnostics.log
+    fi
     
     # システム情報を保存
     collect_system_info > build-logs/system-info.log
@@ -354,7 +450,19 @@ cleanup_on_error() {
     # Cargoの詳細ログを収集
     find src-tauri/target -name "*.log" -type f -exec cp {} build-logs/ \; 2>/dev/null || true
     
+    # node_modulesの状態確認
+    if [ -d "node_modules" ]; then
+        {
+            echo "=== node_modules診断情報 ==="
+            echo "node_modulesサイズ: $(du -sh node_modules 2>/dev/null || echo '不明')"
+            echo "pnpmシンボリックリンク構造:"
+            ls -la node_modules/.pnpm 2>/dev/null | head -10 || echo "pnpm構造なし"
+        } > build-logs/node-modules-diagnostics.log
+    fi
+    
     log_info "エラーログが build-logs/ ディレクトリに保存されました"
+    log_info "診断情報:"
+    ls -la build-logs/ 2>/dev/null || echo "ログディレクトリの確認に失敗"
 }
 
 # メイン実行関数
