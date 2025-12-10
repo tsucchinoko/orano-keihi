@@ -194,6 +194,9 @@ jobs:
         cp tauri-setup.log build-logs/ 2>/dev/null || echo "Tauriセットアップログなし"
         cp tauri-build.log build-logs/ 2>/dev/null || echo "Tauriビルドログなし"
         
+        # リリースノートを収集（成功時のみ）
+        cp release-notes.md build-logs/ 2>/dev/null || echo "リリースノートなし"
+        
         # システム情報を記録
         echo "=== システム情報 ===" > build-logs/system-info.log
         echo "日時: $(date)" >> build-logs/system-info.log
@@ -208,6 +211,16 @@ jobs:
         
         # Cargoの詳細ログを収集
         find src-tauri/target -name "*.log" -type f -exec cp {} build-logs/ \; 2>/dev/null || echo "追加Cargoログなし"
+        
+        # リリース情報を記録（mainブランチの場合）
+        if [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.event_name }}" = "push" ]; then
+          echo "=== リリース情報 ===" > build-logs/release-info.log
+          echo "リリースタグ: ${{ steps.version.outputs.release_tag || 'N/A' }}" >> build-logs/release-info.log
+          echo "リリース名: ${{ steps.version.outputs.release_name || 'N/A' }}" >> build-logs/release-info.log
+          echo "dmgファイル: ${{ steps.dmg-path.outputs.dmg_name || 'N/A' }}" >> build-logs/release-info.log
+          echo "ファイルサイズ: ${{ steps.dmg-path.outputs.dmg_size || 'N/A' }}" >> build-logs/release-info.log
+          echo "リリース作成: ${{ steps.check-release.outputs.release_exists == 'false' && '成功' || '既存リリース存在' }}" >> build-logs/release-info.log
+        fi
         
         echo "ログ収集完了"
         ls -la build-logs/
@@ -234,6 +247,230 @@ jobs:
           echo "::warning::mainブランチでビルドが失敗しました。至急確認が必要です。"
         fi
         
+    # GitHubリリース自動化
+    - name: バージョン情報の取得
+      if: success() && github.ref_name == 'main' && github.event_name == 'push'
+      id: version
+      run: |
+        # package.jsonからバージョンを取得
+        PACKAGE_VERSION=$(cat package.json | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g' | tr -d ' ')
+        echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+        
+        # Tauri設定からバージョンを取得
+        TAURI_VERSION=$(cat src-tauri/tauri.conf.json | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g' | tr -d ' ')
+        echo "tauri_version=$TAURI_VERSION" >> $GITHUB_OUTPUT
+        
+        # リリースタグを生成（v接頭辞付き）
+        RELEASE_TAG="v$PACKAGE_VERSION"
+        echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+        
+        # リリース名を生成
+        RELEASE_NAME="オラの経費だゾ $RELEASE_TAG"
+        echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+        
+        echo "バージョン情報:"
+        echo "Package Version: $PACKAGE_VERSION"
+        echo "Tauri Version: $TAURI_VERSION"
+        echo "Release Tag: $RELEASE_TAG"
+        echo "Release Name: $RELEASE_NAME"
+        
+    - name: dmgファイルパスの取得
+      if: success() && github.ref_name == 'main' && github.event_name == 'push'
+      id: dmg-path
+      run: |
+        # dmgファイルのパスを取得
+        DMG_PATH=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" -type f | head -1)
+        if [ -z "$DMG_PATH" ]; then
+          echo "::error::dmgファイルが見つかりません"
+          exit 1
+        fi
+        
+        DMG_NAME=$(basename "$DMG_PATH")
+        echo "dmg_path=$DMG_PATH" >> $GITHUB_OUTPUT
+        echo "dmg_name=$DMG_NAME" >> $GITHUB_OUTPUT
+        
+        # ファイルサイズを取得
+        DMG_SIZE=$(ls -lh "$DMG_PATH" | awk '{print $5}')
+        echo "dmg_size=$DMG_SIZE" >> $GITHUB_OUTPUT
+        
+        echo "dmgファイル情報:"
+        echo "Path: $DMG_PATH"
+        echo "Name: $DMG_NAME"
+        echo "Size: $DMG_SIZE"
+        
+    - name: 既存リリースの確認
+      if: success() && github.ref_name == 'main' && github.event_name == 'push'
+      id: check-release
+      run: |
+        # 既存のリリースタグが存在するかチェック
+        RELEASE_TAG="${{ steps.version.outputs.release_tag }}"
+        
+        # GitHub APIを使用してリリースの存在を確認
+        RELEASE_EXISTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" \
+          | jq -r '.tag_name // empty')
+        
+        if [ -n "$RELEASE_EXISTS" ]; then
+          echo "release_exists=true" >> $GITHUB_OUTPUT
+          echo "既存のリリース $RELEASE_TAG が見つかりました"
+        else
+          echo "release_exists=false" >> $GITHUB_OUTPUT
+          echo "新しいリリース $RELEASE_TAG を作成します"
+        fi
+        
+    - name: リリースノートの自動生成
+      if: success() && github.ref_name == 'main' && github.event_name == 'push' && steps.check-release.outputs.release_exists == 'false'
+      id: generate-release-notes
+      run: |
+        # 前回のリリースタグを取得
+        PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        
+        # リリースノートのベース部分を作成
+        RELEASE_NOTES="## 🎉 新しいリリース: ${{ steps.version.outputs.release_tag }}
+
+        ### 📦 ダウンロード
+        - **MacOS**: ${{ steps.dmg-path.outputs.dmg_name }} (${{ steps.dmg-path.outputs.dmg_size }})
+
+        ### 📋 ビルド情報
+        - **コミット**: ${{ github.sha }}
+        - **ビルド日時**: $(date -Iseconds)
+        - **ビルド者**: ${{ github.actor }}"
+        
+        # コミットメッセージから変更履歴を生成
+        if [ -n "$PREVIOUS_TAG" ]; then
+          echo "前回のリリース: $PREVIOUS_TAG"
+          
+          # 前回のリリースから今回までのコミットを取得
+          COMMITS=$(git log --pretty=format:"- %s (%an)" ${PREVIOUS_TAG}..HEAD --no-merges)
+          
+          if [ -n "$COMMITS" ]; then
+            RELEASE_NOTES="$RELEASE_NOTES
+
+        ### 📝 変更履歴
+        $COMMITS"
+          fi
+          
+          # 機能追加、バグ修正、その他に分類
+          FEATURES=$(git log --pretty=format:"- %s" ${PREVIOUS_TAG}..HEAD --no-merges --grep="feat\|feature\|add\|新機能\|追加" --grep="^feat" --grep="^add")
+          FIXES=$(git log --pretty=format:"- %s" ${PREVIOUS_TAG}..HEAD --no-merges --grep="fix\|bug\|修正\|バグ" --grep="^fix")
+          OTHERS=$(git log --pretty=format:"- %s" ${PREVIOUS_TAG}..HEAD --no-merges --invert-grep --grep="feat\|feature\|add\|新機能\|追加\|fix\|bug\|修正\|バグ")
+          
+          if [ -n "$FEATURES" ]; then
+            RELEASE_NOTES="$RELEASE_NOTES
+
+        ### ✨ 新機能・改善
+        $FEATURES"
+          fi
+          
+          if [ -n "$FIXES" ]; then
+            RELEASE_NOTES="$RELEASE_NOTES
+
+        ### 🐛 バグ修正
+        $FIXES"
+          fi
+          
+          if [ -n "$OTHERS" ]; then
+            RELEASE_NOTES="$RELEASE_NOTES
+
+        ### 🔧 その他の変更
+        $OTHERS"
+          fi
+        else
+          echo "初回リリースです"
+          RELEASE_NOTES="$RELEASE_NOTES
+
+        ### 📝 変更履歴
+        - 初回リリース"
+        fi
+        
+        # 統計情報を追加
+        if [ -n "$PREVIOUS_TAG" ]; then
+          COMMIT_COUNT=$(git rev-list --count ${PREVIOUS_TAG}..HEAD)
+          FILES_CHANGED=$(git diff --name-only ${PREVIOUS_TAG}..HEAD | wc -l)
+          
+          RELEASE_NOTES="$RELEASE_NOTES
+
+        ### 📊 統計情報
+        - コミット数: $COMMIT_COUNT
+        - 変更ファイル数: $FILES_CHANGED"
+        fi
+        
+        # インストール方法と注意事項を追加
+        RELEASE_NOTES="$RELEASE_NOTES
+
+        ### 🔧 インストール方法
+        1. 上記のdmgファイルをダウンロード
+        2. dmgファイルをダブルクリックしてマウント
+        3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ
+        4. アプリケーションを起動
+
+        ### ⚠️ 注意事項
+        - 初回起動時にmacOSのセキュリティ警告が表示される場合があります
+        - システム環境設定 > セキュリティとプライバシーから許可してください
+        - 開発環境とプロダクション環境では異なるデータベースファイルが使用されます
+
+        ### 🔗 関連リンク
+        - [ソースコード](${{ github.server_url }}/${{ github.repository }})
+        - [問題報告](${{ github.server_url }}/${{ github.repository }}/issues)
+        - [ディスカッション](${{ github.server_url }}/${{ github.repository }}/discussions)
+
+        ---
+
+        このリリースは自動的に生成されました。  
+        生成日時: $(date -Iseconds)"
+        
+        # リリースノートをファイルに保存（デバッグ用）
+        echo "$RELEASE_NOTES" > release-notes.md
+        
+        # GitHub Outputに設定（改行を適切にエスケープ）
+        echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+        echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "リリースノートが生成されました"
+        
+    - name: GitHubリリースの作成
+      if: success() && github.ref_name == 'main' && github.event_name == 'push' && steps.check-release.outputs.release_exists == 'false'
+      id: create-release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.version.outputs.release_tag }}
+        release_name: ${{ steps.version.outputs.release_name }}
+        body: ${{ steps.generate-release-notes.outputs.release_notes }}
+        draft: false
+        prerelease: false
+        
+    - name: dmgファイルのリリースアセット添付
+      if: success() && github.ref_name == 'main' && github.event_name == 'push' && steps.check-release.outputs.release_exists == 'false'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create-release.outputs.upload_url }}
+        asset_path: ${{ steps.dmg-path.outputs.dmg_path }}
+        asset_name: ${{ steps.dmg-path.outputs.dmg_name }}
+        asset_content_type: application/x-apple-diskimage
+        
+    - name: 既存リリースへのアセット更新
+      if: success() && github.ref_name == 'main' && github.event_name == 'push' && steps.check-release.outputs.release_exists == 'true'
+      run: |
+        echo "::warning::既存のリリース ${{ steps.version.outputs.release_tag }} が存在します"
+        echo "::notice::新しいビルドは成果物として保存されました: macos-dmg-${{ github.sha }}"
+        echo "手動でリリースを更新する場合は、以下のファイルを使用してください:"
+        echo "ファイル: ${{ steps.dmg-path.outputs.dmg_path }}"
+        echo "サイズ: ${{ steps.dmg-path.outputs.dmg_size }}"
+        
+    - name: リリース作成成功通知
+      if: success() && github.ref_name == 'main' && github.event_name == 'push' && steps.check-release.outputs.release_exists == 'false'
+      run: |
+        echo "::notice title=リリース作成成功::GitHubリリース ${{ steps.version.outputs.release_tag }} が正常に作成されました"
+        echo "::notice::リリース名: ${{ steps.version.outputs.release_name }}"
+        echo "::notice::dmgファイル: ${{ steps.dmg-path.outputs.dmg_name }}"
+        echo "::notice::ファイルサイズ: ${{ steps.dmg-path.outputs.dmg_size }}"
+        echo "::notice::リリースURL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.version.outputs.release_tag }}"
+        
     - name: ビルド成功通知
       if: success()
       run: |
@@ -243,6 +480,15 @@ jobs:
         echo "::notice::ブランチ: ${{ github.ref_name }}"
         echo "ビルド完了: $(date)"
         echo "成果物がアップロードされました"
+        
+        # mainブランチの場合はリリース情報も表示
+        if [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ steps.check-release.outputs.release_exists }}" = "false" ]; then
+            echo "::notice::GitHubリリースが作成されました: ${{ steps.version.outputs.release_tag }}"
+          else
+            echo "::notice::既存リリースが存在するため、成果物のみ保存されました"
+          fi
+        fi
         
     # 高度な通知機能（オプション）
     - name: Slack通知の送信
@@ -257,10 +503,11 @@ jobs:
           ブランチ: ${{ github.ref_name }}
           実行者: ${{ github.actor }}
           ${{ job.status == 'success' && '成果物がダウンロード可能です' || 'ログを確認してください' }}
+          ${{ job.status == 'success' && github.ref_name == 'main' && github.event_name == 'push' && steps.check-release.outputs.release_exists == 'false' && format('🎉 新しいリリースが作成されました: {0}', steps.version.outputs.release_tag) || '' }}
         webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
       continue-on-error: true  # 通知失敗でもビルドは成功扱い
       
-    - name: メール通知の送信
+    - name: メール通知の送信（失敗時）
       if: failure() && github.ref_name == 'main'
       uses: dawidd6/action-send-mail@v3
       with:
@@ -283,4 +530,37 @@ jobs:
           詳細ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           
           至急確認をお願いします。
+      continue-on-error: true
+      
+    - name: メール通知の送信（リリース成功時）
+      if: success() && github.ref_name == 'main' && github.event_name == 'push' && steps.check-release.outputs.release_exists == 'false'
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.MAIL_USERNAME }}
+        password: ${{ secrets.MAIL_PASSWORD }}
+        subject: '🎉 新しいリリース作成完了 - ${{ steps.version.outputs.release_tag }}'
+        to: ${{ secrets.NOTIFICATION_EMAIL }}
+        from: 'GitHub Actions <noreply@github.com>'
+        body: |
+          新しいMacOSリリースが正常に作成されました。
+          
+          📦 リリース情報:
+          - リリース名: ${{ steps.version.outputs.release_name }}
+          - タグ: ${{ steps.version.outputs.release_tag }}
+          - dmgファイル: ${{ steps.dmg-path.outputs.dmg_name }}
+          - ファイルサイズ: ${{ steps.dmg-path.outputs.dmg_size }}
+          
+          🔗 ダウンロード:
+          ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.version.outputs.release_tag }}
+          
+          📋 ビルド情報:
+          - リポジトリ: ${{ github.repository }}
+          - ブランチ: ${{ github.ref_name }}
+          - コミット: ${{ github.sha }}
+          - 実行者: ${{ github.actor }}
+          - 実行時刻: ${{ github.event.head_commit.timestamp }}
+          
+          リリースが正常に完了しました。
       continue-on-error: true
