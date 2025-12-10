@@ -4,16 +4,16 @@
 	"description": "",
 	"type": "module",
 	"scripts": {
-		"dev": "deno task dev",
-		"build": "deno task build",
-		"preview": "deno task preview",
-		"check": "deno task check",
-		"check:watch": "deno task check:watch",
-		"tauri": "deno task tauri",
-		"fmt": "deno task fmt",
-		"fmt:check": "deno task fmt:check",
-		"lint": "deno task lint",
-		"lint:check": "deno task lint:check"
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"check": "svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
+		"tauri": "tauri",
+		"fmt": "biome format --write .",
+		"fmt:check": "biome format .",
+		"lint": "biome lint --write .",
+		"lint:check": "biome lint ."
 	},
 	"license": "MIT",
 	"dependencies": {
