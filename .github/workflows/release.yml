@@ -10,6 +10,8 @@ on:
 # 環境変数の設定
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+  RUST_LOG: debug
 
 jobs:
   build-macos:
@@ -46,11 +48,32 @@ jobs:
       run: |
         echo "Denoの依存関係を確認中..."
         deno --version
+        echo "利用可能なタスクを確認..."
+        deno task --help || echo "タスクヘルプの表示に失敗"
         
+    - name: ビルドヘルパースクリプトの実行権限設定
+      run: chmod +x .github/scripts/build-helper.sh
+      
     - name: フロントエンドビルドの実行
+      id: frontend-build
       run: |
-        echo "フロントエンドビルドを開始..."
-        deno task build
+        # ヘルパースクリプトを使用してフロントエンドビルドを実行
+        source .github/scripts/build-helper.sh
+        build_frontend
+      continue-on-error: false
+      
+    - name: フロントエンドビルド失敗時の詳細ログ
+      if: failure() && steps.frontend-build.outcome == 'failure'
+      run: |
+        echo "=== フロントエンドビルド失敗の詳細 ==="
+        echo "ビルドログ:"
+        cat frontend-build.log || echo "ビルドログファイルが見つかりません"
+        echo "=== package.jsonの確認 ==="
+        cat package.json || echo "package.jsonが見つかりません"
+        echo "=== Denoの設定確認 ==="
+        cat deno.json || echo "deno.jsonが見つかりません"
+        echo "=== ファイル構造確認 ==="
+        find . -name "*.svelte" -o -name "*.ts" -o -name "*.js" | head -20
         
     # Rust環境セットアップ
     - name: Rustツールチェーンのセットアップ
@@ -59,8 +82,13 @@ jobs:
         toolchain: stable
         
     - name: Tauri CLIのインストール
-      run: |
-        cargo install tauri-cli --version "^2.0" --locked
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_on: error
+        command: |
+          cargo install tauri-cli --version "^2.0" --locked
         
     - name: Cargoキャッシュの設定
       uses: actions/cache@v4
@@ -76,6 +104,7 @@ jobs:
           ${{ runner.os }}-cargo-
           
     - name: Tauriビルド環境の準備
+      id: tauri-setup
       run: |
         echo "Rustバージョン確認..."
         rustc --version
@@ -83,26 +112,60 @@ jobs:
         echo "Tauriビルド環境を準備中..."
         # Tauriの依存関係を事前にチェック
         cd src-tauri
-        cargo check
+        echo "Cargo.tomlの確認..."
+        cat Cargo.toml
+        echo "依存関係のチェック..."
+        cargo check 2>&1 | tee ../tauri-setup.log
+        echo "Tauriビルド環境の準備が完了しました"
+      continue-on-error: false
+      
+    - name: Tauriセットアップ失敗時の詳細ログ
+      if: failure() && steps.tauri-setup.outcome == 'failure'
+      run: |
+        echo "=== Tauriセットアップ失敗の詳細 ==="
+        echo "セットアップログ:"
+        cat tauri-setup.log || echo "セットアップログファイルが見つかりません"
+        echo "=== Cargo.lockの確認 ==="
+        cat src-tauri/Cargo.lock | head -50 || echo "Cargo.lockが見つかりません"
+        echo "=== tauri.conf.jsonの確認 ==="
+        cat src-tauri/tauri.conf.json || echo "tauri.conf.jsonが見つかりません"
         
     # Tauriアプリケーションビルド
     - name: Tauriアプリケーションのビルド
+      id: tauri-build
       run: |
-        echo "Tauriアプリケーションビルドを開始..."
-        cd src-tauri
-        cargo tauri build --verbose
-      env:
-        RUST_BACKTRACE: 1
-        RUST_LOG: debug
+        # ヘルパースクリプトを使用してTauriビルドを実行
+        source .github/scripts/build-helper.sh
+        build_tauri
+      continue-on-error: false
+      
+    - name: Tauriビルド失敗時の詳細ログ
+      if: failure() && steps.tauri-build.outcome == 'failure'
+      run: |
+        echo "=== Tauriビルド失敗の詳細 ==="
+        echo "ビルドログ:"
+        cat tauri-build.log || echo "ビルドログファイルが見つかりません"
+        echo "=== コンパイルエラーの詳細 ==="
+        find src-tauri/target -name "*.log" -type f -exec echo "=== {} ===" \; -exec cat {} \; || echo "追加ログファイルが見つかりません"
+        echo "=== 環境変数の確認 ==="
+        env | grep -E "(RUST|CARGO|TAURI)" || echo "関連環境変数が見つかりません"
         
     - name: ビルド成果物の確認
+      id: artifact-check
       run: |
-        echo "ビルド成果物を確認中..."
-        find src-tauri/target/release/bundle -name "*.dmg" -type f
-        ls -la src-tauri/target/release/bundle/dmg/ || echo "dmgディレクトリが見つかりません"
+        # ヘルパースクリプトを使用して成果物を確認
+        source .github/scripts/build-helper.sh
+        if verify_artifacts; then
+          echo "artifact_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "artifact_exists=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+      continue-on-error: false
         
     # dmgファイルの成果物アップロード
     - name: dmgファイルのアップロード
+      if: steps.artifact-check.outputs.artifact_exists == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: macos-dmg-${{ github.sha }}
@@ -110,23 +173,114 @@ jobs:
         if-no-files-found: error
         retention-days: 30
         
-    - name: ビルド失敗時のログ収集
+    - name: 成果物アップロード失敗時の詳細ログ
+      if: failure() && steps.artifact-check.outputs.artifact_exists == 'false'
+      run: |
+        echo "=== 成果物生成失敗の詳細 ==="
+        echo "バンドルプロセスの確認..."
+        find src-tauri/target/release -type f -name "*" | grep -E "\.(app|dmg|pkg)$" || echo "MacOS用成果物が見つかりません"
+        echo "=== ビルド設定の確認 ==="
+        cat src-tauri/tauri.conf.json | grep -A 20 -B 5 "bundle" || echo "バンドル設定が見つかりません"
+        
+    # ログファイルの収集とアップロード
+    - name: ビルドログの収集
+      if: always()  # 成功・失敗に関わらず実行
+      run: |
+        echo "ビルドログを収集中..."
+        mkdir -p build-logs
+        
+        # 各ステップのログファイルを収集
+        cp frontend-build.log build-logs/ 2>/dev/null || echo "フロントエンドビルドログなし"
+        cp tauri-setup.log build-logs/ 2>/dev/null || echo "Tauriセットアップログなし"
+        cp tauri-build.log build-logs/ 2>/dev/null || echo "Tauriビルドログなし"
+        
+        # システム情報を記録
+        echo "=== システム情報 ===" > build-logs/system-info.log
+        echo "日時: $(date)" >> build-logs/system-info.log
+        echo "OS: $(uname -a)" >> build-logs/system-info.log
+        echo "Rust: $(rustc --version)" >> build-logs/system-info.log
+        echo "Cargo: $(cargo --version)" >> build-logs/system-info.log
+        echo "Deno: $(deno --version)" >> build-logs/system-info.log
+        echo "ディスク使用量:" >> build-logs/system-info.log
+        df -h >> build-logs/system-info.log
+        echo "メモリ使用量:" >> build-logs/system-info.log
+        vm_stat >> build-logs/system-info.log 2>/dev/null || echo "メモリ情報取得失敗" >> build-logs/system-info.log
+        
+        # Cargoの詳細ログを収集
+        find src-tauri/target -name "*.log" -type f -exec cp {} build-logs/ \; 2>/dev/null || echo "追加Cargoログなし"
+        
+        echo "ログ収集完了"
+        ls -la build-logs/
+        
+    - name: ビルドログのアップロード
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ github.sha }}
+        path: build-logs/
+        retention-days: 7
+        
+    - name: ビルド失敗時の通知
       if: failure()
       run: |
-        echo "ビルドが失敗しました。詳細ログを収集中..."
-        echo "=== Cargo ビルドログ ==="
-        find src-tauri/target -name "*.log" -type f -exec cat {} \; || echo "ログファイルが見つかりません"
-        echo "=== 環境情報 ==="
-        rustc --version
-        cargo --version
-        deno --version
-        echo "=== ディスク使用量 ==="
-        df -h
-        echo "=== メモリ使用量 ==="
-        free -h || vm_stat
+        echo "::error title=ビルド失敗::MacOSビルドプロセスが失敗しました"
+        echo "::error::詳細なログはbuild-logs-${{ github.sha }}成果物を確認してください"
+        echo "::error::失敗したコミット: ${{ github.sha }}"
+        echo "::error::失敗したブランチ: ${{ github.ref_name }}"
         
-    - name: ビルド完了通知
+        # GitHub Issues APIを使用した通知（オプション）
+        if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "main" ]; then
+          echo "mainブランチでのビルド失敗を検出しました"
+          echo "::warning::mainブランチでビルドが失敗しました。至急確認が必要です。"
+        fi
+        
+    - name: ビルド成功通知
       if: success()
       run: |
+        echo "::notice title=ビルド成功::MacOSビルドが正常に完了しました"
+        echo "::notice::成果物: macos-dmg-${{ github.sha }}"
+        echo "::notice::コミット: ${{ github.sha }}"
+        echo "::notice::ブランチ: ${{ github.ref_name }}"
         echo "ビルド完了: $(date)"
         echo "成果物がアップロードされました"
+        
+    # 高度な通知機能（オプション）
+    - name: Slack通知の送信
+      if: always() && (success() || failure())
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#ci-cd'
+        text: |
+          MacOSビルド ${{ job.status == 'success' && '成功' || '失敗' }}
+          コミット: ${{ github.sha }}
+          ブランチ: ${{ github.ref_name }}
+          実行者: ${{ github.actor }}
+          ${{ job.status == 'success' && '成果物がダウンロード可能です' || 'ログを確認してください' }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+      continue-on-error: true  # 通知失敗でもビルドは成功扱い
+      
+    - name: メール通知の送信
+      if: failure() && github.ref_name == 'main'
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.MAIL_USERNAME }}
+        password: ${{ secrets.MAIL_PASSWORD }}
+        subject: '[緊急] MacOSビルド失敗 - ${{ github.repository }}'
+        to: ${{ secrets.NOTIFICATION_EMAIL }}
+        from: 'GitHub Actions <noreply@github.com>'
+        body: |
+          MacOSビルドプロセスが失敗しました。
+          
+          リポジトリ: ${{ github.repository }}
+          ブランチ: ${{ github.ref_name }}
+          コミット: ${{ github.sha }}
+          実行者: ${{ github.actor }}
+          実行時刻: ${{ github.event.head_commit.timestamp }}
+          
+          詳細ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          至急確認をお願いします。
+      continue-on-error: true
