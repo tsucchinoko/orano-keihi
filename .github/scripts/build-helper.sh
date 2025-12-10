@@ -34,7 +34,8 @@ collect_system_info() {
     echo "=== 開発環境情報 ==="
     echo "Rust: $(rustc --version 2>/dev/null || echo '未インストール')"
     echo "Cargo: $(cargo --version 2>/dev/null || echo '未インストール')"
-    echo "Deno: $(deno --version 2>/dev/null || echo '未インストール')"
+    echo "Node.js: $(node --version 2>/dev/null || echo '未インストール')"
+    echo "pnpm: $(pnpm --version 2>/dev/null || echo '未インストール')"
     
     echo "=== システムリソース ==="
     echo "ディスク使用量:"
@@ -43,7 +44,7 @@ collect_system_info() {
     vm_stat 2>/dev/null || echo "メモリ情報取得失敗"
     
     echo "=== 環境変数 ==="
-    env | grep -E "(RUST|CARGO|TAURI|DENO)" | sort || echo "関連環境変数なし"
+    env | grep -E "(RUST|CARGO|TAURI|NODE|PNPM)" | sort || echo "関連環境変数なし"
 }
 
 # 依存関係の確認
@@ -61,9 +62,13 @@ check_dependencies() {
         missing_deps+=("cargo")
     fi
     
-    # Denoの確認
-    if ! command -v deno &> /dev/null; then
-        missing_deps+=("deno")
+    # Node.jsとpnpmの確認
+    if ! command -v node &> /dev/null; then
+        missing_deps+=("node")
+    fi
+    
+    if ! command -v pnpm &> /dev/null; then
+        missing_deps+=("pnpm")
     fi
     
     if [ ${#missing_deps[@]} -ne 0 ]; then
@@ -85,14 +90,21 @@ build_frontend() {
         return 1
     fi
     
-    # deno.jsonの存在確認
-    if [ ! -f "deno.json" ]; then
-        log_error "deno.jsonが見つかりません。Denoプロジェクトの設定が必要です。"
+    # pnpm-lock.yamlの存在確認
+    if [ ! -f "pnpm-lock.yaml" ]; then
+        log_error "pnpm-lock.yamlが見つかりません。pnpm installを実行してください。"
+        return 1
+    fi
+    
+    # 依存関係のインストール
+    log_info "pnpm依存関係をインストール中..."
+    if ! pnpm install --frozen-lockfile 2>&1 | tee frontend-install.log; then
+        log_error "pnpm依存関係のインストールに失敗しました"
         return 1
     fi
     
     # ビルドの実行
-    if deno task build 2>&1 | tee frontend-build.log; then
+    if pnpm run build 2>&1 | tee frontend-build.log; then
         log_info "フロントエンドビルドが正常に完了しました"
         return 0
     else

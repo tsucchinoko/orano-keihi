@@ -28,32 +28,37 @@ jobs:
         echo "コミットハッシュ: ${{ github.sha }}"
         echo "ブランチ: ${{ github.ref_name }}"
         
-    # Node.js/Deno環境セットアップ
-    - name: Denoのセットアップ
-      uses: denoland/setup-deno@v2
+    # Node.js/pnpm環境セットアップ
+    - name: Node.jsのセットアップ
+      uses: actions/setup-node@v4
       with:
-        deno-version: v2.x
+        node-version: '20'
         
-    - name: Denoキャッシュの設定
+    - name: pnpmのセットアップ
+      uses: pnpm/action-setup@v4
+      with:
+        version: 8
+        
+    - name: pnpmキャッシュの設定
       uses: actions/cache@v4
       with:
         path: |
-          ~/.cache/deno
-          ~/.deno
-        key: ${{ runner.os }}-deno-${{ hashFiles('**/deno.lock') }}
+          ~/.pnpm-store
+          node_modules
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
         restore-keys: |
-          ${{ runner.os }}-deno-
+          ${{ runner.os }}-pnpm-
           
     - name: フロントエンド依存関係のインストール
       run: |
-        echo "Denoの依存関係を確認中..."
-        deno --version
-        echo "利用可能なタスクを確認..."
-        deno task --help || echo "タスクヘルプの表示に失敗"
+        echo "pnpmの依存関係を確認中..."
+        pnpm --version
+        echo "利用可能なスクリプトを確認..."
+        pnpm run --help || echo "スクリプトヘルプの表示に失敗"
         
-        echo "Denoの依存関係をキャッシュ中..."
-        # Denoの依存関係を事前にダウンロード
-        deno cache --reload deno.json || echo "依存関係のキャッシュに失敗"
+        echo "pnpmの依存関係をインストール中..."
+        # pnpmの依存関係をインストール
+        pnpm install --frozen-lockfile || echo "依存関係のインストールに失敗"
         
     - name: ビルドヘルパースクリプトの実行権限設定
       run: chmod +x .github/scripts/build-helper.sh
@@ -74,8 +79,8 @@ jobs:
         cat frontend-build.log || echo "ビルドログファイルが見つかりません"
         echo "=== package.jsonの確認 ==="
         cat package.json || echo "package.jsonが見つかりません"
-        echo "=== Denoの設定確認 ==="
-        cat deno.json || echo "deno.jsonが見つかりません"
+        echo "=== pnpmの設定確認 ==="
+        cat pnpm-lock.yaml | head -20 || echo "pnpm-lock.yamlが見つかりません"
         echo "=== ファイル構造確認 ==="
         find . -name "*.svelte" -o -name "*.ts" -o -name "*.js" | head -20
         
@@ -551,14 +556,21 @@ jobs:
         echo "OS: $(uname -a)" >> build-logs/system-info.log
         echo "Rust: $(rustc --version)" >> build-logs/system-info.log
         echo "Cargo: $(cargo --version)" >> build-logs/system-info.log
-        echo "Deno: $(deno --version)" >> build-logs/system-info.log
+        echo "pnpm: $(pnpm --version)" >> build-logs/system-info.log
+        echo "Node.js: $(node --version)" >> build-logs/system-info.log
         echo "ディスク使用量:" >> build-logs/system-info.log
         df -h >> build-logs/system-info.log
         echo "メモリ使用量:" >> build-logs/system-info.log
         vm_stat >> build-logs/system-info.log 2>/dev/null || echo "メモリ情報取得失敗" >> build-logs/system-info.log
+        echo "pnpm設定:" >> build-logs/system-info.log
+        cat .pnpmrc >> build-logs/system-info.log 2>/dev/null || echo ".pnpmrcが見つかりません" >> build-logs/system-info.log
         
         # Cargoの詳細ログを収集
         find src-tauri/target -name "*.log" -type f -exec cp {} build-logs/ \; 2>/dev/null || echo "追加Cargoログなし"
+        
+        # pnpm設定情報を記録
+        echo "=== pnpm設定情報 ===" >> build-logs/system-info.log
+        pnpm config list >> build-logs/system-info.log 2>/dev/null || echo "pnpm設定取得失敗" >> build-logs/system-info.log
         
         # リリース情報を記録（mainブランチの場合）
         if [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.event_name }}" = "push" ]; then
