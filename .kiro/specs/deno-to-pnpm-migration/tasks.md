@@ -80,7 +80,7 @@
   - lefthook.ymlのpnpmコマンド使用確認
   - _要件: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 8. Deno関連ファイルの削除
+- [x] 8. Deno関連ファイルの削除
   - deno.jsonファイルの削除
   - deno.lockファイルの削除
   - .gitignoreからDeno関連設定の削除

@@ -50,12 +50,13 @@ pub fn get_user(user_id: i64) -> Option<User> {
 ## コマンド実行規則
 
 ### フロントエンド開発
-- フロントエンド関連のコマンド（npm、npx、node等）は必ず`deno`を使用すること
+- フロントエンド関連のコマンドは`pnpm`を使用すること
 - 例：
-  - `npm run dev` → `deno task dev`
-  - `npm run build` → `deno task build`
-  - `npm run check` → `deno task check`
-  - `npx svelte-check` → `deno task check`
+  - `pnpm dev` - 開発サーバーの起動
+  - `pnpm build` - プロダクションビルド
+  - `pnpm check` - TypeScript型チェック
+  - `pnpm fmt` - コードフォーマット
+  - `pnpm lint` - コードリンティング
 
 ### バックエンド開発
 - Rust/Tauri関連のコマンドは通常通り`cargo`を使用すること
