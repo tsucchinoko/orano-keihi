@@ -1,0 +1,82 @@
+name: MacOS Release Build
+
+# mainブランチプッシュ時にトリガー
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# 環境変数の設定
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos:
+    # MacOSランナー環境の設定
+    runs-on: macos-latest
+    
+    steps:
+    - name: リポジトリのチェックアウト
+      uses: actions/checkout@v4
+      
+    - name: ビルド情報の出力
+      run: |
+        echo "ビルド開始: $(date)"
+        echo "コミットハッシュ: ${{ github.sha }}"
+        echo "ブランチ: ${{ github.ref_name }}"
+        
+    # Node.js/Deno環境セットアップ
+    - name: Denoのセットアップ
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+        
+    - name: Denoキャッシュの設定
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/deno
+          ~/.deno
+        key: ${{ runner.os }}-deno-${{ hashFiles('**/deno.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-deno-
+          
+    - name: フロントエンド依存関係のインストール
+      run: |
+        echo "Denoの依存関係を確認中..."
+        deno --version
+        
+    - name: フロントエンドビルドの実行
+      run: |
+        echo "フロントエンドビルドを開始..."
+        deno task build
+        
+    # Rust環境セットアップ
+    - name: Rustツールチェーンのセットアップ
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        
+    - name: Cargoキャッシュの設定
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          src-tauri/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+          
+    - name: Tauriビルド環境の準備
+      run: |
+        echo "Rustバージョン確認..."
+        rustc --version
+        cargo --version
+        echo "Tauriビルド環境を準備中..."
+        # Tauriの依存関係を事前にチェック
+        cd src-tauri
+        cargo check
