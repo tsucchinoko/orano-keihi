@@ -2,7 +2,7 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { saveReceipt } from "$lib/utils/tauri";
+import { saveReceipt, deleteReceipt } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -22,7 +22,16 @@ let amount = $state(expense?.amount.toString() || "");
 let category = $state(expense?.category || "");
 let description = $state(expense?.description || "");
 let receiptFile = $state<string | undefined>(undefined);
-let receiptPreview = $state<string | undefined>(expense?.receipt_path);
+let receiptPreview = $state<string | undefined>(undefined);
+
+// 既存の領収書パスを変換してプレビュー表示
+$effect(() => {
+	if (expense?.receipt_path) {
+		import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+			receiptPreview = convertFileSrc(expense.receipt_path!);
+		});
+	}
+});
 
 // バリデーションエラー
 let errors = $state<Record<string, string>>({});
@@ -103,6 +112,31 @@ async function selectReceipt() {
 	} catch (error) {
 		console.error("領収書ファイルの選択に失敗しました:", error);
 		toastStore.error("領収書ファイルの選択に失敗しました");
+	}
+}
+
+// 領収書削除
+async function deleteReceiptFile() {
+	if (!expense?.id) {
+		toastStore.error("経費IDが見つかりません");
+		return;
+	}
+
+	try {
+		const result = await deleteReceipt(expense.id);
+		if (result.error) {
+			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
+			return;
+		}
+
+		// プレビューとファイル選択をクリア
+		receiptPreview = undefined;
+		receiptFile = undefined;
+
+		toastStore.success("領収書を削除しました");
+	} catch (error) {
+		console.error("領収書削除エラー:", error);
+		toastStore.error("領収書の削除に失敗しました");
 	}
 }
 
@@ -263,16 +297,28 @@ async function handleSubmit(event: Event) {
 		<!-- 領収書アップロード -->
 		<div>
 			<label for="receipt-upload" class="block text-sm font-semibold mb-2">
-				領収書
+				領収書（オプション）
 			</label>
-			<button
-				id="receipt-upload"
-				type="button"
-				onclick={selectReceipt}
-				class="btn btn-info w-full"
-			>
-				📎 領収書を選択
-			</button>
+			<div class="flex gap-2">
+				<button
+					id="receipt-upload"
+					type="button"
+					onclick={selectReceipt}
+					class="btn btn-info flex-1"
+				>
+					📎 領収書を選択
+				</button>
+				{#if (receiptPreview || receiptFile) && expense}
+					<button
+						type="button"
+						onclick={deleteReceiptFile}
+						class="btn bg-red-500 text-white px-4"
+						title="領収書を削除"
+					>
+						🗑️
+					</button>
+				{/if}
+			</div>
 			{#if receiptPreview}
 				<div class="mt-3">
 					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>
@@ -283,7 +329,11 @@ async function handleSubmit(event: Event) {
 					/>
 				</div>
 			{:else if receiptFile}
-				<p class="text-sm text-gray-600 mt-2">📄 {receiptFile.split('/').pop()}</p>
+				<div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+					<p class="text-sm text-gray-600 truncate">
+						📄 {receiptFile.split('/').pop() || receiptFile.split('\\').pop()}
+					</p>
+				</div>
 			{/if}
 		</div>
 

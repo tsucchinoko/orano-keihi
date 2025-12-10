@@ -2,7 +2,10 @@
 import type { Subscription } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { saveSubscriptionReceipt } from "$lib/utils/tauri";
+import {
+	saveSubscriptionReceipt,
+	deleteSubscriptionReceipt,
+} from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -26,7 +29,16 @@ let startDate = $state(
 );
 let category = $state(subscription?.category || "");
 let receiptFile = $state<string | undefined>(undefined);
-let receiptPreview = $state<string | undefined>(subscription?.receipt_path);
+let receiptPreview = $state<string | undefined>(undefined);
+
+// 既存の領収書パスを変換してプレビュー表示
+$effect(() => {
+	if (subscription?.receipt_path) {
+		import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+			receiptPreview = convertFileSrc(subscription.receipt_path!);
+		});
+	}
+});
 
 // バリデーションエラー
 let errors = $state<Record<string, string>>({});
@@ -92,12 +104,45 @@ async function selectReceipt() {
 			],
 		});
 
-		if (selected) {
+		if (selected && typeof selected === "string") {
 			receiptFile = selected;
-			receiptPreview = selected;
+			// 画像プレビュー用（PDFの場合はプレビューなし）
+			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
+				// Tauriのファイルパスを変換してプレビュー表示
+				const { convertFileSrc } = await import("@tauri-apps/api/core");
+				receiptPreview = convertFileSrc(selected);
+			} else {
+				receiptPreview = undefined;
+			}
 		}
 	} catch (error) {
-		toastStore.error(`ファイル選択エラー: ${error}`);
+		console.error("領収書ファイルの選択に失敗しました:", error);
+		toastStore.error("領収書ファイルの選択に失敗しました");
+	}
+}
+
+// 領収書削除
+async function deleteReceipt() {
+	if (!subscription?.id) {
+		toastStore.error("サブスクリプションIDが見つかりません");
+		return;
+	}
+
+	try {
+		const result = await deleteSubscriptionReceipt(subscription.id);
+		if (result.error) {
+			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
+			return;
+		}
+
+		// プレビューとファイル選択をクリア
+		receiptPreview = undefined;
+		receiptFile = undefined;
+
+		toastStore.success("領収書を削除しました");
+	} catch (error) {
+		console.error("領収書削除エラー:", error);
+		toastStore.error("領収書の削除に失敗しました");
 	}
 }
 
@@ -303,20 +348,42 @@ const monthlyAmount = $derived(() => {
 
 		<!-- 領収書アップロード -->
 		<div>
-			<label class="block text-sm font-semibold mb-2">
+			<label for="receipt-upload" class="block text-sm font-semibold mb-2">
 				領収書（オプション）
 			</label>
-			<button
-				type="button"
-				onclick={selectReceipt}
-				class="btn bg-gray-200 text-gray-700 w-full"
-			>
-				📎 領収書を選択
-			</button>
+			<div class="flex gap-2">
+				<button
+					id="receipt-upload"
+					type="button"
+					onclick={selectReceipt}
+					class="btn bg-gray-200 text-gray-700 flex-1"
+				>
+					📎 領収書を選択
+				</button>
+				{#if (receiptPreview || receiptFile) && subscription}
+					<button
+						type="button"
+						onclick={deleteReceipt}
+						class="btn bg-red-500 text-white px-4"
+						title="領収書を削除"
+					>
+						🗑️
+					</button>
+				{/if}
+			</div>
 			{#if receiptPreview}
+				<div class="mt-3">
+					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>
+					<img
+						src={receiptPreview}
+						alt="領収書プレビュー"
+						class="max-w-full h-auto max-h-48 rounded-lg border-2 border-gray-200"
+					/>
+				</div>
+			{:else if receiptFile}
 				<div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
 					<p class="text-sm text-gray-600 truncate">
-						📄 {receiptPreview.split('/').pop() || receiptPreview.split('\\').pop()}
+						📄 {receiptFile.split('/').pop() || receiptFile.split('\\').pop()}
 					</p>
 				</div>
 			{/if}

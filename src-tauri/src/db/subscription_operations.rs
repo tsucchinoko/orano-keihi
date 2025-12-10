@@ -189,7 +189,7 @@ pub fn get_monthly_subscription_total(conn: &Connection) -> Result<f64> {
 /// # 引数
 /// * `conn` - データベース接続
 /// * `id` - サブスクリプションID
-/// * `receipt_path` - 領収書ファイルパス
+/// * `receipt_path` - 領収書ファイルパス（空文字列の場合はNULLに設定）
 ///
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラー
@@ -197,10 +197,36 @@ pub fn set_receipt_path(conn: &Connection, id: i64, receipt_path: String) -> Res
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
+    // 空文字列の場合はNULLに設定
+    let path_value = if receipt_path.is_empty() {
+        None
+    } else {
+        Some(receipt_path)
+    };
+
     conn.execute(
         "UPDATE subscriptions SET receipt_path = ?1, updated_at = ?2 WHERE id = ?3",
-        params![receipt_path, now, id],
+        params![path_value, now, id],
     )?;
 
     Ok(())
+}
+/// サブスクリプションの領収書パスを取得する
+///
+/// # 引数
+/// * `conn` - データベース接続
+/// * `id` - サブスクリプションID
+///
+/// # 戻り値
+/// 領収書パス（存在する場合）、または失敗時はエラー
+pub fn get_receipt_path(conn: &Connection, id: i64) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT receipt_path FROM subscriptions WHERE id = ?1",
+        params![id],
+        |row| {
+            let path: Option<String> = row.get(0)?;
+            // 空文字列の場合はNoneとして扱う
+            Ok(path.filter(|p| !p.is_empty()))
+        },
+    )
 }

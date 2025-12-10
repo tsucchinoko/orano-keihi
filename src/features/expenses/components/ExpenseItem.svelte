@@ -13,9 +13,16 @@ interface Props {
 let { expense, onEdit, onDelete, onViewReceipt }: Props = $props();
 
 // 領収書のサムネイルURL
-const receiptThumbnailUrl = $derived(
-	expense.receipt_path ? convertFileSrc(expense.receipt_path) : undefined,
-);
+let receiptThumbnailUrl = $state<string | undefined>(undefined);
+
+// 領収書パスを変換
+$effect(() => {
+	if (expense.receipt_path) {
+		receiptThumbnailUrl = convertFileSrc(expense.receipt_path);
+	} else {
+		receiptThumbnailUrl = undefined;
+	}
+});
 
 // 削除確認ダイアログの状態
 let showDeleteConfirm = $state(false);

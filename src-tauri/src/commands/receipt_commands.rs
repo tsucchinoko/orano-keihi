@@ -167,3 +167,76 @@ pub async fn save_subscription_receipt(
 
     Ok(receipt_path_str)
 }
+
+/// 経費の領収書を削除する
+///
+/// # 引数
+/// * `expense_id` - 経費ID
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_receipt(expense_id: i64, state: State<'_, AppState>) -> Result<bool, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 現在の領収書パスを取得
+    let current_receipt_path = expense_operations::get_receipt_path(&db, expense_id)
+        .map_err(|e| format!("領収書パスの取得に失敗しました: {e}"))?;
+
+    if let Some(receipt_path) = current_receipt_path {
+        // ファイルが存在する場合は削除
+        let path = Path::new(&receipt_path);
+        if path.exists() {
+            fs::remove_file(path)
+                .map_err(|e| format!("領収書ファイルの削除に失敗しました: {e}"))?;
+        }
+    }
+
+    // データベースから領収書パスを削除（空文字に設定）
+    expense_operations::set_receipt_path(&db, expense_id, "".to_string())
+        .map_err(|e| format!("データベースからの領収書パス削除に失敗しました: {e}"))?;
+
+    Ok(true)
+}
+
+/// サブスクリプションの領収書を削除する
+///
+/// # 引数
+/// * `subscription_id` - サブスクリプションID
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_subscription_receipt(
+    subscription_id: i64,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 現在の領収書パスを取得
+    let current_receipt_path = subscription_operations::get_receipt_path(&db, subscription_id)
+        .map_err(|e| format!("領収書パスの取得に失敗しました: {e}"))?;
+
+    if let Some(receipt_path) = current_receipt_path {
+        // ファイルが存在する場合は削除
+        let path = Path::new(&receipt_path);
+        if path.exists() {
+            fs::remove_file(path)
+                .map_err(|e| format!("領収書ファイルの削除に失敗しました: {e}"))?;
+        }
+    }
+
+    // データベースから領収書パスを削除（空文字に設定）
+    subscription_operations::set_receipt_path(&db, subscription_id, "".to_string())
+        .map_err(|e| format!("データベースからの領収書パス削除に失敗しました: {e}"))?;
+
+    Ok(true)
+}
