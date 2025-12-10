@@ -1,3 +1,4 @@
+use crate::config::{get_database_filename, get_environment};
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
@@ -9,6 +10,10 @@ use tauri::{AppHandle, Manager};
 ///
 /// # 戻り値
 /// データベースファイルのパス、または失敗時はエラーメッセージ
+///
+/// # 動作
+/// 実行環境（開発/プロダクション）に応じて適切なデータベースファイル名を選択し、
+/// アプリデータディレクトリ内のパスを返す。ディレクトリが存在しない場合は自動作成する。
 pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = app_handle
         .path()
@@ -19,7 +24,13 @@ pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&app_data_dir)
         .map_err(|e| format!("アプリデータディレクトリの作成に失敗しました: {e}"))?;
 
-    Ok(app_data_dir.join("expenses.db"))
+    // 現在の実行環境を取得
+    let env = get_environment();
+
+    // 環境に応じたデータベースファイル名を取得
+    let db_filename = get_database_filename(env);
+
+    Ok(app_data_dir.join(db_filename))
 }
 
 /// データベース接続を初期化し、マイグレーションを実行する
