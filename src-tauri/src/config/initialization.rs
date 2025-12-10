@@ -33,25 +33,25 @@ pub struct InitializationResult {
 pub fn initialize_application(app_handle: &AppHandle) -> Result<InitializationResult, String> {
     // 現在の実行環境を取得
     let environment = get_environment();
-    
+
     // アプリケーションデータディレクトリを取得・作成
     let app_data_dir = ensure_app_data_directory(app_handle)?;
-    
+
     // データベースファイルパスを構築
     let db_filename = get_database_filename(environment.clone());
     let database_path = app_data_dir.join(db_filename);
-    
+
     // 初回起動かどうかを判定（データベースファイルの存在で判定）
     let is_first_run = !database_path.exists();
-    
+
     // 初回起動の場合、初期化ログを出力
     if is_first_run {
         log_first_run_initialization(&environment, &app_data_dir, &database_path);
     }
-    
+
     // データベースを初期化
     initialize_database_file(&database_path)?;
-    
+
     Ok(InitializationResult {
         is_first_run,
         app_data_dir,
@@ -77,8 +77,11 @@ fn ensure_app_data_directory(app_handle: &AppHandle) -> Result<PathBuf, String> 
     if !app_data_dir.exists() {
         fs::create_dir_all(&app_data_dir)
             .map_err(|e| format!("アプリデータディレクトリの作成に失敗しました: {e}"))?;
-        
-        println!("アプリケーションデータディレクトリを作成しました: {:?}", app_data_dir);
+
+        println!(
+            "アプリケーションデータディレクトリを作成しました: {:?}",
+            app_data_dir
+        );
     }
 
     Ok(app_data_dir)
@@ -101,7 +104,7 @@ fn initialize_database_file(database_path: &PathBuf) -> Result<(), String> {
         .map_err(|e| format!("データベースマイグレーションの実行に失敗しました: {e}"))?;
 
     println!("データベースファイルを初期化しました: {:?}", database_path);
-    
+
     Ok(())
 }
 
@@ -151,10 +154,10 @@ mod tests {
 
         // データベースファイルを初期化
         let result = initialize_database_file(&db_path);
-        
+
         // 初期化が成功することを確認
         assert!(result.is_ok());
-        
+
         // データベースファイルが作成されることを確認
         assert!(db_path.exists());
     }

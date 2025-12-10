@@ -130,6 +130,70 @@ jobs:
         echo "=== tauri.conf.jsonの確認 ==="
         cat src-tauri/tauri.conf.json || echo "tauri.conf.jsonが見つかりません"
         
+    # macOS署名設定
+    - name: macOS署名環境の設定
+      id: signing-setup
+      run: |
+        echo "macOS署名環境を設定中..."
+        
+        # 開発用署名の設定
+        # 注意: プロダクション環境では適切な証明書を使用してください
+        echo "開発用署名設定を適用中..."
+        
+        # Keychainの設定（開発用）
+        if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ] && [ -n "${{ secrets.MACOS_CERTIFICATE_PWD }}" ]; then
+          echo "証明書が設定されています。署名を有効化します。"
+          
+          # 証明書をKeychainにインポート
+          echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+          
+          # 一時的なKeychainを作成
+          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD || 'temp-password' }}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD || 'temp-password' }}" build.keychain
+          
+          # 証明書をインポート
+          security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_CERTIFICATE_PWD }}" -T /usr/bin/codesign
+          
+          # 証明書の信頼設定
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.KEYCHAIN_PASSWORD || 'temp-password' }}" build.keychain
+          
+          echo "signing_enabled=true" >> $GITHUB_OUTPUT
+          echo "署名が有効化されました"
+          
+          # 利用可能な署名IDを確認
+          echo "利用可能な署名ID:"
+          security find-identity -v -p codesigning build.keychain || echo "署名IDが見つかりません"
+          
+        else
+          echo "証明書が設定されていません。開発用署名を無効化します。"
+          echo "signing_enabled=false" >> $GITHUB_OUTPUT
+          
+          # 署名を無効化するためにTauri設定を一時的に変更
+          cd src-tauri
+          cp tauri.conf.json tauri.conf.json.backup
+          
+          # 署名設定を無効化
+          cat tauri.conf.json | jq '.bundle.macOS.signingIdentity = null' > tauri.conf.json.tmp
+          mv tauri.conf.json.tmp tauri.conf.json
+          
+          echo "開発用ビルドとして署名なしで実行します"
+        fi
+        
+        echo "署名環境設定完了"
+      continue-on-error: false
+      
+    - name: 署名設定失敗時の詳細ログ
+      if: failure() && steps.signing-setup.outcome == 'failure'
+      run: |
+        echo "=== 署名設定失敗の詳細 ==="
+        echo "Keychain情報:"
+        security list-keychains || echo "Keychain一覧取得失敗"
+        echo "証明書情報:"
+        security find-identity -v || echo "証明書一覧取得失敗"
+        echo "Tauri設定:"
+        cat src-tauri/tauri.conf.json | grep -A 10 -B 5 "signingIdentity" || echo "署名設定が見つかりません"
+        
     # Tauriアプリケーションビルド
     - name: Tauriアプリケーションのビルド
       id: tauri-build
@@ -162,6 +226,286 @@ jobs:
           exit 1
         fi
       continue-on-error: false
+      
+    # 署名検証
+    - name: 署名済み実行可能ファイルの検証
+      if: steps.artifact-check.outputs.artifact_exists == 'true'
+      id: signature-verification
+      run: |
+        echo "署名検証を開始します..."
+        
+        # dmgファイルのパスを取得
+        DMG_PATH=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" -type f | head -1)
+        
+        if [ -z "$DMG_PATH" ]; then
+          echo "::error::dmgファイルが見つかりません"
+          exit 1
+        fi
+        
+        echo "検証対象dmgファイル: $DMG_PATH"
+        
+        # dmgファイルの署名状況を確認
+        echo "=== dmgファイルの署名確認 ==="
+        if codesign -dv "$DMG_PATH" 2>&1; then
+          echo "dmgファイルに署名が検出されました"
+          echo "dmg_signed=true" >> $GITHUB_OUTPUT
+          
+          # 署名の詳細情報を取得
+          echo "署名詳細情報:"
+          codesign -dvv "$DMG_PATH" 2>&1 || echo "署名詳細取得失敗"
+          
+          # 署名の検証
+          echo "署名検証実行中..."
+          if codesign --verify --deep --strict "$DMG_PATH" 2>&1; then
+            echo "✅ dmgファイルの署名検証に成功しました"
+            echo "dmg_verification=success" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ dmgファイルの署名検証に失敗しました"
+            echo "dmg_verification=failed" >> $GITHUB_OUTPUT
+          fi
+          
+        else
+          echo "dmgファイルに署名が見つかりません（開発用ビルド）"
+          echo "dmg_signed=false" >> $GITHUB_OUTPUT
+          echo "dmg_verification=unsigned" >> $GITHUB_OUTPUT
+        fi
+        
+        # dmgファイルをマウントしてアプリケーションの署名を確認
+        echo ""
+        echo "=== アプリケーション内部の署名確認 ==="
+        
+        # 一時的なマウントポイントを作成
+        MOUNT_POINT="/tmp/dmg_mount_$$"
+        mkdir -p "$MOUNT_POINT"
+        
+        # dmgファイルをマウント
+        if hdiutil attach "$DMG_PATH" -mountpoint "$MOUNT_POINT" -nobrowse -quiet; then
+          echo "dmgファイルをマウントしました: $MOUNT_POINT"
+          
+          # アプリケーションファイルを探す
+          APP_PATH=$(find "$MOUNT_POINT" -name "*.app" -type d | head -1)
+          
+          if [ -n "$APP_PATH" ]; then
+            echo "アプリケーション発見: $APP_PATH"
+            
+            # アプリケーションの署名確認
+            if codesign -dv "$APP_PATH" 2>&1; then
+              echo "アプリケーションに署名が検出されました"
+              echo "app_signed=true" >> $GITHUB_OUTPUT
+              
+              # アプリケーション署名の詳細情報
+              echo "アプリケーション署名詳細:"
+              codesign -dvv "$APP_PATH" 2>&1 || echo "アプリケーション署名詳細取得失敗"
+              
+              # アプリケーション署名の検証
+              echo "アプリケーション署名検証実行中..."
+              if codesign --verify --deep --strict "$APP_PATH" 2>&1; then
+                echo "✅ アプリケーションの署名検証に成功しました"
+                echo "app_verification=success" >> $GITHUB_OUTPUT
+              else
+                echo "⚠️ アプリケーションの署名検証に失敗しました"
+                echo "app_verification=failed" >> $GITHUB_OUTPUT
+              fi
+              
+              # Entitlementsの確認
+              echo "Entitlements確認中..."
+              codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || echo "Entitlements情報なし"
+              
+            else
+              echo "アプリケーションに署名が見つかりません（開発用ビルド）"
+              echo "app_signed=false" >> $GITHUB_OUTPUT
+              echo "app_verification=unsigned" >> $GITHUB_OUTPUT
+            fi
+            
+            # アプリケーションの実行可能性を確認
+            echo ""
+            echo "=== 実行可能性の確認 ==="
+            
+            # 実行可能ファイルの権限確認
+            EXECUTABLE_PATH="$APP_PATH/Contents/MacOS"
+            if [ -d "$EXECUTABLE_PATH" ]; then
+              echo "実行可能ファイルディレクトリ: $EXECUTABLE_PATH"
+              ls -la "$EXECUTABLE_PATH"
+              
+              # 実行可能ファイルを探す
+              MAIN_EXECUTABLE=$(find "$EXECUTABLE_PATH" -type f -perm +111 | head -1)
+              if [ -n "$MAIN_EXECUTABLE" ]; then
+                echo "メイン実行可能ファイル: $MAIN_EXECUTABLE"
+                
+                # ファイル情報を確認
+                file "$MAIN_EXECUTABLE" || echo "ファイル情報取得失敗"
+                
+                # 依存関係を確認
+                echo "依存関係確認:"
+                otool -L "$MAIN_EXECUTABLE" 2>/dev/null | head -10 || echo "依存関係確認失敗"
+                
+                echo "executable_found=true" >> $GITHUB_OUTPUT
+              else
+                echo "::warning::実行可能ファイルが見つかりません"
+                echo "executable_found=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "::warning::実行可能ファイルディレクトリが見つかりません"
+              echo "executable_found=false" >> $GITHUB_OUTPUT
+            fi
+            
+          else
+            echo "::error::dmg内にアプリケーションが見つかりません"
+            echo "app_signed=false" >> $GITHUB_OUTPUT
+            echo "app_verification=not_found" >> $GITHUB_OUTPUT
+            echo "executable_found=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # dmgファイルをアンマウント
+          hdiutil detach "$MOUNT_POINT" -quiet || echo "アンマウント失敗"
+          
+        else
+          echo "::error::dmgファイルのマウントに失敗しました"
+          echo "app_signed=false" >> $GITHUB_OUTPUT
+          echo "app_verification=mount_failed" >> $GITHUB_OUTPUT
+          echo "executable_found=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # 一時ディレクトリを削除
+        rm -rf "$MOUNT_POINT" 2>/dev/null || echo "一時ディレクトリ削除失敗"
+        
+        # 署名設定の復元（署名が無効化されていた場合）
+        if [ "${{ steps.signing-setup.outputs.signing_enabled }}" = "false" ]; then
+          echo "署名設定を復元中..."
+          cd src-tauri
+          if [ -f tauri.conf.json.backup ]; then
+            mv tauri.conf.json.backup tauri.conf.json
+            echo "Tauri設定を復元しました"
+          fi
+        fi
+        
+        # 一時的なKeychainをクリーンアップ
+        if [ "${{ steps.signing-setup.outputs.signing_enabled }}" = "true" ]; then
+          echo "Keychainクリーンアップ中..."
+          security delete-keychain build.keychain 2>/dev/null || echo "Keychainクリーンアップ完了"
+          rm -f certificate.p12 2>/dev/null || echo "証明書ファイルクリーンアップ完了"
+        fi
+        
+        echo "署名検証完了"
+      continue-on-error: false
+      
+    - name: 署名検証失敗時の詳細ログ
+      if: failure() && steps.signature-verification.outcome == 'failure'
+      run: |
+        echo "=== 署名検証失敗の詳細 ==="
+        echo "署名設定状況:"
+        echo "  - 署名有効: ${{ steps.signing-setup.outputs.signing_enabled }}"
+        echo "  - dmg署名: ${{ steps.signature-verification.outputs.dmg_signed }}"
+        echo "  - dmg検証: ${{ steps.signature-verification.outputs.dmg_verification }}"
+        echo "  - アプリ署名: ${{ steps.signature-verification.outputs.app_signed }}"
+        echo "  - アプリ検証: ${{ steps.signature-verification.outputs.app_verification }}"
+        echo "  - 実行可能ファイル: ${{ steps.signature-verification.outputs.executable_found }}"
+        
+        echo "システム署名環境:"
+        security list-keychains || echo "Keychain一覧取得失敗"
+        security find-identity -v || echo "署名ID一覧取得失敗"
+        
+        echo "Tauri設定:"
+        cat src-tauri/tauri.conf.json | grep -A 15 -B 5 "macOS" || echo "macOS設定が見つかりません"
+        
+    # 署名検証結果の報告
+    - name: 署名検証結果の報告
+      if: steps.artifact-check.outputs.artifact_exists == 'true'
+      run: |
+        echo "=== 署名検証結果レポート ==="
+        echo "実行日時: $(date -Iseconds)"
+        echo ""
+        
+        # 署名設定状況
+        if [ "${{ steps.signing-setup.outputs.signing_enabled }}" = "true" ]; then
+          echo "✅ 署名設定: 有効（証明書使用）"
+        else
+          echo "ℹ️ 署名設定: 無効（開発用ビルド）"
+        fi
+        
+        # dmgファイル署名状況
+        case "${{ steps.signature-verification.outputs.dmg_verification }}" in
+          "success")
+            echo "✅ dmgファイル署名: 検証成功"
+            ;;
+          "failed")
+            echo "❌ dmgファイル署名: 検証失敗"
+            ;;
+          "unsigned")
+            echo "ℹ️ dmgファイル署名: 署名なし（開発用）"
+            ;;
+          *)
+            echo "⚠️ dmgファイル署名: 不明な状態"
+            ;;
+        esac
+        
+        # アプリケーション署名状況
+        case "${{ steps.signature-verification.outputs.app_verification }}" in
+          "success")
+            echo "✅ アプリケーション署名: 検証成功"
+            ;;
+          "failed")
+            echo "❌ アプリケーション署名: 検証失敗"
+            ;;
+          "unsigned")
+            echo "ℹ️ アプリケーション署名: 署名なし（開発用）"
+            ;;
+          "not_found")
+            echo "❌ アプリケーション署名: アプリケーション未発見"
+            ;;
+          "mount_failed")
+            echo "❌ アプリケーション署名: dmgマウント失敗"
+            ;;
+          *)
+            echo "⚠️ アプリケーション署名: 不明な状態"
+            ;;
+        esac
+        
+        # 実行可能ファイル状況
+        if [ "${{ steps.signature-verification.outputs.executable_found }}" = "true" ]; then
+          echo "✅ 実行可能ファイル: 発見・確認済み"
+        else
+          echo "❌ 実行可能ファイル: 未発見または問題あり"
+        fi
+        
+        echo ""
+        echo "=== 要件2.2の充足確認 ==="
+        echo "要件: エンドユーザーがdmgファイルをダウンロードする THEN システムは署名済みの実行可能なアプリケーションを提供する"
+        echo ""
+        
+        # 要件充足の判定
+        if [ "${{ steps.signature-verification.outputs.executable_found }}" = "true" ]; then
+          if [ "${{ steps.signature-verification.outputs.app_verification }}" = "success" ]; then
+            echo "✅ 要件2.2は完全に満たされています（署名済み実行可能ファイル）"
+          elif [ "${{ steps.signature-verification.outputs.app_verification }}" = "unsigned" ]; then
+            echo "⚠️ 要件2.2は部分的に満たされています（実行可能だが署名なし - 開発用）"
+            echo "   プロダクション環境では適切な証明書を設定してください"
+          else
+            echo "❌ 要件2.2は満たされていません（署名検証失敗）"
+          fi
+        else
+          echo "❌ 要件2.2は満たされていません（実行可能ファイル未発見）"
+        fi
+        
+        echo ""
+        echo "=== 署名設定の推奨事項 ==="
+        if [ "${{ steps.signing-setup.outputs.signing_enabled }}" = "false" ]; then
+          echo "プロダクション環境での署名を有効化するには、以下の秘密を設定してください:"
+          echo "  - MACOS_CERTIFICATE: Apple Developer証明書（Base64エンコード済み）"
+          echo "  - MACOS_CERTIFICATE_PWD: 証明書のパスワード"
+          echo "  - KEYCHAIN_PASSWORD: 一時Keychainのパスワード（オプション）"
+          echo ""
+          echo "証明書の取得方法:"
+          echo "  1. Apple Developer Programに登録"
+          echo "  2. 'Developer ID Application'証明書を作成"
+          echo "  3. Keychain Accessから.p12形式でエクスポート"
+          echo "  4. Base64エンコードしてGitHub Secretsに保存"
+        else
+          echo "署名設定は正常に構成されています"
+        fi
+        
+        echo ""
+        echo "=== レポート終了 ==="
         
     # dmgファイルの成果物アップロード
     - name: dmgファイルのアップロード

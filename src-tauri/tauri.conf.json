@@ -12,18 +12,18 @@
 	"app": {
 		"windows": [
 			{
-			"title": "オラの経費だゾ",
-			"width": 1200,
-			"height": 800,
-			"minWidth": 800,
-			"minHeight": 600,
-			"resizable": true,
-			"fullscreen": false,
-			"maximized": false,
-			"visible": true,
-			"decorations": true,
-			"alwaysOnTop": false,
-			"skipTaskbar": false
+				"title": "オラの経費だゾ",
+				"width": 1200,
+				"height": 800,
+				"minWidth": 800,
+				"minHeight": 600,
+				"resizable": true,
+				"fullscreen": false,
+				"maximized": false,
+				"visible": true,
+				"decorations": true,
+				"alwaysOnTop": false,
+				"skipTaskbar": false
 			}
 		],
 		"security": {
@@ -54,9 +54,9 @@
 			"frameworks": [],
 			"minimumSystemVersion": "10.15",
 			"exceptionDomain": "",
-			"signingIdentity": null,
+			"signingIdentity": "Developer ID Application",
 			"providerShortName": null,
-			"entitlements": null,
+			"entitlements": "entitlements.plist",
 			"dmg": {
 				"appPosition": {
 					"x": 180,

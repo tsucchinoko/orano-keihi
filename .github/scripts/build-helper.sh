@@ -147,6 +147,35 @@ build_tauri() {
     fi
 }
 
+# 署名設定の確認
+check_signing_configuration() {
+    log_info "署名設定を確認中..."
+    
+    # Tauri設定ファイルの署名設定を確認
+    if [ -f "src-tauri/tauri.conf.json" ]; then
+        local signing_identity
+        signing_identity=$(cat src-tauri/tauri.conf.json | grep -o '"signingIdentity"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 2>/dev/null || echo "null")
+        
+        if [ "$signing_identity" != "null" ] && [ -n "$signing_identity" ]; then
+            log_info "署名設定が検出されました: $signing_identity"
+            
+            # 利用可能な署名IDを確認
+            if command -v security &> /dev/null; then
+                log_info "利用可能な署名ID:"
+                security find-identity -v -p codesigning 2>/dev/null || log_warning "署名IDの確認に失敗しました"
+            fi
+            
+            return 0
+        else
+            log_info "署名設定が無効化されています（開発用ビルド）"
+            return 1
+        fi
+    else
+        log_error "tauri.conf.jsonが見つかりません"
+        return 1
+    fi
+}
+
 # 成果物の確認
 verify_artifacts() {
     log_info "ビルド成果物を確認中..."
@@ -178,6 +207,116 @@ verify_artifacts() {
         fi
     done
     
+    return 0
+}
+
+# 署名済み実行可能ファイルの検証
+verify_signed_executable() {
+    log_info "署名済み実行可能ファイルの検証を開始..."
+    
+    local dmg_files
+    dmg_files=$(find src-tauri/target/release/bundle -name "*.dmg" -type f 2>/dev/null || true)
+    
+    if [ -z "$dmg_files" ]; then
+        log_error "検証対象のdmgファイルが見つかりません"
+        return 1
+    fi
+    
+    local dmg_file
+    dmg_file=$(echo "$dmg_files" | head -1)
+    log_info "検証対象dmgファイル: $dmg_file"
+    
+    # dmgファイルの署名確認
+    log_info "dmgファイルの署名を確認中..."
+    if codesign -dv "$dmg_file" 2>/dev/null; then
+        log_info "✅ dmgファイルに署名が検出されました"
+        
+        # 署名の検証
+        if codesign --verify --deep --strict "$dmg_file" 2>/dev/null; then
+            log_info "✅ dmgファイルの署名検証に成功しました"
+        else
+            log_warning "⚠️ dmgファイルの署名検証に失敗しました"
+        fi
+    else
+        log_info "ℹ️ dmgファイルに署名が見つかりません（開発用ビルド）"
+    fi
+    
+    # dmgファイル内のアプリケーションの確認
+    log_info "dmgファイル内のアプリケーションを確認中..."
+    
+    # 一時的なマウントポイントを作成
+    local mount_point="/tmp/dmg_verify_$$"
+    mkdir -p "$mount_point"
+    
+    # dmgファイルをマウント
+    if hdiutil attach "$dmg_file" -mountpoint "$mount_point" -nobrowse -quiet 2>/dev/null; then
+        log_info "dmgファイルをマウントしました"
+        
+        # アプリケーションファイルを探す
+        local app_path
+        app_path=$(find "$mount_point" -name "*.app" -type d | head -1)
+        
+        if [ -n "$app_path" ]; then
+            log_info "アプリケーション発見: $app_path"
+            
+            # アプリケーションの署名確認
+            if codesign -dv "$app_path" 2>/dev/null; then
+                log_info "✅ アプリケーションに署名が検出されました"
+                
+                # アプリケーション署名の検証
+                if codesign --verify --deep --strict "$app_path" 2>/dev/null; then
+                    log_info "✅ アプリケーションの署名検証に成功しました"
+                else
+                    log_warning "⚠️ アプリケーションの署名検証に失敗しました"
+                fi
+            else
+                log_info "ℹ️ アプリケーションに署名が見つかりません（開発用ビルド）"
+            fi
+            
+            # 実行可能ファイルの確認
+            local executable_path="$app_path/Contents/MacOS"
+            if [ -d "$executable_path" ]; then
+                local main_executable
+                main_executable=$(find "$executable_path" -type f -perm +111 | head -1)
+                
+                if [ -n "$main_executable" ]; then
+                    log_info "✅ 実行可能ファイルが見つかりました: $main_executable"
+                    
+                    # ファイル情報を確認
+                    file "$main_executable" 2>/dev/null || log_warning "ファイル情報の取得に失敗しました"
+                    
+                    return 0
+                else
+                    log_error "❌ 実行可能ファイルが見つかりません"
+                    hdiutil detach "$mount_point" -quiet 2>/dev/null || true
+                    rm -rf "$mount_point" 2>/dev/null || true
+                    return 1
+                fi
+            else
+                log_error "❌ 実行可能ファイルディレクトリが見つかりません"
+                hdiutil detach "$mount_point" -quiet 2>/dev/null || true
+                rm -rf "$mount_point" 2>/dev/null || true
+                return 1
+            fi
+        else
+            log_error "❌ dmg内にアプリケーションが見つかりません"
+            hdiutil detach "$mount_point" -quiet 2>/dev/null || true
+            rm -rf "$mount_point" 2>/dev/null || true
+            return 1
+        fi
+        
+        # dmgファイルをアンマウント
+        hdiutil detach "$mount_point" -quiet 2>/dev/null || log_warning "dmgアンマウントに失敗しました"
+    else
+        log_error "❌ dmgファイルのマウントに失敗しました"
+        rm -rf "$mount_point" 2>/dev/null || true
+        return 1
+    fi
+    
+    # 一時ディレクトリを削除
+    rm -rf "$mount_point" 2>/dev/null || true
+    
+    log_info "署名済み実行可能ファイルの検証が完了しました"
     return 0
 }
 
@@ -236,6 +375,15 @@ main() {
     # 成果物の確認
     if ! verify_artifacts; then
         log_error "成果物の確認に失敗しました"
+        exit 1
+    fi
+    
+    # 署名設定の確認
+    check_signing_configuration || log_info "署名設定は無効化されています（開発用ビルド）"
+    
+    # 署名済み実行可能ファイルの検証
+    if ! verify_signed_executable; then
+        log_error "署名済み実行可能ファイルの検証に失敗しました"
         exit 1
     fi
     
