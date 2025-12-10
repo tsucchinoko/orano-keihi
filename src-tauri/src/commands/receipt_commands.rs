@@ -1,4 +1,5 @@
 use crate::db::{expense_operations, subscription_operations};
+use crate::services::{config::R2Config, r2_client::R2Client};
 use crate::AppState;
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
@@ -237,6 +238,32 @@ pub async fn delete_subscription_receipt(
     // データベースから領収書パスを削除（空文字に設定）
     subscription_operations::set_receipt_path(&db, subscription_id, "".to_string())
         .map_err(|e| format!("データベースからの領収書パス削除に失敗しました: {e}"))?;
+
+    Ok(true)
+}
+/// R2接続をテストする
+///
+/// # 引数
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 接続成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, String> {
+    // 環境変数からR2設定を読み込み
+    let config = R2Config::from_env()
+        .map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+
+    // R2クライアントを初期化
+    let client = R2Client::new(config)
+        .await
+        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
+
+    // 接続テストを実行
+    client
+        .test_connection()
+        .await
+        .map_err(|e| format!("R2接続テストに失敗しました: {}", e))?;
 
     Ok(true)
 }

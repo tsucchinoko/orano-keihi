@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod db;
 mod models;
+mod services;
 
 use commands::{expense_commands, receipt_commands, subscription_commands};
 use rusqlite::Connection;
@@ -19,6 +20,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // 環境変数を読み込み（.envファイルがある場合）
+            if let Err(_) = dotenv::dotenv() {
+                // .envファイルがない場合は無視（本番環境では環境変数が直接設定される）
+                println!("警告: .envファイルが見つかりません。環境変数が直接設定されていることを確認してください。");
+            }
+
             // アプリ起動時にデータベースを初期化
             let db_conn =
                 db::initialize_database(app.handle()).expect("データベースの初期化に失敗しました");
@@ -47,6 +54,7 @@ pub fn run() {
             receipt_commands::save_subscription_receipt,
             receipt_commands::delete_receipt,
             receipt_commands::delete_subscription_receipt,
+            receipt_commands::test_r2_connection,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");

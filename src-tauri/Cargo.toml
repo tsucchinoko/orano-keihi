@@ -28,6 +28,22 @@ chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.8"
 thiserror = "1.0"
 
+# R2/S3互換API
+aws-config = "1.0"
+aws-sdk-s3 = "1.0"
+
+# 非同期処理
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# UUID生成
+uuid = { version = "1.0", features = ["v4"] }
+
+# 環境変数読み込み
+dotenv = "0.15"
+
 [dev-dependencies]
 tempfile = "3.8"
+quickcheck = "1.0"
+quickcheck_macros = "1.0"
 

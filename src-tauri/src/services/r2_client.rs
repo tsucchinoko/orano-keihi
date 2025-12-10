@@ -1,0 +1,171 @@
+// R2クライアントモジュール
+
+use aws_config::{BehaviorVersion, Region};
+use aws_sdk_s3::{Client, Config};
+use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
+use aws_sdk_s3::presigning::PresigningConfig;
+use std::time::Duration;
+use super::{R2Error, config::R2Config};
+
+#[derive(Clone)]
+pub struct R2Client {
+    client: Client,
+    bucket_name: String,
+    config: R2Config,
+}
+
+impl R2Client {
+    /// R2クライアントを初期化
+    pub async fn new(config: R2Config) -> Result<Self, R2Error> {
+        // 設定を検証
+        config.validate()
+            .map_err(|_e| R2Error::InvalidCredentials)?;
+
+        // 認証情報を設定
+        let credentials = Credentials::new(
+            &config.access_key,
+            &config.secret_key,
+            None,
+            None,
+            "r2"
+        );
+
+        // S3互換設定を構築
+        let aws_config = aws_config::defaults(BehaviorVersion::latest())
+            .endpoint_url(&config.endpoint_url())
+            .region(Region::new(config.region.clone()))
+            .credentials_provider(SharedCredentialsProvider::new(credentials))
+            .load()
+            .await;
+
+        let s3_config = Config::from(&aws_config);
+        let client = Client::from_conf(s3_config);
+
+        Ok(Self {
+            client,
+            bucket_name: config.bucket_name.clone(),
+            config,
+        })
+    }
+
+    /// ファイルをR2にアップロード
+    pub async fn upload_file(
+        &self,
+        key: &str,
+        file_data: Vec<u8>,
+        content_type: &str,
+    ) -> Result<String, R2Error> {
+        let _put_object_output = self
+            .client
+            .put_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .body(file_data.into())
+            .content_type(content_type)
+            .send()
+            .await
+            .map_err(|e| R2Error::UploadFailed(format!("アップロードエラー: {}", e)))?;
+
+        // アップロード成功時のHTTPS URLを生成
+        let url = format!("https://{}/{}/{}", 
+            self.config.endpoint_url().replace("https://", ""),
+            self.bucket_name,
+            key
+        );
+
+        Ok(url)
+    }
+
+    /// Presigned URLを生成（ダウンロード用）
+    pub async fn generate_presigned_url(
+        &self,
+        key: &str,
+        expires_in: Duration,
+    ) -> Result<String, R2Error> {
+        let presigning_config = PresigningConfig::expires_in(expires_in)
+            .map_err(|e| R2Error::NetworkError(format!("Presigned URL設定エラー: {}", e)))?;
+
+        let presigned_request = self
+            .client
+            .get_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .presigned(presigning_config)
+            .await
+            .map_err(|e| R2Error::NetworkError(format!("Presigned URL生成エラー: {}", e)))?;
+
+        Ok(presigned_request.uri().to_string())
+    }
+
+    /// ファイルをR2から削除
+    pub async fn delete_file(&self, key: &str) -> Result<(), R2Error> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| R2Error::NetworkError(format!("削除エラー: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 接続テスト
+    pub async fn test_connection(&self) -> Result<(), R2Error> {
+        // バケットの存在確認を行う
+        self.client
+            .head_bucket()
+            .bucket(&self.bucket_name)
+            .send()
+            .await
+            .map_err(|e| R2Error::ConnectionFailed(format!("接続テスト失敗: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// ファイルキーを生成（予測困難にする）
+    pub fn generate_file_key(expense_id: i64, filename: &str) -> String {
+        let timestamp = chrono::Utc::now().timestamp();
+        let uuid = uuid::Uuid::new_v4();
+        format!("receipts/{}/{}-{}-{}", expense_id, timestamp, uuid, filename)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_key_generation() {
+        let expense_id = 123;
+        let filename = "receipt.pdf";
+        
+        let key1 = R2Client::generate_file_key(expense_id, filename);
+        let key2 = R2Client::generate_file_key(expense_id, filename);
+        
+        // 異なるキーが生成されることを確認
+        assert_ne!(key1, key2);
+        
+        // 正しい形式であることを確認
+        assert!(key1.starts_with("receipts/123/"));
+        assert!(key1.ends_with("-receipt.pdf"));
+    }
+
+    #[test]
+    fn test_file_key_format() {
+        let expense_id = 456;
+        let filename = "test.jpg";
+        
+        let key = R2Client::generate_file_key(expense_id, filename);
+        
+        // キーの形式を確認
+        let parts: Vec<&str> = key.split('/').collect();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0], "receipts");
+        assert_eq!(parts[1], "456");
+        
+        // ファイル名部分の確認
+        let file_part = parts[2];
+        assert!(file_part.contains("test.jpg"));
+    }
+}
