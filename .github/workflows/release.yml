@@ -25,10 +25,10 @@ jobs:
     - name: pnpmのセットアップ
       uses: pnpm/action-setup@v4
       with:
-        version: 8
+        version: latest
         
     - name: 依存関係のインストール
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --no-frozen-lockfile
         
     - name: Rustツールチェーンのセットアップ
       uses: dtolnay/rust-toolchain@stable
