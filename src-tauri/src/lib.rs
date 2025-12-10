@@ -44,6 +44,8 @@ pub fn run() {
             // 領収書コマンド
             receipt_commands::save_receipt,
             receipt_commands::save_subscription_receipt,
+            receipt_commands::delete_receipt,
+            receipt_commands::delete_subscription_receipt,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");

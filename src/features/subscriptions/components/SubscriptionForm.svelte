@@ -2,7 +2,10 @@
 import type { Subscription } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { saveSubscriptionReceipt } from "$lib/utils/tauri";
+import {
+	saveSubscriptionReceipt,
+	deleteSubscriptionReceipt,
+} from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -115,6 +118,31 @@ async function selectReceipt() {
 	} catch (error) {
 		console.error("領収書ファイルの選択に失敗しました:", error);
 		toastStore.error("領収書ファイルの選択に失敗しました");
+	}
+}
+
+// 領収書削除
+async function deleteReceipt() {
+	if (!subscription?.id) {
+		toastStore.error("サブスクリプションIDが見つかりません");
+		return;
+	}
+
+	try {
+		const result = await deleteSubscriptionReceipt(subscription.id);
+		if (result.error) {
+			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
+			return;
+		}
+
+		// プレビューとファイル選択をクリア
+		receiptPreview = undefined;
+		receiptFile = undefined;
+
+		toastStore.success("領収書を削除しました");
+	} catch (error) {
+		console.error("領収書削除エラー:", error);
+		toastStore.error("領収書の削除に失敗しました");
 	}
 }
 
@@ -323,14 +351,26 @@ const monthlyAmount = $derived(() => {
 			<label for="receipt-upload" class="block text-sm font-semibold mb-2">
 				領収書（オプション）
 			</label>
-			<button
-				id="receipt-upload"
-				type="button"
-				onclick={selectReceipt}
-				class="btn bg-gray-200 text-gray-700 w-full"
-			>
-				📎 領収書を選択
-			</button>
+			<div class="flex gap-2">
+				<button
+					id="receipt-upload"
+					type="button"
+					onclick={selectReceipt}
+					class="btn bg-gray-200 text-gray-700 flex-1"
+				>
+					📎 領収書を選択
+				</button>
+				{#if (receiptPreview || receiptFile) && subscription}
+					<button
+						type="button"
+						onclick={deleteReceipt}
+						class="btn bg-red-500 text-white px-4"
+						title="領収書を削除"
+					>
+						🗑️
+					</button>
+				{/if}
+			</div>
 			{#if receiptPreview}
 				<div class="mt-3">
 					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>

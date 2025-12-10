@@ -219,3 +219,28 @@ export async function saveSubscriptionReceipt(
 		invoke<string>("save_subscription_receipt", { subscriptionId, filePath }),
 	);
 }
+/**
+ * 経費の領収書を削除する
+ *
+ * @param expenseId - 経費ID
+ * @returns 成功またはエラー
+ */
+export async function deleteReceipt(
+	expenseId: number,
+): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(invoke<boolean>("delete_receipt", { expenseId }));
+}
+
+/**
+ * サブスクリプションの領収書を削除する
+ *
+ * @param subscriptionId - サブスクリプションID
+ * @returns 成功またはエラー
+ */
+export async function deleteSubscriptionReceipt(
+	subscriptionId: number,
+): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(
+		invoke<boolean>("delete_subscription_receipt", { subscriptionId }),
+	);
+}
