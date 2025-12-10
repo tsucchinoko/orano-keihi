@@ -1,7 +1,7 @@
-use crate::config::{get_database_filename, get_environment};
+use crate::config::{initialize_application, log_initialization_complete};
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// アプリデータディレクトリ内のデータベースファイルパスを取得する
 ///
@@ -12,25 +12,12 @@ use tauri::{AppHandle, Manager};
 /// データベースファイルのパス、または失敗時はエラーメッセージ
 ///
 /// # 動作
-/// 実行環境（開発/プロダクション）に応じて適切なデータベースファイル名を選択し、
-/// アプリデータディレクトリ内のパスを返す。ディレクトリが存在しない場合は自動作成する。
+/// 新しい初期化システムを使用してデータベースパスを取得する。
+/// この関数は後方互換性のために残されているが、
+/// 新しいコードでは initialize_database を直接使用することを推奨する。
 pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {e}"))?;
-
-    // アプリデータディレクトリが存在しない場合は作成
-    std::fs::create_dir_all(&app_data_dir)
-        .map_err(|e| format!("アプリデータディレクトリの作成に失敗しました: {e}"))?;
-
-    // 現在の実行環境を取得
-    let env = get_environment();
-
-    // 環境に応じたデータベースファイル名を取得
-    let db_filename = get_database_filename(env);
-
-    Ok(app_data_dir.join(db_filename))
+    let init_result = initialize_application(app_handle)?;
+    Ok(init_result.database_path)
 }
 
 /// データベース接続を初期化し、マイグレーションを実行する
@@ -40,15 +27,21 @@ pub fn get_db_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
 ///
 /// # 戻り値
 /// データベース接続、または失敗時はエラーメッセージ
+///
+/// # 処理内容
+/// 1. アプリケーション全体の初期化を実行
+/// 2. データベース接続を開く
+/// 3. 初期化完了ログを出力
 pub fn initialize_database(app_handle: &AppHandle) -> Result<Connection, String> {
-    let db_path = get_db_path(app_handle)?;
+    // アプリケーション全体の初期化を実行
+    let init_result = initialize_application(app_handle)?;
 
-    let conn = Connection::open(&db_path)
+    // データベース接続を開く
+    let conn = Connection::open(&init_result.database_path)
         .map_err(|e| format!("データベースのオープンに失敗しました: {e}"))?;
 
-    // マイグレーションを実行
-    crate::db::migrations::run_migrations(&conn)
-        .map_err(|e| format!("マイグレーションの実行に失敗しました: {e}"))?;
+    // 初期化完了ログを出力
+    log_initialization_complete(&init_result);
 
     Ok(conn)
 }
