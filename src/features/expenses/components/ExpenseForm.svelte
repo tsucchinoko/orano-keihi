@@ -2,7 +2,7 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { saveReceipt, deleteReceipt } from "$lib/utils/tauri";
+import { saveReceipt, deleteReceipt, uploadReceiptToR2, deleteReceiptFromR2 } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -24,9 +24,13 @@ let description = $state(expense?.description || "");
 let receiptFile = $state<string | undefined>(undefined);
 let receiptPreview = $state<string | undefined>(undefined);
 
-// 既存の領収書パスを変換してプレビュー表示
+// 既存の領収書を表示（R2 URLまたはローカルパス）
 $effect(() => {
-	if (expense?.receipt_path) {
+	if (expense?.receipt_url) {
+		// R2のHTTPS URLの場合はそのまま使用
+		receiptPreview = expense.receipt_url;
+	} else if (expense?.receipt_path) {
+		// 後方互換性：ローカルパスの場合は変換
 		import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
 			receiptPreview = convertFileSrc(expense.receipt_path!);
 		});
@@ -115,7 +119,7 @@ async function selectReceipt() {
 	}
 }
 
-// 領収書削除
+// 領収書削除（R2対応）
 async function deleteReceiptFile() {
 	if (!expense?.id) {
 		toastStore.error("経費IDが見つかりません");
@@ -123,7 +127,15 @@ async function deleteReceiptFile() {
 	}
 
 	try {
-		const result = await deleteReceipt(expense.id);
+		let result;
+		
+		// R2 URLがある場合はR2から削除、そうでなければローカルから削除
+		if (expense.receipt_url) {
+			result = await deleteReceiptFromR2(expense.id);
+		} else {
+			result = await deleteReceipt(expense.id);
+		}
+
 		if (result.error) {
 			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
 			return;
@@ -140,8 +152,71 @@ async function deleteReceiptFile() {
 	}
 }
 
+// アップロードキャンセル
+function cancelUpload() {
+	uploadCancelled = true;
+	isUploading = false;
+	uploadProgress = 0;
+	toastStore.info("アップロードをキャンセルしました");
+}
+
+// プログレス表示付きR2アップロード
+async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
+	isUploading = true;
+	uploadProgress = 0;
+	uploadCancelled = false;
+
+	try {
+		// プログレス表示のシミュレーション（実際のプログレスはバックエンドから取得）
+		const progressInterval = setInterval(() => {
+			if (uploadCancelled) {
+				clearInterval(progressInterval);
+				return;
+			}
+			
+			if (uploadProgress < 90) {
+				uploadProgress += Math.random() * 10;
+			}
+		}, 200);
+
+		// R2にアップロード
+		const result = await uploadReceiptToR2(expenseId, filePath);
+		
+		clearInterval(progressInterval);
+
+		if (uploadCancelled) {
+			return;
+		}
+
+		if (result.error) {
+			toastStore.error(`領収書のアップロードに失敗しました: ${result.error}`);
+			return;
+		}
+
+		uploadProgress = 100;
+		
+		// 経費データを更新してreceipt_urlを設定
+		await expenseStore.modifyExpense(expenseId, {
+			receipt_url: result.data,
+		});
+
+		toastStore.success("領収書をクラウドにアップロードしました");
+	} catch (error) {
+		console.error("アップロードエラー:", error);
+		toastStore.error("領収書のアップロードに失敗しました");
+	} finally {
+		isUploading = false;
+		uploadProgress = 0;
+	}
+}
+
 // 送信中フラグ
 let isSubmitting = $state(false);
+
+// アップロード関連の状態
+let isUploading = $state(false);
+let uploadProgress = $state(0);
+let uploadCancelled = $state(false);
 
 // フォーム送信
 async function handleSubmit(event: Event) {
@@ -176,22 +251,14 @@ async function handleSubmit(event: Event) {
 			return;
 		}
 
-		// 領収書がある場合は保存
+		// 領収書がある場合はR2にアップロード
 		if (receiptFile && !expense) {
-			// 新規作成の場合のみ領収書を保存
+			// 新規作成の場合のみ領収書をアップロード
 			// 最後に追加された経費のIDを取得
 			const lastExpense =
 				expenseStore.expenses[expenseStore.expenses.length - 1];
 			if (lastExpense) {
-				const result = await saveReceipt(lastExpense.id, receiptFile);
-				if (result.error) {
-					toastStore.error(`領収書の保存に失敗しました: ${result.error}`);
-				} else {
-					// 領収書パスを更新
-					await expenseStore.modifyExpense(lastExpense.id, {
-						receipt_path: result.data,
-					});
-				}
+				await uploadReceiptWithProgress(lastExpense.id, receiptFile);
 			}
 		}
 
@@ -305,6 +372,7 @@ async function handleSubmit(event: Event) {
 					type="button"
 					onclick={selectReceipt}
 					class="btn btn-info flex-1"
+					disabled={isUploading}
 				>
 					📎 領収書を選択
 				</button>
@@ -314,11 +382,40 @@ async function handleSubmit(event: Event) {
 						onclick={deleteReceiptFile}
 						class="btn bg-red-500 text-white px-4"
 						title="領収書を削除"
+						disabled={isUploading}
 					>
 						🗑️
 					</button>
 				{/if}
 			</div>
+
+			<!-- アップロードプログレス表示 -->
+			{#if isUploading}
+				<div class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+					<div class="flex justify-between items-center mb-2">
+						<span class="text-sm font-medium text-blue-700">
+							クラウドにアップロード中...
+						</span>
+						<button
+							type="button"
+							onclick={cancelUpload}
+							class="text-xs text-red-600 hover:text-red-800"
+						>
+							キャンセル
+						</button>
+					</div>
+					<div class="w-full bg-blue-200 rounded-full h-2">
+						<div
+							class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+							style="width: {uploadProgress}%"
+						></div>
+					</div>
+					<div class="text-xs text-blue-600 mt-1">
+						{Math.round(uploadProgress)}%
+					</div>
+				</div>
+			{/if}
+
 			{#if receiptPreview}
 				<div class="mt-3">
 					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>
@@ -342,15 +439,15 @@ async function handleSubmit(event: Event) {
 			<button
 				type="submit"
 				class="btn btn-primary flex-1"
-				disabled={isSubmitting}
+				disabled={isSubmitting || isUploading}
 			>
-				{isSubmitting ? '保存中...' : '💾 保存'}
+				{isSubmitting ? '保存中...' : isUploading ? 'アップロード中...' : '💾 保存'}
 			</button>
 			<button
 				type="button"
 				onclick={onCancel}
 				class="btn bg-gray-300 text-gray-700 flex-1"
-				disabled={isSubmitting}
+				disabled={isSubmitting || isUploading}
 			>
 				キャンセル
 			</button>

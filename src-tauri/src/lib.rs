@@ -55,6 +55,10 @@ pub fn run() {
             receipt_commands::delete_receipt,
             receipt_commands::delete_subscription_receipt,
             receipt_commands::test_r2_connection,
+            // R2領収書コマンド
+            receipt_commands::upload_receipt_to_r2,
+            receipt_commands::get_receipt_from_r2,
+            receipt_commands::delete_receipt_from_r2,
             // マイグレーションコマンド
             migration_commands::check_migration_status,
             migration_commands::execute_receipt_url_migration,

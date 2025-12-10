@@ -76,6 +76,31 @@ impl R2Client {
         Ok(url)
     }
 
+    /// リトライ機能付きファイルアップロード
+    pub async fn upload_file_with_retry(
+        &self,
+        key: &str,
+        file_data: Vec<u8>,
+        content_type: &str,
+        max_retries: u32,
+    ) -> Result<String, R2Error> {
+        let mut attempts = 0;
+        
+        loop {
+            match self.upload_file(key, file_data.clone(), content_type).await {
+                Ok(url) => return Ok(url),
+                Err(_e) if attempts < max_retries => {
+                    attempts += 1;
+                    // 指数バックオフ（2^attempts秒待機）
+                    let delay = Duration::from_secs(2_u64.pow(attempts));
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
     /// Presigned URLを生成（ダウンロード用）
     pub async fn generate_presigned_url(
         &self,
@@ -128,6 +153,52 @@ impl R2Client {
         let timestamp = chrono::Utc::now().timestamp();
         let uuid = uuid::Uuid::new_v4();
         format!("receipts/{}/{}-{}-{}", expense_id, timestamp, uuid, filename)
+    }
+
+    /// ファイル形式を検証
+    pub fn validate_file_format(filename: &str) -> Result<(), R2Error> {
+        let extension = std::path::Path::new(filename)
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase())
+            .ok_or_else(|| R2Error::UploadFailed("ファイル拡張子が取得できません".to_string()))?;
+
+        if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "pdf") {
+            return Err(R2Error::UploadFailed(
+                "サポートされていないファイル形式です（PNG、JPG、JPEG、PDFのみ対応）".to_string()
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// ファイルサイズを検証
+    pub fn validate_file_size(file_size: u64) -> Result<(), R2Error> {
+        const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
+        
+        if file_size > MAX_FILE_SIZE {
+            return Err(R2Error::UploadFailed(
+                "ファイルサイズが10MBを超えています".to_string()
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Content-Typeを推定
+    pub fn get_content_type(filename: &str) -> String {
+        let extension = std::path::Path::new(filename)
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+
+        match extension.as_str() {
+            "png" => "image/png".to_string(),
+            "jpg" | "jpeg" => "image/jpeg".to_string(),
+            "pdf" => "application/pdf".to_string(),
+            _ => "application/octet-stream".to_string(),
+        }
     }
 }
 

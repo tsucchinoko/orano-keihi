@@ -244,3 +244,60 @@ export async function deleteSubscriptionReceipt(
 		invoke<boolean>("delete_subscription_receipt", { subscriptionId }),
 	);
 }
+
+// ========================================
+// R2領収書関連のコマンド
+// ========================================
+
+/**
+ * 領収書ファイルをR2にアップロードする
+ *
+ * @param expenseId - 経費ID
+ * @param filePath - アップロードするファイルのパス
+ * @returns アップロードされたHTTPS URLまたはエラー
+ */
+export async function uploadReceiptToR2(
+	expenseId: number,
+	filePath: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("upload_receipt_to_r2", { expenseId, filePath }),
+	);
+}
+
+/**
+ * R2から領収書を取得する
+ *
+ * @param receiptUrl - 領収書のHTTPS URL
+ * @returns Base64エンコードされたファイルデータまたはエラー
+ */
+export async function getReceiptFromR2(
+	receiptUrl: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("get_receipt_from_r2", { receiptUrl }),
+	);
+}
+
+/**
+ * R2から領収書を削除する
+ *
+ * @param expenseId - 経費ID
+ * @returns 成功またはエラー
+ */
+export async function deleteReceiptFromR2(
+	expenseId: number,
+): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(
+		invoke<boolean>("delete_receipt_from_r2", { expenseId }),
+	);
+}
+
+/**
+ * R2接続をテストする
+ *
+ * @returns 接続成功またはエラー
+ */
+export async function testR2Connection(): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(invoke<boolean>("test_r2_connection"));
+}
