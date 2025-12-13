@@ -165,3 +165,49 @@ export interface SecurityEvent {
 	details: string;
 	timestamp?: string;
 }
+
+// 並列アップロード関連型
+export interface MultipleFileUploadInput {
+	expense_id: number;
+	file_path: string;
+}
+
+export interface SingleUploadResult {
+	expense_id: number;
+	success: boolean;
+	url?: string;
+	error?: string;
+	file_size: number;
+	duration_ms: number;
+}
+
+export interface MultipleUploadResult {
+	total_files: number;
+	successful_uploads: number;
+	failed_uploads: number;
+	results: SingleUploadResult[];
+	total_duration_ms: number;
+}
+
+export interface UploadProgressEvent {
+	file_index: number;
+	file_key: string;
+	status: 'Started' | 'InProgress' | 'Completed' | 'Failed' | 'Cancelled';
+	bytes_uploaded: number;
+	total_bytes: number;
+	speed_bps: number;
+}
+
+export interface PerformanceStats {
+	latency_ms: number;
+	throughput_bps: number;
+	connection_status: string;
+	last_measured: string;
+}
+
+// 並列アップロード設定型
+export interface ParallelUploadConfig {
+	max_concurrent: number;
+	enable_progress: boolean;
+	enable_cancel: boolean;
+}

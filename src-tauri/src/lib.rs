@@ -105,6 +105,10 @@ pub fn run() {
             receipt_commands::get_receipt_offline,
             receipt_commands::sync_cache_on_online,
             receipt_commands::get_cache_stats,
+            // 並列処理とパフォーマンス関連コマンド
+            receipt_commands::upload_multiple_receipts_to_r2,
+            receipt_commands::cancel_upload,
+            receipt_commands::get_r2_performance_stats,
             // マイグレーションコマンド
             migration_commands::check_migration_status,
             migration_commands::execute_receipt_url_migration,

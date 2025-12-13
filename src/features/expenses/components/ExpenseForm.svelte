@@ -1,11 +1,19 @@
 <script lang="ts">
-import type { Expense, UploadProgress } from "$lib/types";
+import type { 
+	Expense, 
+	UploadProgress, 
+	MultipleFileUploadInput, 
+	MultipleUploadResult,
+	PerformanceStats 
+} from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
 import {
 	uploadReceiptToR2,
 	deleteReceiptFromR2,
 	syncCacheOnOnline,
+	uploadMultipleReceiptsToR2,
+	getR2PerformanceStats,
 } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -109,7 +117,7 @@ function validate(): boolean {
 	return Object.keys(newErrors).length === 0;
 }
 
-// 領収書ファイル選択
+// 領収書ファイル選択（単一）
 async function selectReceipt() {
 	try {
 		const selected = await open({
@@ -158,6 +166,60 @@ async function selectReceipt() {
 	} catch (error) {
 		console.error("領収書ファイルの選択に失敗しました:", error);
 		toastStore.error("領収書ファイルの選択に失敗しました");
+	}
+}
+
+// 複数領収書ファイル選択（並列アップロード用）
+async function selectMultipleReceipts() {
+	try {
+		const selected = await open({
+			multiple: true,
+			filters: [
+				{
+					name: "領収書",
+					extensions: ["png", "jpg", "jpeg", "pdf"],
+				},
+			],
+		});
+
+		if (selected && Array.isArray(selected) && selected.length > 0) {
+			// 各ファイルを検証
+			const validFiles: string[] = [];
+			
+			for (const filePath of selected) {
+				// ファイル形式の事前検証
+				const formatValidation = validateFileFormat(filePath);
+				if (!formatValidation.valid) {
+					const fileName = filePath.split('/').pop() || filePath.split('\\').pop();
+					toastStore.error(`${fileName}: ${formatValidation.error}`);
+					continue;
+				}
+
+				// ファイルサイズの事前検証
+				const fileSize = await getFileSize(filePath);
+				const sizeValidation = validateFileSize(fileSize);
+				if (!sizeValidation.valid) {
+					const fileName = filePath.split('/').pop() || filePath.split('\\').pop();
+					toastStore.error(`${fileName}: ${sizeValidation.error}`);
+					continue;
+				}
+
+				validFiles.push(filePath);
+			}
+
+			if (validFiles.length === 0) {
+				toastStore.error("有効なファイルがありません");
+				return;
+			}
+
+			multipleFiles = validFiles;
+			multipleUploadResult = null; // 前回の結果をクリア
+
+			toastStore.success(`${validFiles.length}個のファイルを選択しました`);
+		}
+	} catch (error) {
+		console.error("複数ファイルの選択に失敗しました:", error);
+		toastStore.error("複数ファイルの選択に失敗しました");
 	}
 }
 
@@ -341,6 +403,13 @@ let uploadProgress = $state<UploadProgress>({ loaded: 0, total: 0, percentage: 0
 let uploadCancelled = $state(false);
 let uploadError = $state<string | null>(null);
 
+// 並列アップロード関連の状態
+let isMultipleUploading = $state(false);
+let multipleFiles = $state<string[]>([]);
+let multipleUploadResult = $state<MultipleUploadResult | null>(null);
+let showPerformanceStats = $state(false);
+let performanceStats = $state<PerformanceStats | null>(null);
+
 // フォーム送信
 async function handleSubmit(event: Event) {
 	event.preventDefault();
@@ -407,6 +476,69 @@ async function handleSubmit(event: Event) {
 		toastStore.error(`エラーが発生しました: ${error}`);
 	} finally {
 		isSubmitting = false;
+	}
+}
+
+// 複数ファイルを並列アップロードする
+async function uploadMultipleFiles() {
+	if (multipleFiles.length === 0) {
+		toastStore.error("アップロードするファイルがありません");
+		return;
+	}
+
+	// 仮の経費IDを使用（実際の実装では、事前に経費を作成するか、一括作成機能を実装）
+	const tempExpenseIds = Array.from({ length: multipleFiles.length }, (_, i) => i + 1000);
+
+	const uploadInputs: MultipleFileUploadInput[] = multipleFiles.map((filePath, index) => ({
+		expense_id: tempExpenseIds[index],
+		file_path: filePath,
+	}));
+
+	isMultipleUploading = true;
+	multipleUploadResult = null;
+
+	try {
+		const result = await uploadMultipleReceiptsToR2(uploadInputs, 3); // 最大3並列
+
+		if (result.error) {
+			toastStore.error(`並列アップロードに失敗しました: ${result.error}`);
+			return;
+		}
+
+		multipleUploadResult = result.data!;
+
+		const { successful_uploads, failed_uploads, total_duration_ms } = result.data!;
+		
+		toastStore.success(
+			`並列アップロード完了: 成功=${successful_uploads}, 失敗=${failed_uploads}, 時間=${total_duration_ms}ms`
+		);
+
+	} catch (error) {
+		console.error("並列アップロードエラー:", error);
+		toastStore.error("並列アップロードに失敗しました");
+	} finally {
+		isMultipleUploading = false;
+	}
+}
+
+// パフォーマンス統計を取得する
+async function loadPerformanceStats() {
+	try {
+		const result = await getR2PerformanceStats();
+
+		if (result.error) {
+			toastStore.error(`パフォーマンス統計の取得に失敗しました: ${result.error}`);
+			return;
+		}
+
+		performanceStats = result.data!;
+		showPerformanceStats = true;
+
+		toastStore.success("パフォーマンス統計を取得しました");
+
+	} catch (error) {
+		console.error("パフォーマンス統計取得エラー:", error);
+		toastStore.error("パフォーマンス統計の取得に失敗しました");
 	}
 }
 </script>
@@ -502,13 +634,15 @@ async function handleSubmit(event: Event) {
 			<label for="receipt-upload" class="block text-sm font-semibold mb-2">
 				領収書（オプション）
 			</label>
-			<div class="flex gap-2">
+			
+			<!-- 単一ファイルアップロード -->
+			<div class="flex gap-2 mb-3">
 				<button
 					id="receipt-upload"
 					type="button"
 					onclick={selectReceipt}
 					class="btn btn-info flex-1"
-					disabled={isUploading}
+					disabled={isUploading || isMultipleUploading}
 				>
 					📎 領収書を選択
 				</button>
@@ -518,10 +652,167 @@ async function handleSubmit(event: Event) {
 						onclick={deleteReceiptFile}
 						class="btn bg-red-500 text-white px-4"
 						title="領収書を削除"
-						disabled={isUploading}
+						disabled={isUploading || isMultipleUploading}
 					>
 						🗑️
 					</button>
+				{/if}
+			</div>
+
+			<!-- 並列アップロード機能 -->
+			<div class="border-t pt-3 mt-3">
+				<h4 class="text-sm font-semibold mb-2 text-gray-700">
+					🚀 高速並列アップロード（複数ファイル対応）
+				</h4>
+				
+				<div class="flex gap-2 mb-2">
+					<button
+						type="button"
+						onclick={selectMultipleReceipts}
+						class="btn bg-purple-500 text-white flex-1"
+						disabled={isUploading || isMultipleUploading}
+					>
+						📁 複数ファイル選択
+					</button>
+					<button
+						type="button"
+						onclick={uploadMultipleFiles}
+						class="btn bg-green-500 text-white flex-1"
+						disabled={isUploading || isMultipleUploading || multipleFiles.length === 0}
+					>
+						{#if isMultipleUploading}
+							<span class="flex items-center gap-2">
+								<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+								並列アップロード中...
+							</span>
+						{:else}
+							⚡ 並列アップロード
+						{/if}
+					</button>
+				</div>
+
+				<!-- 選択されたファイル一覧 -->
+				{#if multipleFiles.length > 0}
+					<div class="bg-gray-50 rounded-lg p-3 mb-3">
+						<p class="text-sm font-medium text-gray-700 mb-2">
+							選択されたファイル ({multipleFiles.length}個):
+						</p>
+						<div class="space-y-1 max-h-32 overflow-y-auto">
+							{#each multipleFiles as filePath, index}
+								<div class="flex items-center justify-between text-xs bg-white rounded px-2 py-1">
+									<span class="truncate flex-1">
+										📄 {filePath.split('/').pop() || filePath.split('\\').pop()}
+									</span>
+									<button
+										type="button"
+										onclick={() => {
+											multipleFiles = multipleFiles.filter((_, i) => i !== index);
+										}}
+										class="text-red-500 hover:text-red-700 ml-2"
+										disabled={isMultipleUploading}
+									>
+										✕
+									</button>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- 並列アップロード結果 -->
+				{#if multipleUploadResult}
+					<div class="bg-blue-50 rounded-lg p-3 mb-3 border border-blue-200">
+						<h5 class="text-sm font-semibold text-blue-800 mb-2">
+							📊 アップロード結果
+						</h5>
+						<div class="grid grid-cols-2 gap-2 text-xs">
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">総ファイル数:</span>
+								<span class="font-medium">{multipleUploadResult.total_files}</span>
+							</div>
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">成功:</span>
+								<span class="font-medium text-green-600">{multipleUploadResult.successful_uploads}</span>
+							</div>
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">失敗:</span>
+								<span class="font-medium text-red-600">{multipleUploadResult.failed_uploads}</span>
+							</div>
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">処理時間:</span>
+								<span class="font-medium">{multipleUploadResult.total_duration_ms}ms</span>
+							</div>
+						</div>
+						
+						<!-- 詳細結果 -->
+						{#if multipleUploadResult.results.length > 0}
+							<details class="mt-2">
+								<summary class="text-xs text-blue-700 cursor-pointer hover:text-blue-900">
+									詳細結果を表示
+								</summary>
+								<div class="mt-2 space-y-1 max-h-32 overflow-y-auto">
+									{#each multipleUploadResult.results as result}
+										<div class="text-xs bg-white rounded px-2 py-1 flex items-center justify-between">
+											<span class="truncate flex-1">
+												経費ID: {result.expense_id}
+											</span>
+											<span class="ml-2 {result.success ? 'text-green-600' : 'text-red-600'}">
+												{result.success ? '✅' : '❌'}
+											</span>
+										</div>
+									{/each}
+								</div>
+							</details>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- パフォーマンス統計 -->
+				<div class="flex gap-2">
+					<button
+						type="button"
+						onclick={loadPerformanceStats}
+						class="btn bg-indigo-500 text-white text-xs px-3 py-1"
+						disabled={isUploading || isMultipleUploading}
+					>
+						📈 パフォーマンス統計
+					</button>
+					{#if showPerformanceStats}
+						<button
+							type="button"
+							onclick={() => showPerformanceStats = false}
+							class="btn bg-gray-400 text-white text-xs px-3 py-1"
+						>
+							統計を非表示
+						</button>
+					{/if}
+				</div>
+
+				<!-- パフォーマンス統計表示 -->
+				{#if showPerformanceStats && performanceStats}
+					<div class="bg-indigo-50 rounded-lg p-3 mt-2 border border-indigo-200">
+						<h5 class="text-sm font-semibold text-indigo-800 mb-2">
+							📈 R2パフォーマンス統計
+						</h5>
+						<div class="grid grid-cols-2 gap-2 text-xs">
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">レイテンシ:</span>
+								<span class="font-medium">{performanceStats.latency_ms}ms</span>
+							</div>
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">スループット:</span>
+								<span class="font-medium">{(performanceStats.throughput_bps / 1024).toFixed(1)}KB/s</span>
+							</div>
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">接続状態:</span>
+								<span class="font-medium text-green-600">{performanceStats.connection_status}</span>
+							</div>
+							<div class="bg-white rounded px-2 py-1">
+								<span class="text-gray-600">測定時刻:</span>
+								<span class="font-medium text-xs">{new Date(performanceStats.last_measured).toLocaleTimeString()}</span>
+							</div>
+						</div>
+					</div>
 				{/if}
 			</div>
 

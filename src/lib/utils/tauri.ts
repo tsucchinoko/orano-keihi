@@ -341,3 +341,49 @@ export async function getCacheStats(): Promise<
 		invoke<import("../types").CacheStats>("get_cache_stats"),
 	);
 }
+
+// ========================================
+// 並列処理とパフォーマンス関連のコマンド
+// ========================================
+
+/**
+ * 複数ファイルを並列でR2にアップロードする
+ *
+ * @param files - アップロードするファイルのリスト
+ * @param maxConcurrent - 最大同時実行数（オプション、デフォルト: 3）
+ * @returns アップロード結果またはエラー
+ */
+export async function uploadMultipleReceiptsToR2(
+	files: import("../types").MultipleFileUploadInput[],
+	maxConcurrent?: number,
+): Promise<TauriResult<import("../types").MultipleUploadResult>> {
+	return handleTauriCommand(
+		invoke<import("../types").MultipleUploadResult>(
+			"upload_multiple_receipts_to_r2",
+			{ files, maxConcurrent },
+		),
+	);
+}
+
+/**
+ * アップロードをキャンセルする
+ *
+ * @param uploadId - アップロードID
+ * @returns キャンセル成功またはエラー
+ */
+export async function cancelUpload(uploadId: string): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(invoke<boolean>("cancel_upload", { uploadId }));
+}
+
+/**
+ * R2パフォーマンス統計を取得する
+ *
+ * @returns パフォーマンス統計またはエラー
+ */
+export async function getR2PerformanceStats(): Promise<
+	TauriResult<import("../types").PerformanceStats>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").PerformanceStats>("get_r2_performance_stats"),
+	);
+}

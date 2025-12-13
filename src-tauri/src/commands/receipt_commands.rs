@@ -1,5 +1,9 @@
 use crate::db::{expense_operations, subscription_operations};
-use crate::services::{config::R2Config, r2_client::R2Client, security::SecurityManager};
+use crate::services::{
+    config::R2Config, 
+    r2_client::{R2Client, MultipleFileUpload, PerformanceStats}, 
+    security::SecurityManager
+};
 use crate::AppState;
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
@@ -8,6 +12,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
+use tokio::sync::mpsc;
 
 /// 領収書ファイルを保存する
 ///
@@ -897,4 +902,299 @@ pub struct CacheStats {
     pub total_size_bytes: u64,
     pub max_size_bytes: u64,
     pub cache_hit_rate: f64,
+}
+
+/// 複数ファイルアップロード用の入力構造体
+#[derive(serde::Deserialize)]
+pub struct MultipleFileUploadInput {
+    pub expense_id: i64,
+    pub file_path: String,
+}
+
+/// 複数ファイルアップロード結果の構造体
+#[derive(serde::Serialize)]
+pub struct MultipleUploadResult {
+    pub total_files: usize,
+    pub successful_uploads: usize,
+    pub failed_uploads: usize,
+    pub results: Vec<SingleUploadResult>,
+    pub total_duration_ms: u64,
+}
+
+/// 単一アップロード結果の構造体
+#[derive(serde::Serialize)]
+pub struct SingleUploadResult {
+    pub expense_id: i64,
+    pub success: bool,
+    pub url: Option<String>,
+    pub error: Option<String>,
+    pub file_size: u64,
+    pub duration_ms: u64,
+}
+
+/// 複数ファイルを並列でR2にアップロードする
+///
+/// # 引数
+/// * `files` - アップロードするファイルのリスト
+/// * `max_concurrent` - 最大同時実行数（デフォルト: 3）
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// アップロード結果、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn upload_multiple_receipts_to_r2(
+    files: Vec<MultipleFileUploadInput>,
+    max_concurrent: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<MultipleUploadResult, String> {
+    let start_time = std::time::Instant::now();
+    let max_concurrent = max_concurrent.unwrap_or(3); // デフォルト3並列
+    
+    info!("複数ファイル並列アップロード開始: {} ファイル, 最大同時実行数: {}", files.len(), max_concurrent);
+    
+    let security_manager = SecurityManager::new();
+    security_manager.log_security_event(
+        "multiple_upload_started",
+        &format!("files_count={}, max_concurrent={}", files.len(), max_concurrent),
+    );
+
+    // R2設定を読み込み
+    let config = R2Config::from_env().map_err(|e| {
+        let error_msg = format!("R2設定の読み込みに失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_config_load_failed", &format!("error={:?}", e));
+        error_msg
+    })?;
+
+    // R2クライアントを初期化
+    let client = R2Client::new(config).await.map_err(|e| {
+        let error_msg = format!("R2クライアントの初期化に失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_client_init_failed", &format!("error={}", e));
+        error_msg
+    })?;
+
+    // ファイルを読み込んでMultipleFileUpload構造体に変換
+    let mut upload_files = Vec::new();
+    
+    for file_input in files {
+        let source_path = Path::new(&file_input.file_path);
+        
+        // ファイル存在チェック
+        if !source_path.exists() {
+            warn!("ファイルが存在しません: {}", file_input.file_path);
+            continue;
+        }
+
+        // ファイル名を取得
+        let filename = source_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| {
+                format!("ファイル名の取得に失敗しました: {}", file_input.file_path)
+            })?;
+
+        // ファイル形式の事前検証
+        if let Err(e) = R2Client::validate_file_format(filename) {
+            warn!("ファイル形式エラー: {} - {}", filename, e);
+            continue;
+        }
+
+        // ファイルサイズの事前検証
+        let metadata = fs::metadata(source_path).map_err(|e| {
+            format!("ファイル情報の取得に失敗しました: {} - {}", file_input.file_path, e)
+        })?;
+
+        if let Err(e) = R2Client::validate_file_size(metadata.len()) {
+            warn!("ファイルサイズエラー: {} - {}", filename, e);
+            continue;
+        }
+
+        // ファイルを読み込み
+        let file_data = fs::read(source_path).map_err(|e| {
+            format!("ファイルの読み込みに失敗しました: {} - {}", file_input.file_path, e)
+        })?;
+
+        // ファイルキーを生成
+        let file_key = R2Client::generate_file_key(file_input.expense_id, filename);
+        let content_type = R2Client::get_content_type(filename);
+
+        upload_files.push(MultipleFileUpload {
+            file_key,
+            file_data,
+            content_type,
+            expense_id: file_input.expense_id,
+            filename: filename.to_string(),
+        });
+    }
+
+    if upload_files.is_empty() {
+        return Err("アップロード可能なファイルがありません".to_string());
+    }
+
+    // プログレス通知用チャンネル（オプション）
+    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
+    
+    // プログレス受信タスクを起動（バックグラウンドで実行）
+    tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            debug!("アップロードプログレス: {:?}", progress);
+            // 必要に応じてフロントエンドに通知
+        }
+    });
+
+    // 並列アップロード実行
+    let upload_results = client
+        .upload_multiple_files(
+            upload_files.clone(),
+            max_concurrent,
+            Some(progress_tx),
+            None, // キャンセルトークンは今回は使用しない
+        )
+        .await
+        .map_err(|e| {
+            let error_msg = format!("並列アップロードに失敗しました: {}", e);
+            error!("{}", error_msg);
+            security_manager.log_security_event("parallel_upload_failed", &format!("error={}", e));
+            error_msg
+        })?;
+
+    // データベースに結果を保存
+    let mut single_results = Vec::new();
+    let mut successful_uploads = 0;
+    let mut failed_uploads = 0;
+
+    for (upload_file, upload_result) in upload_files.iter().zip(upload_results.iter()) {
+        if upload_result.success {
+            if let Some(url) = &upload_result.url {
+                // データベースにreceipt_urlを保存
+                let db = state.db.lock().map_err(|e| {
+                    format!("データベースロックエラー: {}", e)
+                })?;
+
+                if let Err(e) = expense_operations::set_receipt_url(&db, upload_file.expense_id, url.clone()) {
+                    error!("データベース保存エラー: expense_id={}, error={}", upload_file.expense_id, e);
+                    failed_uploads += 1;
+                    single_results.push(SingleUploadResult {
+                        expense_id: upload_file.expense_id,
+                        success: false,
+                        url: None,
+                        error: Some(format!("データベース保存エラー: {}", e)),
+                        file_size: upload_result.file_size,
+                        duration_ms: upload_result.duration.as_millis() as u64,
+                    });
+                } else {
+                    successful_uploads += 1;
+                    single_results.push(SingleUploadResult {
+                        expense_id: upload_file.expense_id,
+                        success: true,
+                        url: Some(url.clone()),
+                        error: None,
+                        file_size: upload_result.file_size,
+                        duration_ms: upload_result.duration.as_millis() as u64,
+                    });
+                }
+            }
+        } else {
+            failed_uploads += 1;
+            single_results.push(SingleUploadResult {
+                expense_id: upload_file.expense_id,
+                success: false,
+                url: None,
+                error: upload_result.error.clone(),
+                file_size: upload_result.file_size,
+                duration_ms: upload_result.duration.as_millis() as u64,
+            });
+        }
+    }
+
+    let total_duration = start_time.elapsed();
+    
+    info!(
+        "複数ファイル並列アップロード完了: 成功={}, 失敗={}, 総時間={:?}",
+        successful_uploads, failed_uploads, total_duration
+    );
+
+    security_manager.log_security_event(
+        "multiple_upload_completed",
+        &format!(
+            "total_files={}, successful={}, failed={}, duration={:?}",
+            upload_files.len(), successful_uploads, failed_uploads, total_duration
+        ),
+    );
+
+    Ok(MultipleUploadResult {
+        total_files: upload_files.len(),
+        successful_uploads,
+        failed_uploads,
+        results: single_results,
+        total_duration_ms: total_duration.as_millis() as u64,
+    })
+}
+
+/// アップロードをキャンセルする（将来の実装用）
+///
+/// # 引数
+/// * `upload_id` - アップロードID（将来の実装で使用）
+///
+/// # 戻り値
+/// キャンセル成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn cancel_upload(upload_id: String) -> Result<bool, String> {
+    // 現在の実装では簡単なログ出力のみ
+    info!("アップロードキャンセル要求: upload_id={}", upload_id);
+    
+    // 将来的にはアクティブなアップロードタスクを管理し、
+    // キャンセルトークンを使用してタスクを停止する実装を追加
+    
+    Ok(true)
+}
+
+/// R2パフォーマンス統計を取得する
+///
+/// # 引数
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// パフォーマンス統計、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn get_r2_performance_stats(_state: State<'_, AppState>) -> Result<PerformanceStats, String> {
+    info!("R2パフォーマンス統計取得開始");
+    
+    let security_manager = SecurityManager::new();
+    security_manager.log_security_event("performance_stats_requested", "R2パフォーマンス統計取得開始");
+
+    // R2設定を読み込み
+    let config = R2Config::from_env().map_err(|e| {
+        let error_msg = format!("R2設定の読み込みに失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_config_load_failed", &format!("error={:?}", e));
+        error_msg
+    })?;
+
+    // R2クライアントを初期化
+    let client = R2Client::new(config).await.map_err(|e| {
+        let error_msg = format!("R2クライアントの初期化に失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_client_init_failed", &format!("error={}", e));
+        error_msg
+    })?;
+
+    // パフォーマンス統計を取得
+    let stats = client.get_performance_stats().await.map_err(|e| {
+        let error_msg = format!("パフォーマンス統計の取得に失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("performance_stats_failed", &format!("error={}", e));
+        error_msg
+    })?;
+
+    info!("R2パフォーマンス統計取得完了: レイテンシ={}ms, スループット={}bps", 
+          stats.latency_ms, stats.throughput_bps);
+    
+    security_manager.log_security_event(
+        "performance_stats_success",
+        &format!("latency={}ms, throughput={}bps", stats.latency_ms, stats.throughput_bps),
+    );
+
+    Ok(stats)
 }

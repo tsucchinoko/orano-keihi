@@ -6,7 +6,70 @@ use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::{Client, Config};
 use log::{debug, error, info, warn};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use std::sync::Arc;
+use tokio::sync::{Semaphore, mpsc};
+use futures::future::join_all;
+
+/// 複数ファイルアップロード用の構造体
+#[derive(Debug, Clone)]
+pub struct MultipleFileUpload {
+    pub file_key: String,
+    pub file_data: Vec<u8>,
+    pub content_type: String,
+    pub expense_id: i64,
+    pub filename: String,
+}
+
+/// アップロード結果の構造体
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UploadResult {
+    pub file_key: String,
+    pub success: bool,
+    pub url: Option<String>,
+    pub error: Option<String>,
+    pub file_size: u64,
+    #[serde(serialize_with = "serialize_duration")]
+    pub duration: Duration,
+}
+
+/// Duration を milliseconds として serialize する
+fn serialize_duration<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_u64(duration.as_millis() as u64)
+}
+
+/// アップロードプログレスの構造体
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UploadProgress {
+    pub file_index: usize,
+    pub file_key: String,
+    pub status: UploadStatus,
+    pub bytes_uploaded: u64,
+    pub total_bytes: u64,
+    pub speed_bps: u64,
+}
+
+/// アップロードステータス
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum UploadStatus {
+    Started,
+    InProgress,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+/// パフォーマンス統計の構造体
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PerformanceStats {
+    pub latency_ms: u64,
+    pub throughput_bps: u64,
+    pub connection_status: String,
+    pub last_measured: String,
+}
 
 #[derive(Clone)]
 pub struct R2Client {
@@ -298,6 +361,245 @@ impl R2Client {
             "pdf" => "application/pdf".to_string(),
             _ => "application/octet-stream".to_string(),
         }
+    }
+
+    /// 複数ファイルを並列でアップロードする
+    pub async fn upload_multiple_files(
+        &self,
+        files: Vec<MultipleFileUpload>,
+        max_concurrent: usize,
+        progress_sender: Option<mpsc::UnboundedSender<UploadProgress>>,
+        cancel_token: Option<Arc<tokio_util::sync::CancellationToken>>,
+    ) -> Result<Vec<UploadResult>, R2Error> {
+        info!("並列アップロード開始: {} ファイル, 最大同時実行数: {}", files.len(), max_concurrent);
+        
+        let start_time = Instant::now();
+        let total_files = files.len();
+        let semaphore = Arc::new(Semaphore::new(max_concurrent));
+        let client = Arc::new(self.clone());
+        
+        // 各ファイルのアップロードタスクを作成
+        let upload_tasks: Vec<_> = files
+            .into_iter()
+            .enumerate()
+            .map(|(index, file_upload)| {
+                let semaphore = semaphore.clone();
+                let client = client.clone();
+                let progress_sender = progress_sender.clone();
+                let cancel_token = cancel_token.clone();
+                
+                tokio::spawn(async move {
+                    // セマフォを取得（同時実行数制限）
+                    let _permit = semaphore.acquire().await.map_err(|_| {
+                        R2Error::UploadFailed("セマフォ取得に失敗しました".to_string())
+                    })?;
+                    
+                    // キャンセルチェック
+                    if let Some(token) = &cancel_token {
+                        if token.is_cancelled() {
+                            return Ok(UploadResult {
+                                file_key: file_upload.file_key.clone(),
+                                success: false,
+                                url: None,
+                                error: Some("アップロードがキャンセルされました".to_string()),
+                                file_size: file_upload.file_data.len() as u64,
+                                duration: Duration::from_secs(0),
+                            });
+                        }
+                    }
+                    
+                    let upload_start = Instant::now();
+                    
+                    // プログレス通知（開始）
+                    if let Some(sender) = &progress_sender {
+                        let _ = sender.send(UploadProgress {
+                            file_index: index,
+                            file_key: file_upload.file_key.clone(),
+                            status: UploadStatus::Started,
+                            bytes_uploaded: 0,
+                            total_bytes: file_upload.file_data.len() as u64,
+                            speed_bps: 0,
+                        });
+                    }
+                    
+                    // ファイルアップロード実行
+                    let result = client
+                        .upload_file_with_retry(
+                            &file_upload.file_key,
+                            file_upload.file_data.clone(),
+                            &file_upload.content_type,
+                            3, // 最大3回リトライ
+                        )
+                        .await;
+                    
+                    let duration = upload_start.elapsed();
+                    let file_size = file_upload.file_data.len() as u64;
+                    
+                    let upload_result = match result {
+                        Ok(url) => {
+                            // プログレス通知（完了）
+                            if let Some(sender) = &progress_sender {
+                                let speed_bps = if duration.as_secs() > 0 {
+                                    file_size / duration.as_secs()
+                                } else {
+                                    0
+                                };
+                                
+                                let _ = sender.send(UploadProgress {
+                                    file_index: index,
+                                    file_key: file_upload.file_key.clone(),
+                                    status: UploadStatus::Completed,
+                                    bytes_uploaded: file_size,
+                                    total_bytes: file_size,
+                                    speed_bps,
+                                });
+                            }
+                            
+                            UploadResult {
+                                file_key: file_upload.file_key,
+                                success: true,
+                                url: Some(url),
+                                error: None,
+                                file_size,
+                                duration,
+                            }
+                        }
+                        Err(e) => {
+                            // プログレス通知（エラー）
+                            if let Some(sender) = &progress_sender {
+                                let _ = sender.send(UploadProgress {
+                                    file_index: index,
+                                    file_key: file_upload.file_key.clone(),
+                                    status: UploadStatus::Failed,
+                                    bytes_uploaded: 0,
+                                    total_bytes: file_size,
+                                    speed_bps: 0,
+                                });
+                            }
+                            
+                            UploadResult {
+                                file_key: file_upload.file_key,
+                                success: false,
+                                url: None,
+                                error: Some(e.to_string()),
+                                file_size,
+                                duration,
+                            }
+                        }
+                    };
+                    
+                    Ok::<UploadResult, R2Error>(upload_result)
+                })
+            })
+            .collect();
+        
+        // すべてのタスクを並列実行
+        let results = join_all(upload_tasks).await;
+        
+        // 結果を収集
+        let mut upload_results = Vec::new();
+        let mut successful_uploads = 0;
+        let mut failed_uploads = 0;
+        
+        for task_result in results {
+            match task_result {
+                Ok(Ok(upload_result)) => {
+                    if upload_result.success {
+                        successful_uploads += 1;
+                    } else {
+                        failed_uploads += 1;
+                    }
+                    upload_results.push(upload_result);
+                }
+                Ok(Err(e)) => {
+                    failed_uploads += 1;
+                    error!("アップロードタスクエラー: {}", e);
+                    return Err(e);
+                }
+                Err(e) => {
+                    failed_uploads += 1;
+                    error!("タスク実行エラー: {}", e);
+                    return Err(R2Error::UploadFailed(format!("タスク実行エラー: {}", e)));
+                }
+            }
+        }
+        
+        let total_duration = start_time.elapsed();
+        
+        info!(
+            "並列アップロード完了: 成功={}, 失敗={}, 総時間={:?}",
+            successful_uploads, failed_uploads, total_duration
+        );
+        
+        // セキュリティログ記録
+        let security_manager = SecurityManager::new();
+        security_manager.log_security_event(
+            "parallel_upload_completed",
+            &format!(
+                "total_files={}, successful={}, failed={}, duration={:?}",
+                total_files, successful_uploads, failed_uploads, total_duration
+            ),
+        );
+        
+        Ok(upload_results)
+    }
+
+    /// パフォーマンス統計を取得する
+    pub async fn get_performance_stats(&self) -> Result<PerformanceStats, R2Error> {
+        let start_time = Instant::now();
+        
+        // 接続テストでレイテンシを測定
+        self.test_connection().await?;
+        let latency = start_time.elapsed();
+        
+        // 小さなテストファイルでスループットを測定
+        let test_data = vec![0u8; 1024]; // 1KB
+        let test_key = format!("performance_test_{}", uuid::Uuid::new_v4());
+        
+        let upload_start = Instant::now();
+        let _url = self.upload_file(&test_key, test_data.clone(), "application/octet-stream").await?;
+        let upload_duration = upload_start.elapsed();
+        
+        // テストファイルを削除
+        let _ = self.delete_file(&test_key).await;
+        
+        // スループット計算（bytes/sec）
+        let throughput_bps = if upload_duration.as_secs_f64() > 0.0 {
+            test_data.len() as f64 / upload_duration.as_secs_f64()
+        } else {
+            0.0
+        };
+        
+        Ok(PerformanceStats {
+            latency_ms: latency.as_millis() as u64,
+            throughput_bps: throughput_bps as u64,
+            connection_status: "healthy".to_string(),
+            last_measured: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    /// アップロード統計を記録する
+    pub fn record_upload_stats(&self, file_size: u64, duration: Duration, success: bool) {
+        let speed_bps = if duration.as_secs() > 0 {
+            file_size / duration.as_secs()
+        } else {
+            0
+        };
+        
+        info!(
+            "アップロード統計: サイズ={}bytes, 時間={:?}, 速度={}bps, 成功={}",
+            file_size, duration, speed_bps, success
+        );
+        
+        // セキュリティログ記録
+        let security_manager = SecurityManager::new();
+        security_manager.log_security_event(
+            "upload_stats",
+            &format!(
+                "size={}, duration={:?}, speed={}bps, success={}",
+                file_size, duration, speed_bps, success
+            ),
+        );
     }
 }
 

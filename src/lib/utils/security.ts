@@ -14,7 +14,7 @@ import type {
 export async function getSystemDiagnosticInfo(): Promise<SystemDiagnosticInfo> {
 	try {
 		const result = await invoke<Record<string, string>>('get_system_diagnostic_info');
-		return result as SystemDiagnosticInfo;
+		return result as unknown as SystemDiagnosticInfo;
 	} catch (error) {
 		console.error('システム診断情報の取得に失敗しました:', error);
 		throw error;
@@ -53,7 +53,7 @@ export async function testR2ConnectionSecure(): Promise<boolean> {
 export async function getEnvironmentInfo(): Promise<EnvironmentInfo> {
 	try {
 		const result = await invoke<Record<string, string>>('get_environment_info');
-		return result as EnvironmentInfo;
+		return result as unknown as EnvironmentInfo;
 	} catch (error) {
 		console.error('環境情報の取得に失敗しました:', error);
 		throw error;
@@ -81,7 +81,7 @@ export async function logSecurityEvent(eventType: string, details: string): Prom
 export async function getR2DiagnosticInfo(): Promise<R2DiagnosticInfo> {
 	try {
 		const result = await invoke<Record<string, string>>('get_r2_diagnostic_info');
-		return result as R2DiagnosticInfo;
+		return result as unknown as R2DiagnosticInfo;
 	} catch (error) {
 		console.error('R2診断情報の取得に失敗しました:', error);
 		throw error;
