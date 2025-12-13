@@ -1,11 +1,8 @@
 <script lang="ts">
-// Props
-interface Props {
-	selectedMonth: string; // YYYY-MM形式
-	onMonthChange: (month: string) => void;
-}
+import { expenseStore } from "$lib/stores/expenses.svelte";
 
-let { selectedMonth, onMonthChange }: Props = $props();
+// ストアから選択された月を取得
+const selectedMonth = $derived(expenseStore.selectedMonth);
 
 // 現在の年月
 const currentYear = new Date().getFullYear();
@@ -49,14 +46,14 @@ function handleYearChange(event: Event) {
 	const target = event.target as HTMLSelectElement;
 	const newYear = target.value;
 	const newMonth = String(selectedMonthNum()).padStart(2, "0");
-	onMonthChange(`${newYear}-${newMonth}`);
+	expenseStore.setSelectedMonth(`${newYear}-${newMonth}`);
 }
 
 // 月の変更
 function handleMonthChange(event: Event) {
 	const target = event.target as HTMLSelectElement;
 	const newMonth = String(target.value).padStart(2, "0");
-	onMonthChange(`${selectedYear()}-${newMonth}`);
+	expenseStore.setSelectedMonth(`${selectedYear()}-${newMonth}`);
 }
 
 // 前月へ
@@ -70,7 +67,7 @@ function previousMonth() {
 	}
 
 	const newMonth = String(month).padStart(2, "0");
-	onMonthChange(`${year}-${newMonth}`);
+	expenseStore.setSelectedMonth(`${year}-${newMonth}`);
 }
 
 // 次月へ
@@ -84,7 +81,7 @@ function nextMonth() {
 	}
 
 	const newMonth = String(month).padStart(2, "0");
-	onMonthChange(`${year}-${newMonth}`);
+	expenseStore.setSelectedMonth(`${year}-${newMonth}`);
 }
 
 // 今月へ
@@ -92,7 +89,7 @@ function goToCurrentMonth() {
 	const now = new Date();
 	const year = now.getFullYear();
 	const month = String(now.getMonth() + 1).padStart(2, "0");
-	onMonthChange(`${year}-${month}`);
+	expenseStore.setSelectedMonth(`${year}-${month}`);
 }
 
 // 次月ボタンの無効化判定（未来の月は選択不可）

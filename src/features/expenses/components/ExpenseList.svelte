@@ -16,9 +16,11 @@ let { onEdit, onViewReceipt }: Props = $props();
 const expenses = $derived(expenseStore.filteredExpenses);
 const selectedMonth = $derived(expenseStore.selectedMonth);
 
-// コンポーネントマウント時に経費を読み込む
+// 初回マウント時のみ経費を読み込む
 $effect(() => {
-	expenseStore.loadExpenses();
+	if (expenses.length === 0) {
+		expenseStore.loadExpenses();
+	}
 });
 
 // 日付でグループ化された経費

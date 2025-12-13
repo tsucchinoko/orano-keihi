@@ -1,11 +1,8 @@
 <script lang="ts">
-// Props
-interface Props {
-	selectedCategories: string[];
-	onFilterChange: (categories: string[]) => void;
-}
+import { expenseStore } from "$lib/stores/expenses.svelte";
 
-let { selectedCategories, onFilterChange }: Props = $props();
+// ストアから選択されたカテゴリを取得
+const selectedCategories = $derived(expenseStore.selectedCategories);
 
 // カテゴリ定義
 const categories = [
@@ -23,17 +20,17 @@ function handleToggle(categoryName: string) {
 		? selectedCategories.filter((c) => c !== categoryName)
 		: [...selectedCategories, categoryName];
 
-	onFilterChange(newSelected);
+	expenseStore.setSelectedCategories(newSelected);
 }
 
 // 全選択
 function selectAll() {
-	onFilterChange(categories.map((c) => c.name));
+	expenseStore.setSelectedCategories(categories.map((c) => c.name));
 }
 
 // 全解除
 function clearAll() {
-	onFilterChange([]);
+	expenseStore.setSelectedCategories([]);
 }
 
 // 全選択状態かどうか
