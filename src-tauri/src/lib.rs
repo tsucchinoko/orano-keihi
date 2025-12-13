@@ -69,9 +69,6 @@ pub fn run() {
 
             info!("アプリケーション初期化を開始します...");
 
-            // セキュリティマネージャーを初期化
-            let security_manager = SecurityManager::new();
-            
             // 環境変数を読み込み（.envファイルがある場合）
             if let Err(_) = dotenv::dotenv() {
                 // .envファイルがない場合は無視（本番環境では環境変数が直接設定される）
@@ -79,6 +76,9 @@ pub fn run() {
             } else {
                 info!(".envファイルを読み込みました");
             }
+
+            // セキュリティマネージャーを初期化（.envファイル読み込み後）
+            let security_manager = SecurityManager::new();
 
             // セキュリティ設定の検証
             if let Err(e) = security_manager.validate_configuration() {
