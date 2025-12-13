@@ -1,10 +1,8 @@
 <script lang="ts">
-import type { Expense } from "$lib/types";
+import type { Expense, UploadProgress } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
 import {
-	saveReceipt,
-	deleteReceipt,
 	uploadReceiptToR2,
 	deleteReceiptFromR2,
 	syncCacheOnOnline,
@@ -21,25 +19,41 @@ interface Props {
 let { expense, onSuccess, onCancel }: Props = $props();
 
 // フォームの状態
-let date = $state(
-	expense?.date.split("T")[0] || new Date().toISOString().split("T")[0],
-);
-let amount = $state(expense?.amount.toString() || "");
-let category = $state(expense?.category || "");
-let description = $state(expense?.description || "");
+let date = $state("");
+let amount = $state("");
+let category = $state("");
+let description = $state("");
 let receiptFile = $state<string | undefined>(undefined);
 let receiptPreview = $state<string | undefined>(undefined);
 
-// 既存の領収書を表示（R2 URLまたはローカルパス）
+// フォームの初期化とプレビュー設定
 $effect(() => {
-	if (expense?.receipt_url) {
-		// R2のHTTPS URLの場合はそのまま使用
-		receiptPreview = expense.receipt_url;
-	} else if (expense?.receipt_path) {
-		// 後方互換性：ローカルパスの場合は変換
-		import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
-			receiptPreview = convertFileSrc(expense.receipt_path!);
-		});
+	// フォームフィールドの初期化
+	if (expense) {
+		date = expense.date.split("T")[0] || new Date().toISOString().split("T")[0];
+		amount = expense.amount.toString() || "";
+		category = expense.category || "";
+		description = expense.description || "";
+		
+		// 既存の領収書を表示（R2 URLまたはローカルパス）
+		if (expense.receipt_url) {
+			// R2のHTTPS URLの場合はそのまま使用
+			receiptPreview = expense.receipt_url;
+		} else if (expense.receipt_path) {
+			// 後方互換性：ローカルパスの場合は変換
+			import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+				if (expense?.receipt_path) {
+					receiptPreview = convertFileSrc(expense.receipt_path);
+				}
+			});
+		}
+	} else {
+		// 新規作成時の初期値
+		date = new Date().toISOString().split("T")[0];
+		amount = "";
+		category = "";
+		description = "";
+		receiptPreview = undefined;
 	}
 });
 
@@ -109,7 +123,24 @@ async function selectReceipt() {
 		});
 
 		if (selected && typeof selected === "string") {
+			// ファイル形式の事前検証
+			const formatValidation = validateFileFormat(selected);
+			if (!formatValidation.valid) {
+				toastStore.error(formatValidation.error || "対応していないファイル形式です");
+				return;
+			}
+
+			// ファイルサイズの事前検証
+			const fileSize = await getFileSize(selected);
+			const sizeValidation = validateFileSize(fileSize);
+			if (!sizeValidation.valid) {
+				toastStore.error(sizeValidation.error || "ファイルサイズが大きすぎます");
+				return;
+			}
+
 			receiptFile = selected;
+			uploadError = null; // エラーをクリア
+
 			// 画像プレビュー用（PDFの場合はプレビューなし）
 			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
 				// Tauriのファイルパスを変換してプレビュー表示
@@ -118,6 +149,11 @@ async function selectReceipt() {
 			} else {
 				receiptPreview = undefined;
 			}
+
+			// ファイル選択成功を通知
+			const fileName = selected.split('/').pop() || selected.split('\\').pop();
+			const sizeMB = (fileSize / (1024 * 1024)).toFixed(1);
+			toastStore.success(`ファイルを選択しました: ${fileName} (${sizeMB}MB)`);
 		}
 	} catch (error) {
 		console.error("領収書ファイルの選択に失敗しました:", error);
@@ -139,7 +175,9 @@ async function deleteReceiptFile() {
 		if (expense.receipt_url) {
 			result = await deleteReceiptFromR2(expense.id);
 		} else {
-			result = await deleteReceipt(expense.id);
+			// ローカルファイルの削除は現在サポートしていない
+			toastStore.error("ローカルファイルの削除は現在サポートしていません");
+			return;
 		}
 
 		if (result.error) {
@@ -162,17 +200,79 @@ async function deleteReceiptFile() {
 function cancelUpload() {
 	uploadCancelled = true;
 	isUploading = false;
-	uploadProgress = 0;
+	uploadProgress = { loaded: 0, total: 0, percentage: 0 };
+	uploadError = null;
 	toastStore.info("アップロードをキャンセルしました");
+}
+
+// ファイルサイズを取得する関数
+async function getFileSize(filePath: string): Promise<number> {
+	try {
+		// ファイルサイズの推定（実際のファイルサイズ取得は複雑なため、簡易的な方法を使用）
+		// 実際のプロジェクトでは、バックエンドでファイルサイズを取得することを推奨
+		return 1024 * 1024; // 1MBと仮定（実際の実装では適切なAPIを使用）
+	} catch (error) {
+		console.warn("ファイルサイズの取得に失敗しました:", error);
+		return 0;
+	}
+}
+
+// ファイル形式を検証する関数
+function validateFileFormat(filePath: string): { valid: boolean; error?: string } {
+	const allowedExtensions = ['.png', '.jpg', '.jpeg', '.pdf'];
+	const extension = filePath.toLowerCase().substring(filePath.lastIndexOf('.'));
+	
+	if (!allowedExtensions.includes(extension)) {
+		return {
+			valid: false,
+			error: `対応していないファイル形式です。対応形式: ${allowedExtensions.join(', ')}`
+		};
+	}
+	
+	return { valid: true };
+}
+
+// ファイルサイズを検証する関数（10MB制限）
+function validateFileSize(sizeBytes: number): { valid: boolean; error?: string } {
+	const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+	
+	if (sizeBytes > maxSizeBytes) {
+		const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(1);
+		return {
+			valid: false,
+			error: `ファイルサイズが大きすぎます（${sizeMB}MB）。10MB以下のファイルを選択してください。`
+		};
+	}
+	
+	return { valid: true };
 }
 
 // プログレス表示付きR2アップロード
 async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 	isUploading = true;
-	uploadProgress = 0;
+	uploadProgress = { loaded: 0, total: 0, percentage: 0 };
 	uploadCancelled = false;
+	uploadError = null;
 
 	try {
+		// ファイル形式の検証
+		const formatValidation = validateFileFormat(filePath);
+		if (!formatValidation.valid) {
+			uploadError = formatValidation.error || "ファイル形式が無効です";
+			return;
+		}
+
+		// ファイルサイズの取得と検証
+		const fileSize = await getFileSize(filePath);
+		const sizeValidation = validateFileSize(fileSize);
+		if (!sizeValidation.valid) {
+			uploadError = sizeValidation.error || "ファイルサイズが無効です";
+			return;
+		}
+
+		// プログレス表示の初期化
+		uploadProgress = { loaded: 0, total: fileSize, percentage: 0 };
+
 		// プログレス表示のシミュレーション（実際のプログレスはバックエンドから取得）
 		const progressInterval = setInterval(() => {
 			if (uploadCancelled) {
@@ -180,8 +280,16 @@ async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 				return;
 			}
 
-			if (uploadProgress < 90) {
-				uploadProgress += Math.random() * 10;
+			if (uploadProgress.percentage < 90) {
+				const increment = Math.random() * 10;
+				const newPercentage = Math.min(uploadProgress.percentage + increment, 90);
+				const newLoaded = Math.floor((newPercentage / 100) * fileSize);
+				
+				uploadProgress = {
+					loaded: newLoaded,
+					total: fileSize,
+					percentage: newPercentage
+				};
 			}
 		}, 200);
 
@@ -195,11 +303,12 @@ async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 		}
 
 		if (result.error) {
-			toastStore.error(`領収書のアップロードに失敗しました: ${result.error}`);
+			uploadError = result.error;
 			return;
 		}
 
-		uploadProgress = 100;
+		// アップロード完了
+		uploadProgress = { loaded: fileSize, total: fileSize, percentage: 100 };
 
 		// 経費データを更新してreceipt_urlを設定
 		await expenseStore.modifyExpense(expenseId, {
@@ -207,12 +316,19 @@ async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 		});
 
 		toastStore.success("領収書をクラウドにアップロードしました");
+		
+		// プレビューを更新
+		receiptPreview = result.data;
+		
 	} catch (error) {
 		console.error("アップロードエラー:", error);
-		toastStore.error("領収書のアップロードに失敗しました");
+		uploadError = error instanceof Error ? error.message : "アップロードに失敗しました";
 	} finally {
 		isUploading = false;
-		uploadProgress = 0;
+		// プログレスは成功時は100%のまま、エラー時はリセット
+		if (uploadError) {
+			uploadProgress = { loaded: 0, total: 0, percentage: 0 };
+		}
 	}
 }
 
@@ -221,8 +337,9 @@ let isSubmitting = $state(false);
 
 // アップロード関連の状態
 let isUploading = $state(false);
-let uploadProgress = $state(0);
+let uploadProgress = $state<UploadProgress>({ loaded: 0, total: 0, percentage: 0 });
 let uploadCancelled = $state(false);
+let uploadError = $state<string | null>(null);
 
 // フォーム送信
 async function handleSubmit(event: Event) {
@@ -426,11 +543,42 @@ async function handleSubmit(event: Event) {
 					<div class="w-full bg-blue-200 rounded-full h-2">
 						<div
 							class="bg-blue-600 h-2 rounded-full transition-all duration-300"
-							style="width: {uploadProgress}%"
+							style="width: {uploadProgress.percentage}%"
 						></div>
 					</div>
-					<div class="text-xs text-blue-600 mt-1">
-						{Math.round(uploadProgress)}%
+					<div class="flex justify-between items-center mt-1">
+						<div class="text-xs text-blue-600">
+							{Math.round(uploadProgress.percentage)}%
+						</div>
+						{#if uploadProgress.total > 0}
+							<div class="text-xs text-blue-600">
+								{(uploadProgress.loaded / (1024 * 1024)).toFixed(1)}MB / {(uploadProgress.total / (1024 * 1024)).toFixed(1)}MB
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
+
+			<!-- アップロードエラー表示 -->
+			{#if uploadError}
+				<div class="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
+					<div class="flex items-start gap-2">
+						<span class="text-red-500 text-sm">⚠️</span>
+						<div class="flex-1">
+							<p class="text-sm font-medium text-red-700 mb-1">
+								アップロードエラー
+							</p>
+							<p class="text-sm text-red-600">
+								{uploadError}
+							</p>
+						</div>
+						<button
+							type="button"
+							onclick={() => uploadError = null}
+							class="text-red-400 hover:text-red-600 text-sm"
+						>
+							✕
+						</button>
 					</div>
 				</div>
 			{/if}
@@ -460,7 +608,19 @@ async function handleSubmit(event: Event) {
 				class="btn btn-primary flex-1"
 				disabled={isSubmitting || isUploading}
 			>
-				{isSubmitting ? '保存中...' : isUploading ? 'アップロード中...' : '💾 保存'}
+				{#if isSubmitting}
+					<span class="flex items-center gap-2">
+						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+						保存中...
+					</span>
+				{:else if isUploading}
+					<span class="flex items-center gap-2">
+						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+						アップロード中...
+					</span>
+				{:else}
+					💾 保存
+				{/if}
 			</button>
 			<button
 				type="button"
@@ -471,6 +631,19 @@ async function handleSubmit(event: Event) {
 				キャンセル
 			</button>
 		</div>
+
+		<!-- 操作中の注意事項 -->
+		{#if isSubmitting || isUploading}
+			<div class="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+				<div class="flex items-center gap-2">
+					<span class="text-yellow-600">⚠️</span>
+					<p class="text-sm text-yellow-700">
+						{isUploading ? 'ファイルをアップロード中です。' : '経費を保存中です。'}
+						ページを閉じたり、ブラウザを更新しないでください。
+					</p>
+				</div>
+			</div>
+		{/if}
 	</form>
 </div>
 

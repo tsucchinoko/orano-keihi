@@ -86,6 +86,20 @@ export interface UploadProgress {
 	percentage: number;
 }
 
+// ファイル検証結果型
+export interface FileValidationResult {
+	valid: boolean;
+	error?: string;
+}
+
+// アップロード状態型
+export interface UploadState {
+	isUploading: boolean;
+	progress: UploadProgress;
+	error: string | null;
+	cancelled: boolean;
+}
+
 // R2設定型
 export interface R2Config {
 	account_id: string;
