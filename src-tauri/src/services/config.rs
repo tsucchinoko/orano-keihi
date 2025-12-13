@@ -1,8 +1,8 @@
 // R2設定管理モジュール
 
+use super::ConfigError;
 use serde::{Deserialize, Serialize};
 use std::env;
-use super::ConfigError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct R2Config {
@@ -17,20 +17,15 @@ impl R2Config {
     /// 環境変数から設定を読み込み
     pub fn from_env() -> Result<Self, ConfigError> {
         // 環境変数から設定を読み込み
-        let account_id = env::var("R2_ACCOUNT_ID")
-            .map_err(|_| ConfigError::MissingAccountId)?;
-        
-        let access_key = env::var("R2_ACCESS_KEY")
-            .map_err(|_| ConfigError::MissingAccessKey)?;
-        
-        let secret_key = env::var("R2_SECRET_KEY")
-            .map_err(|_| ConfigError::MissingSecretKey)?;
-        
-        let bucket_name = env::var("R2_BUCKET_NAME")
-            .map_err(|_| ConfigError::MissingBucketName)?;
-        
-        let region = env::var("R2_REGION")
-            .unwrap_or_else(|_| "auto".to_string());
+        let account_id = env::var("R2_ACCOUNT_ID").map_err(|_| ConfigError::MissingAccountId)?;
+
+        let access_key = env::var("R2_ACCESS_KEY").map_err(|_| ConfigError::MissingAccessKey)?;
+
+        let secret_key = env::var("R2_SECRET_KEY").map_err(|_| ConfigError::MissingSecretKey)?;
+
+        let bucket_name = env::var("R2_BUCKET_NAME").map_err(|_| ConfigError::MissingBucketName)?;
+
+        let region = env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string());
 
         Ok(Self {
             account_id,
@@ -46,19 +41,19 @@ impl R2Config {
         if self.account_id.is_empty() {
             return Err(ConfigError::MissingAccountId);
         }
-        
+
         if self.access_key.is_empty() {
             return Err(ConfigError::MissingAccessKey);
         }
-        
+
         if self.secret_key.is_empty() {
             return Err(ConfigError::MissingSecretKey);
         }
-        
+
         if self.bucket_name.is_empty() {
             return Err(ConfigError::MissingBucketName);
         }
-        
+
         Ok(())
     }
 
@@ -95,7 +90,10 @@ mod tests {
             region: "auto".to_string(),
         };
 
-        assert!(matches!(config.validate(), Err(ConfigError::MissingAccountId)));
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::MissingAccountId)
+        ));
     }
 
     #[test]

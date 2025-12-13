@@ -334,6 +334,10 @@ export async function syncCacheOnOnline(): Promise<TauriResult<number>> {
  *
  * @returns キャッシュ統計情報またはエラー
  */
-export async function getCacheStats(): Promise<TauriResult<import("../types").CacheStats>> {
-	return handleTauriCommand(invoke<import("../types").CacheStats>("get_cache_stats"));
+export async function getCacheStats(): Promise<
+	TauriResult<import("../types").CacheStats>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").CacheStats>("get_cache_stats"),
+	);
 }

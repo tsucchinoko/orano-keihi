@@ -147,7 +147,7 @@ pub fn migrate_receipt_path_to_url(
 
     // 2. トランザクション内でマイグレーションを実行
     let tx = conn.unchecked_transaction()?;
-    
+
     match execute_receipt_url_migration(&tx) {
         Ok(_) => {
             // 3. マイグレーション検証
@@ -160,13 +160,14 @@ pub fn migrate_receipt_path_to_url(
                     backup_path: Some(backup_path.to_string()),
                 });
             }
-            
+
             // 4. コミット
             tx.commit()?;
-            
+
             Ok(MigrationResult {
                 success: true,
-                message: "receipt_pathからreceipt_urlへのマイグレーションが完了しました".to_string(),
+                message: "receipt_pathからreceipt_urlへのマイグレーションが完了しました"
+                    .to_string(),
                 backup_path: Some(backup_path.to_string()),
             })
         }
@@ -192,11 +193,11 @@ pub fn migrate_receipt_path_to_url(
 /// 成功時はOk(())、失敗時はエラー
 fn create_backup(conn: &Connection, backup_path: &str) -> Result<(), MigrationError> {
     let mut backup_conn = Connection::open(backup_path)?;
-    
+
     // SQLiteのバックアップAPI使用
     let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)?;
     backup.run_to_completion(5, std::time::Duration::from_millis(250), None)?;
-    
+
     Ok(())
 }
 
@@ -296,9 +297,7 @@ fn validate_migration(tx: &Transaction) -> Result<(), MigrationError> {
         .collect::<Result<Vec<_>, _>>()?;
 
     // receipt_urlカラムが存在することを確認
-    let has_receipt_url = table_info
-        .iter()
-        .any(|(name, _)| name == "receipt_url");
+    let has_receipt_url = table_info.iter().any(|(name, _)| name == "receipt_url");
 
     if !has_receipt_url {
         return Err(MigrationError::ValidationFailed(
@@ -307,9 +306,7 @@ fn validate_migration(tx: &Transaction) -> Result<(), MigrationError> {
     }
 
     // receipt_pathカラムが存在しないことを確認
-    let has_receipt_path = table_info
-        .iter()
-        .any(|(name, _)| name == "receipt_path");
+    let has_receipt_path = table_info.iter().any(|(name, _)| name == "receipt_path");
 
     if has_receipt_path {
         return Err(MigrationError::ValidationFailed(
@@ -363,11 +360,11 @@ pub fn restore_from_backup(conn: &mut Connection, backup_path: &str) -> Result<(
     }
 
     let backup_conn = Connection::open(backup_path)?;
-    
+
     // バックアップから復元
     let backup = rusqlite::backup::Backup::new(&backup_conn, conn)?;
     backup.run_to_completion(5, std::time::Duration::from_millis(250), None)?;
-    
+
     Ok(())
 }
 
@@ -400,7 +397,7 @@ mod tests {
     /// テスト用のデータベースを作成する
     fn create_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        
+
         // 古いスキーマ（receipt_path）でテーブルを作成
         conn.execute(
             "CREATE TABLE expenses (
@@ -414,7 +411,8 @@ mod tests {
                 updated_at TEXT NOT NULL
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // テストデータを挿入
         conn.execute(
@@ -429,7 +427,7 @@ mod tests {
     #[test]
     fn test_is_receipt_url_migration_complete_false() {
         let conn = create_test_db();
-        
+
         // 古いスキーマではマイグレーション未完了
         let result = is_receipt_url_migration_complete(&conn).unwrap();
         assert!(!result);
@@ -443,7 +441,7 @@ mod tests {
 
         // マイグレーションを実行
         let result = migrate_receipt_path_to_url(&conn, backup_path).unwrap();
-        
+
         // マイグレーション成功を確認
         assert!(result.success);
         assert!(result.backup_path.is_some());
@@ -453,24 +451,31 @@ mod tests {
         assert!(is_complete);
 
         // 新しいスキーマでデータが保持されていることを確認
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(count, 1);
 
         // receipt_urlカラムが存在することを確認
         let table_info: Vec<String> = conn
-            .prepare("PRAGMA table_info(expenses)").unwrap()
-            .query_map([], |row| Ok(row.get::<_, String>(1)?)).unwrap()
-            .collect::<Result<Vec<_>, _>>().unwrap();
+            .prepare("PRAGMA table_info(expenses)")
+            .unwrap()
+            .query_map([], |row| Ok(row.get::<_, String>(1)?))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
         assert!(table_info.contains(&"receipt_url".to_string()));
         assert!(!table_info.contains(&"receipt_path".to_string()));
 
         // キャッシュテーブルが作成されていることを確認
-        let cache_table_exists: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='receipt_cache'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let cache_table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='receipt_cache'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(cache_table_exists, 1);
     }
 
@@ -499,25 +504,28 @@ mod tests {
         conn.execute(
             "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
             [],
-        ).unwrap();
-        conn.execute(
-            "INSERT INTO test_table (name) VALUES ('test')",
-            [],
-        ).unwrap();
+        )
+        .unwrap();
+        conn.execute("INSERT INTO test_table (name) VALUES ('test')", [])
+            .unwrap();
 
         // バックアップを作成
         create_backup(&conn, backup_path).unwrap();
 
         // データを変更
         conn.execute("DELETE FROM test_table", []).unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(count, 0);
 
         // バックアップから復元
         restore_from_backup(&mut conn, backup_path).unwrap();
 
         // データが復元されていることを確認
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(count, 1);
     }
 

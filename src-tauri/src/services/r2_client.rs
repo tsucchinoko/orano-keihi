@@ -1,11 +1,11 @@
 // R2クライアントモジュール
 
+use super::{config::R2Config, R2Error};
 use aws_config::{BehaviorVersion, Region};
-use aws_sdk_s3::{Client, Config};
 use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
 use aws_sdk_s3::presigning::PresigningConfig;
+use aws_sdk_s3::{Client, Config};
 use std::time::Duration;
-use super::{R2Error, config::R2Config};
 
 #[derive(Clone)]
 pub struct R2Client {
@@ -18,17 +18,13 @@ impl R2Client {
     /// R2クライアントを初期化
     pub async fn new(config: R2Config) -> Result<Self, R2Error> {
         // 設定を検証
-        config.validate()
+        config
+            .validate()
             .map_err(|_e| R2Error::InvalidCredentials)?;
 
         // 認証情報を設定
-        let credentials = Credentials::new(
-            &config.access_key,
-            &config.secret_key,
-            None,
-            None,
-            "r2"
-        );
+        let credentials =
+            Credentials::new(&config.access_key, &config.secret_key, None, None, "r2");
 
         // S3互換設定を構築
         let aws_config = aws_config::defaults(BehaviorVersion::latest())
@@ -67,7 +63,8 @@ impl R2Client {
             .map_err(|e| R2Error::UploadFailed(format!("アップロードエラー: {}", e)))?;
 
         // アップロード成功時のHTTPS URLを生成
-        let url = format!("https://{}/{}/{}", 
+        let url = format!(
+            "https://{}/{}/{}",
             self.config.endpoint_url().replace("https://", ""),
             self.bucket_name,
             key
@@ -85,7 +82,7 @@ impl R2Client {
         max_retries: u32,
     ) -> Result<String, R2Error> {
         let mut attempts = 0;
-        
+
         loop {
             match self.upload_file(key, file_data.clone(), content_type).await {
                 Ok(url) => return Ok(url),
@@ -152,7 +149,10 @@ impl R2Client {
     pub fn generate_file_key(expense_id: i64, filename: &str) -> String {
         let timestamp = chrono::Utc::now().timestamp();
         let uuid = uuid::Uuid::new_v4();
-        format!("receipts/{}/{}-{}-{}", expense_id, timestamp, uuid, filename)
+        format!(
+            "receipts/{}/{}-{}-{}",
+            expense_id, timestamp, uuid, filename
+        )
     }
 
     /// ファイル形式を検証
@@ -165,7 +165,7 @@ impl R2Client {
 
         if !matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "pdf") {
             return Err(R2Error::UploadFailed(
-                "サポートされていないファイル形式です（PNG、JPG、JPEG、PDFのみ対応）".to_string()
+                "サポートされていないファイル形式です（PNG、JPG、JPEG、PDFのみ対応）".to_string(),
             ));
         }
 
@@ -175,10 +175,10 @@ impl R2Client {
     /// ファイルサイズを検証
     pub fn validate_file_size(file_size: u64) -> Result<(), R2Error> {
         const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
-        
+
         if file_size > MAX_FILE_SIZE {
             return Err(R2Error::UploadFailed(
-                "ファイルサイズが10MBを超えています".to_string()
+                "ファイルサイズが10MBを超えています".to_string(),
             ));
         }
 
@@ -210,13 +210,13 @@ mod tests {
     fn test_file_key_generation() {
         let expense_id = 123;
         let filename = "receipt.pdf";
-        
+
         let key1 = R2Client::generate_file_key(expense_id, filename);
         let key2 = R2Client::generate_file_key(expense_id, filename);
-        
+
         // 異なるキーが生成されることを確認
         assert_ne!(key1, key2);
-        
+
         // 正しい形式であることを確認
         assert!(key1.starts_with("receipts/123/"));
         assert!(key1.ends_with("-receipt.pdf"));
@@ -226,15 +226,15 @@ mod tests {
     fn test_file_key_format() {
         let expense_id = 456;
         let filename = "test.jpg";
-        
+
         let key = R2Client::generate_file_key(expense_id, filename);
-        
+
         // キーの形式を確認
         let parts: Vec<&str> = key.split('/').collect();
         assert_eq!(parts.len(), 3);
         assert_eq!(parts[0], "receipts");
         assert_eq!(parts[1], "456");
-        
+
         // ファイル名部分の確認
         let file_part = parts[2];
         assert!(file_part.contains("test.jpg"));

@@ -10,16 +10,16 @@ use tokio::fs as async_fs;
 pub enum CacheError {
     #[error("キャッシュ書き込みエラー: {0}")]
     WriteFailed(String),
-    
+
     #[error("キャッシュ読み込みエラー: {0}")]
     ReadFailed(String),
-    
+
     #[error("キャッシュクリーンアップエラー: {0}")]
     CleanupFailed(String),
-    
+
     #[error("ディレクトリ作成エラー: {0}")]
     DirectoryCreationFailed(String),
-    
+
     #[error("データベースエラー: {0}")]
     DatabaseError(String),
 }
@@ -54,8 +54,9 @@ impl CacheManager {
     /// 成功時はOk(())、失敗時はCacheError
     pub fn initialize_sync(&self) -> Result<(), CacheError> {
         if !self.cache_dir.exists() {
-            std::fs::create_dir_all(&self.cache_dir)
-                .map_err(|e| CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {}", e)))?;
+            std::fs::create_dir_all(&self.cache_dir).map_err(|e| {
+                CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -68,7 +69,9 @@ impl CacheManager {
         if !self.cache_dir.exists() {
             async_fs::create_dir_all(&self.cache_dir)
                 .await
-                .map_err(|e| CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {}", e)))?;
+                .map_err(|e| {
+                    CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {}", e))
+                })?;
         }
         Ok(())
     }
@@ -177,12 +180,14 @@ impl CacheManager {
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
-            
+
             // ファイルが存在するかチェック
             if cache_path.exists() {
                 // アクセス時刻を更新
                 crate::db::expense_operations::update_cache_access_time(conn, receipt_url)
-                    .map_err(|e| CacheError::DatabaseError(format!("アクセス時刻更新失敗: {}", e)))?;
+                    .map_err(|e| {
+                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {}", e))
+                    })?;
 
                 // ファイルを読み込み
                 let data = std::fs::read(cache_path)
@@ -218,12 +223,14 @@ impl CacheManager {
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
-            
+
             // ファイルが存在するかチェック
             if cache_path.exists() {
                 // アクセス時刻を更新
                 crate::db::expense_operations::update_cache_access_time(conn, receipt_url)
-                    .map_err(|e| CacheError::DatabaseError(format!("アクセス時刻更新失敗: {}", e)))?;
+                    .map_err(|e| {
+                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {}", e))
+                    })?;
 
                 // ファイルを読み込み
                 let data = async_fs::read(cache_path)
@@ -250,10 +257,10 @@ impl CacheManager {
     /// 削除されたファイル数、または失敗時はCacheError
     pub fn cleanup_old_cache(&self, conn: &Connection) -> Result<usize, CacheError> {
         let max_age_days = self.max_age.as_secs() / (24 * 3600);
-        
+
         // データベースから古いキャッシュ情報を取得して物理ファイルも削除
         let old_caches = self.get_old_cache_entries(conn, max_age_days as i64)?;
-        
+
         let mut _deleted_count = 0;
         for cache in &old_caches {
             let cache_path = Path::new(&cache.local_path);
@@ -265,10 +272,11 @@ impl CacheManager {
                 }
             }
         }
-        
+
         // データベースから古いキャッシュ情報を削除
-        let db_deleted_count = crate::db::expense_operations::cleanup_old_cache(conn, max_age_days as i64)
-            .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {}", e)))?;
+        let db_deleted_count =
+            crate::db::expense_operations::cleanup_old_cache(conn, max_age_days as i64)
+                .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {}", e)))?;
 
         Ok(db_deleted_count)
     }
@@ -282,10 +290,10 @@ impl CacheManager {
     /// 削除されたファイル数、または失敗時はCacheError
     pub async fn cleanup_old_cache_async(&self, conn: &Connection) -> Result<usize, CacheError> {
         let max_age_days = self.max_age.as_secs() / (24 * 3600);
-        
+
         // データベースから古いキャッシュ情報を取得して物理ファイルも削除
         let old_caches = self.get_old_cache_entries(conn, max_age_days as i64)?;
-        
+
         let mut _deleted_count = 0;
         for cache in &old_caches {
             let cache_path = Path::new(&cache.local_path);
@@ -297,10 +305,11 @@ impl CacheManager {
                 }
             }
         }
-        
+
         // データベースから古いキャッシュ情報を削除
-        let db_deleted_count = crate::db::expense_operations::cleanup_old_cache(conn, max_age_days as i64)
-            .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {}", e)))?;
+        let db_deleted_count =
+            crate::db::expense_operations::cleanup_old_cache(conn, max_age_days as i64)
+                .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {}", e)))?;
 
         Ok(db_deleted_count)
     }
@@ -315,11 +324,11 @@ impl CacheManager {
     pub fn manage_cache_size(&self, conn: &Connection) -> Result<(), CacheError> {
         // 現在のキャッシュサイズを計算
         let current_size = self.calculate_cache_size_sync()?;
-        
+
         if current_size > self.max_cache_size {
             // サイズ超過時は古いファイルから削除
             self.cleanup_old_cache(conn)?;
-            
+
             // まだサイズが超過している場合は、LRU方式で削除
             let remaining_size = self.calculate_cache_size_sync()?;
             if remaining_size > self.max_cache_size {
@@ -340,11 +349,11 @@ impl CacheManager {
     pub async fn manage_cache_size_async(&self, conn: &Connection) -> Result<(), CacheError> {
         // 現在のキャッシュサイズを計算
         let current_size = self.calculate_cache_size_async().await?;
-        
+
         if current_size > self.max_cache_size {
             // サイズ超過時は古いファイルから削除
             self.cleanup_old_cache_async(conn).await?;
-            
+
             // まだサイズが超過している場合は、LRU方式で削除
             let remaining_size = self.calculate_cache_size_async().await?;
             if remaining_size > self.max_cache_size {
@@ -401,8 +410,9 @@ impl CacheManager {
         for entry in entries {
             let entry = entry
                 .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {}", e)))?;
-            
-            if entry.file_type()
+
+            if entry
+                .file_type()
                 .map_err(|e| CacheError::ReadFailed(format!("ファイルタイプ取得失敗: {}", e)))?
                 .is_file()
             {
@@ -431,10 +441,13 @@ impl CacheManager {
             .await
             .map_err(|e| CacheError::ReadFailed(format!("ディレクトリ読み込み失敗: {}", e)))?;
 
-        while let Some(entry) = entries.next_entry().await
-            .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {}", e)))? {
-            
-            if entry.file_type()
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {}", e)))?
+        {
+            if entry
+                .file_type()
                 .await
                 .map_err(|e| CacheError::ReadFailed(format!("ファイルタイプ取得失敗: {}", e)))?
                 .is_file()
@@ -460,21 +473,26 @@ impl CacheManager {
     fn cleanup_lru_cache(&self, conn: &Connection) -> Result<(), CacheError> {
         // 最も古くアクセスされたファイルを取得して削除
         let lru_caches = self.get_lru_cache_entries(conn, 10)?; // 最大10個削除
-        
+
         for cache in &lru_caches {
             let cache_path = Path::new(&cache.local_path);
             if cache_path.exists() {
                 if let Err(e) = std::fs::remove_file(cache_path) {
-                    eprintln!("LRUキャッシュファイル削除エラー: {} ({})", cache.local_path, e);
+                    eprintln!(
+                        "LRUキャッシュファイル削除エラー: {} ({})",
+                        cache.local_path, e
+                    );
                 }
             }
-            
+
             // データベースからも削除
-            if let Err(e) = crate::db::expense_operations::delete_receipt_cache(conn, &cache.receipt_url) {
+            if let Err(e) =
+                crate::db::expense_operations::delete_receipt_cache(conn, &cache.receipt_url)
+            {
                 eprintln!("LRUキャッシュDB削除エラー: {} ({})", cache.receipt_url, e);
             }
         }
-        
+
         Ok(())
     }
 
@@ -488,21 +506,26 @@ impl CacheManager {
     async fn cleanup_lru_cache_async(&self, conn: &Connection) -> Result<(), CacheError> {
         // 最も古くアクセスされたファイルを取得して削除
         let lru_caches = self.get_lru_cache_entries(conn, 10)?; // 最大10個削除
-        
+
         for cache in &lru_caches {
             let cache_path = Path::new(&cache.local_path);
             if cache_path.exists() {
                 if let Err(e) = async_fs::remove_file(cache_path).await {
-                    eprintln!("LRUキャッシュファイル削除エラー: {} ({})", cache.local_path, e);
+                    eprintln!(
+                        "LRUキャッシュファイル削除エラー: {} ({})",
+                        cache.local_path, e
+                    );
                 }
             }
-            
+
             // データベースからも削除
-            if let Err(e) = crate::db::expense_operations::delete_receipt_cache(conn, &cache.receipt_url) {
+            if let Err(e) =
+                crate::db::expense_operations::delete_receipt_cache(conn, &cache.receipt_url)
+            {
                 eprintln!("LRUキャッシュDB削除エラー: {} ({})", cache.receipt_url, e);
             }
         }
-        
+
         Ok(())
     }
 
@@ -525,7 +548,7 @@ impl CacheManager {
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
-            
+
             // ファイルが存在する場合は削除
             if cache_path.exists() {
                 std::fs::remove_file(cache_path)
@@ -559,7 +582,7 @@ impl CacheManager {
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
-            
+
             // ファイルが存在する場合は削除
             if cache_path.exists() {
                 async_fs::remove_file(cache_path)
@@ -594,7 +617,7 @@ impl CacheManager {
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
-            
+
             // ファイルが存在するかチェック
             if cache_path.exists() {
                 // ファイルを読み込み（アクセス時刻は更新しない）
@@ -618,12 +641,15 @@ impl CacheManager {
     pub async fn sync_cache_on_online(&self, conn: &Connection) -> Result<usize, CacheError> {
         // 古いキャッシュをクリーンアップ
         let cleaned_count = self.cleanup_old_cache_async(conn).await?;
-        
+
         // キャッシュサイズを管理
         self.manage_cache_size_async(conn).await?;
-        
-        println!("キャッシュ同期完了: {}個のファイルをクリーンアップしました", cleaned_count);
-        
+
+        println!(
+            "キャッシュ同期完了: {}個のファイルをクリーンアップしました",
+            cleaned_count
+        );
+
         Ok(cleaned_count)
     }
 
@@ -642,7 +668,7 @@ impl CacheManager {
     ) -> Result<Vec<crate::models::expense::ReceiptCache>, CacheError> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
-        
+
         // JSTで現在時刻を取得
         let now = Utc::now().with_timezone(&Tokyo);
         let cutoff_date = now - chrono::Duration::days(max_age_days);
@@ -667,7 +693,10 @@ impl CacheManager {
 
         let mut caches = Vec::new();
         for cache_result in cache_iter {
-            caches.push(cache_result.map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {}", e)))?);
+            caches.push(
+                cache_result
+                    .map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {}", e)))?,
+            );
         }
 
         Ok(caches)
@@ -705,7 +734,10 @@ impl CacheManager {
 
         let mut caches = Vec::new();
         for cache_result in cache_iter {
-            caches.push(cache_result.map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {}", e)))?);
+            caches.push(
+                cache_result
+                    .map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {}", e)))?,
+            );
         }
 
         Ok(caches)

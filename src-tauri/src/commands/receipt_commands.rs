@@ -270,23 +270,22 @@ pub async fn upload_receipt_to_r2(
         .ok_or_else(|| "ファイル名の取得に失敗しました".to_string())?;
 
     // ファイル形式の事前検証
-    R2Client::validate_file_format(filename)
-        .map_err(|e| format!("ファイル形式エラー: {}", e))?;
+    R2Client::validate_file_format(filename).map_err(|e| format!("ファイル形式エラー: {}", e))?;
 
     // ファイルサイズの事前検証
     let metadata = fs::metadata(source_path)
         .map_err(|e| format!("ファイル情報の取得に失敗しました: {}", e))?;
-    
+
     R2Client::validate_file_size(metadata.len())
         .map_err(|e| format!("ファイルサイズエラー: {}", e))?;
 
     // ファイルを読み込み
-    let file_data = fs::read(source_path)
-        .map_err(|e| format!("ファイルの読み込みに失敗しました: {}", e))?;
+    let file_data =
+        fs::read(source_path).map_err(|e| format!("ファイルの読み込みに失敗しました: {}", e))?;
 
     // R2設定を読み込み
-    let config = R2Config::from_env()
-        .map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+    let config =
+        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config)
@@ -342,7 +341,7 @@ pub async fn get_receipt_from_r2(
         .path()
         .app_data_dir()
         .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
-    
+
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100); // 100MB制限
 
@@ -358,7 +357,7 @@ pub async fn get_receipt_from_r2(
     match cached_result {
         Ok(Some(cached_data)) => {
             // キャッシュヒット - Base64エンコードして返却
-            use base64::{Engine as _, engine::general_purpose};
+            use base64::{engine::general_purpose, Engine as _};
             let base64_data = general_purpose::STANDARD.encode(&cached_data);
             return Ok(base64_data);
         }
@@ -376,7 +375,10 @@ pub async fn get_receipt_from_r2(
         Ok(data) => data,
         Err(e) => {
             // R2からの取得に失敗した場合のフォールバック
-            return Err(format!("領収書の取得に失敗しました: {}。ネットワーク接続を確認してください。", e));
+            return Err(format!(
+                "領収書の取得に失敗しました: {}。ネットワーク接続を確認してください。",
+                e
+            ));
         }
     };
 
@@ -386,7 +388,7 @@ pub async fn get_receipt_from_r2(
             .db
             .lock()
             .map_err(|e| format!("データベースロックエラー: {}", e))?;
-        
+
         if let Err(e) = cache_manager.cache_file(&receipt_url, file_data.clone(), &db) {
             eprintln!("キャッシュ保存エラー: {}", e);
         }
@@ -398,7 +400,7 @@ pub async fn get_receipt_from_r2(
     }
 
     // Base64エンコードして返却
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
     let base64_data = general_purpose::STANDARD.encode(&file_data);
     Ok(base64_data)
 }
@@ -418,8 +420,8 @@ async fn download_from_r2(receipt_url: &str) -> Result<Vec<u8>, String> {
     }
 
     // R2設定を読み込み
-    let config = R2Config::from_env()
-        .map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+    let config =
+        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config)
@@ -502,7 +504,7 @@ pub async fn delete_receipt_from_r2(
             .db
             .lock()
             .map_err(|e| format!("データベースロックエラー: {}", e))?;
-        
+
         expense_operations::get_receipt_url(&db, expense_id)
             .map_err(|e| format!("receipt_urlの取得に失敗しました: {}", e))?
     };
@@ -513,13 +515,13 @@ pub async fn delete_receipt_from_r2(
             .path()
             .app_data_dir()
             .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
-        
+
         let cache_dir = app_data_dir.join("receipt_cache");
         let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
 
         // R2からファイルを削除（トランザクション的な削除処理：R2→DB順）
         let deletion_result = delete_from_r2_with_retry(&receipt_url).await;
-        
+
         match deletion_result {
             Ok(_) => {
                 // R2削除成功 - キャッシュからも削除
@@ -528,7 +530,7 @@ pub async fn delete_receipt_from_r2(
                         .db
                         .lock()
                         .map_err(|e| format!("データベースロックエラー: {}", e))?;
-                    
+
                     if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
                         eprintln!("キャッシュ削除エラー: {}", e);
                     }
@@ -540,24 +542,33 @@ pub async fn delete_receipt_from_r2(
                         .db
                         .lock()
                         .map_err(|e| format!("データベースロックエラー: {}", e))?;
-                    
-                    expense_operations::set_receipt_url(&db, expense_id, "".to_string())
-                        .map_err(|e| format!("データベースからのreceipt_url削除に失敗しました: {}", e))?;
+
+                    expense_operations::set_receipt_url(&db, expense_id, "".to_string()).map_err(
+                        |e| format!("データベースからのreceipt_url削除に失敗しました: {}", e),
+                    )?;
                 }
 
                 // 削除操作のログ記録
                 let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
-                println!("領収書削除完了: expense_id={}, receipt_url={}, timestamp={}", 
-                    expense_id, receipt_url, now);
+                println!(
+                    "領収書削除完了: expense_id={}, receipt_url={}, timestamp={}",
+                    expense_id, receipt_url, now
+                );
             }
             Err(e) => {
                 // R2削除失敗 - データベースの状態は変更しない
-                return Err(format!("R2からのファイル削除に失敗しました。データベースの状態は保持されます: {}", e));
+                return Err(format!(
+                    "R2からのファイル削除に失敗しました。データベースの状態は保持されます: {}",
+                    e
+                ));
             }
         }
     } else {
         // receipt_urlが存在しない場合は何もしない
-        println!("削除対象の領収書URLが存在しません: expense_id={}", expense_id);
+        println!(
+            "削除対象の領収書URLが存在しません: expense_id={}",
+            expense_id
+        );
     }
 
     Ok(true)
@@ -585,8 +596,8 @@ async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> {
     };
 
     // R2設定を読み込み
-    let config = R2Config::from_env()
-        .map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+    let config =
+        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config)
@@ -624,8 +635,8 @@ async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, String> {
     // 環境変数からR2設定を読み込み
-    let config = R2Config::from_env()
-        .map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+    let config =
+        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config)
@@ -666,7 +677,7 @@ pub async fn get_receipt_offline(
         .path()
         .app_data_dir()
         .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
-    
+
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
 
@@ -713,7 +724,7 @@ pub async fn sync_cache_on_online(
         .path()
         .app_data_dir()
         .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
-    
+
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
 
@@ -723,23 +734,28 @@ pub async fn sync_cache_on_online(
             .db
             .lock()
             .map_err(|e| format!("データベースロックエラー: {}", e))?;
-        
+
         // 古いキャッシュをクリーンアップ
-        let cleaned_count = cache_manager.cleanup_old_cache(&db)
+        let cleaned_count = cache_manager
+            .cleanup_old_cache(&db)
             .map_err(|e| format!("キャッシュクリーンアップエラー: {}", e))?;
-        
+
         // キャッシュサイズを管理
-        cache_manager.manage_cache_size(&db)
+        cache_manager
+            .manage_cache_size(&db)
             .map_err(|e| format!("キャッシュサイズ管理エラー: {}", e))?;
-        
-        println!("キャッシュ同期完了: {}個のファイルをクリーンアップしました", cleaned_count);
-        
+
+        println!(
+            "キャッシュ同期完了: {}個のファイルをクリーンアップしました",
+            cleaned_count
+        );
+
         Ok(cleaned_count)
     };
 
     match sync_result {
         Ok(synced_count) => Ok(synced_count),
-        Err(e) => Err(format!("キャッシュ同期エラー: {}", e))
+        Err(e) => Err(format!("キャッシュ同期エラー: {}", e)),
     }
 }
 
@@ -761,12 +777,13 @@ pub async fn get_cache_stats(
         .path()
         .app_data_dir()
         .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
-    
+
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
 
     // キャッシュサイズを計算（同期版を使用）
-    let current_size = cache_manager.calculate_cache_size_sync()
+    let current_size = cache_manager
+        .calculate_cache_size_sync()
         .map_err(|e| format!("キャッシュサイズ計算エラー: {}", e))?;
 
     // データベースからキャッシュ数を取得
@@ -775,13 +792,11 @@ pub async fn get_cache_stats(
             .db
             .lock()
             .map_err(|e| format!("データベースロックエラー: {}", e))?;
-        
-        let count: i64 = db.query_row(
-            "SELECT COUNT(*) FROM receipt_cache",
-            [],
-            |row| row.get(0),
-        ).map_err(|e| format!("キャッシュ数取得エラー: {}", e))?;
-        
+
+        let count: i64 = db
+            .query_row("SELECT COUNT(*) FROM receipt_cache", [], |row| row.get(0))
+            .map_err(|e| format!("キャッシュ数取得エラー: {}", e))?;
+
         count as usize
     };
 

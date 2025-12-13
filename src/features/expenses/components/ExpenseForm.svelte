@@ -2,7 +2,13 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { saveReceipt, deleteReceipt, uploadReceiptToR2, deleteReceiptFromR2, syncCacheOnOnline } from "$lib/utils/tauri";
+import {
+	saveReceipt,
+	deleteReceipt,
+	uploadReceiptToR2,
+	deleteReceiptFromR2,
+	syncCacheOnOnline,
+} from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -128,7 +134,7 @@ async function deleteReceiptFile() {
 
 	try {
 		let result;
-		
+
 		// R2 URLがある場合はR2から削除、そうでなければローカルから削除
 		if (expense.receipt_url) {
 			result = await deleteReceiptFromR2(expense.id);
@@ -173,7 +179,7 @@ async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 				clearInterval(progressInterval);
 				return;
 			}
-			
+
 			if (uploadProgress < 90) {
 				uploadProgress += Math.random() * 10;
 			}
@@ -181,7 +187,7 @@ async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 
 		// R2にアップロード
 		const result = await uploadReceiptToR2(expenseId, filePath);
-		
+
 		clearInterval(progressInterval);
 
 		if (uploadCancelled) {
@@ -194,7 +200,7 @@ async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 		}
 
 		uploadProgress = 100;
-		
+
 		// 経費データを更新してreceipt_urlを設定
 		await expenseStore.modifyExpense(expenseId, {
 			receipt_url: result.data,
@@ -263,15 +269,17 @@ async function handleSubmit(event: Event) {
 		}
 
 		// キャッシュ同期を実行（バックグラウンドで）
-		syncCacheOnOnline().then((result) => {
-			if (result.error) {
-				console.warn("キャッシュ同期エラー:", result.error);
-			} else {
-				console.log("キャッシュ同期完了:", result.data, "個のファイルを処理");
-			}
-		}).catch((error) => {
-			console.warn("キャッシュ同期エラー:", error);
-		});
+		syncCacheOnOnline()
+			.then((result) => {
+				if (result.error) {
+					console.warn("キャッシュ同期エラー:", result.error);
+				} else {
+					console.log("キャッシュ同期完了:", result.data, "個のファイルを処理");
+				}
+			})
+			.catch((error) => {
+				console.warn("キャッシュ同期エラー:", error);
+			});
 
 		// 成功メッセージ
 		toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");

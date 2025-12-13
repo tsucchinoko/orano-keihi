@@ -57,7 +57,9 @@ const localFileUrl = $derived.by(() => {
 // Base64データURL（R2ファイル用）
 const dataUrl = $derived.by(() => {
 	if (fileData && isImage()) {
-		const mimeType = receiptUrl?.toLowerCase().includes(".png") ? "image/png" : "image/jpeg";
+		const mimeType = receiptUrl?.toLowerCase().includes(".png")
+			? "image/png"
+			: "image/jpeg";
 		return `data:${mimeType};base64,${fileData}`;
 	}
 	return null;
@@ -66,11 +68,11 @@ const dataUrl = $derived.by(() => {
 // R2からファイルを取得（オンライン時）
 async function loadFromR2() {
 	if (!receiptUrl) return;
-	
+
 	isLoading = true;
 	loadError = null;
 	isOfflineMode = false;
-	
+
 	try {
 		const result = await getReceiptFromR2(receiptUrl);
 		if (result.error) {
@@ -89,7 +91,7 @@ async function loadFromR2() {
 // キャッシュからファイルを取得（オフライン時）
 async function tryLoadFromCache() {
 	if (!receiptUrl) return;
-	
+
 	try {
 		const result = await getReceiptOffline(receiptUrl);
 		if (result.error) {
@@ -100,7 +102,10 @@ async function tryLoadFromCache() {
 		loadError = null;
 	} catch (error) {
 		console.error("キャッシュからの領収書取得に失敗しました:", error);
-		loadError = error instanceof Error ? error.message : "領収書の取得に失敗しました（オフライン時）";
+		loadError =
+			error instanceof Error
+				? error.message
+				: "領収書の取得に失敗しました（オフライン時）";
 		isOfflineMode = false;
 	}
 }
@@ -108,12 +113,12 @@ async function tryLoadFromCache() {
 // 手動でオフラインモードを試行
 async function tryOfflineMode() {
 	if (!receiptUrl) return;
-	
+
 	isLoading = true;
 	loadError = null;
-	
+
 	await tryLoadFromCache();
-	
+
 	isLoading = false;
 }
 

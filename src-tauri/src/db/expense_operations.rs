@@ -208,7 +208,7 @@ pub fn get_receipt_url(conn: &Connection, id: i64) -> Result<Option<String>> {
 }
 
 /// 後方互換性のための関数（廃止予定）
-/// 
+///
 /// # 引数
 /// * `conn` - データベース接続
 /// * `id` - 経費ID
@@ -270,7 +270,10 @@ pub fn save_receipt_cache(
 ///
 /// # 戻り値
 /// キャッシュ情報（存在する場合）、または失敗時はエラー
-pub fn get_receipt_cache(conn: &Connection, receipt_url: &str) -> Result<Option<crate::models::expense::ReceiptCache>> {
+pub fn get_receipt_cache(
+    conn: &Connection,
+    receipt_url: &str,
+) -> Result<Option<crate::models::expense::ReceiptCache>> {
     match conn.query_row(
         "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed
          FROM receipt_cache WHERE receipt_url = ?1",

@@ -1,7 +1,13 @@
-use crate::db::{connection::initialize_database, migrations::{migrate_receipt_path_to_url, restore_from_backup, is_receipt_url_migration_complete, MigrationResult}};
-use tauri::{AppHandle, Manager};
+use crate::db::{
+    connection::initialize_database,
+    migrations::{
+        is_receipt_url_migration_complete, migrate_receipt_path_to_url, restore_from_backup,
+        MigrationResult,
+    },
+};
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
+use tauri::{AppHandle, Manager};
 
 /// マイグレーション状態を確認する
 ///
@@ -12,8 +18,8 @@ use chrono_tz::Asia::Tokyo;
 /// マイグレーション完了状態
 #[tauri::command]
 pub async fn check_migration_status(app_handle: AppHandle) -> Result<bool, String> {
-    let conn = initialize_database(&app_handle)
-        .map_err(|e| format!("データベース接続エラー: {}", e))?;
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {}", e))?;
 
     is_receipt_url_migration_complete(&conn)
         .map_err(|e| format!("マイグレーション状態確認エラー: {}", e))
@@ -27,9 +33,11 @@ pub async fn check_migration_status(app_handle: AppHandle) -> Result<bool, Strin
 /// # 戻り値
 /// マイグレーション結果
 #[tauri::command]
-pub async fn execute_receipt_url_migration(app_handle: AppHandle) -> Result<MigrationResult, String> {
-    let conn = initialize_database(&app_handle)
-        .map_err(|e| format!("データベース接続エラー: {}", e))?;
+pub async fn execute_receipt_url_migration(
+    app_handle: AppHandle,
+) -> Result<MigrationResult, String> {
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {}", e))?;
 
     // バックアップファイルパスを生成（JST使用）
     let app_data_dir = app_handle
@@ -38,8 +46,7 @@ pub async fn execute_receipt_url_migration(app_handle: AppHandle) -> Result<Migr
         .map_err(|e| format!("アプリデータディレクトリ取得エラー: {}", e))?;
 
     let now_jst = Utc::now().with_timezone(&Tokyo);
-    let backup_path = app_data_dir
-        .join(format!("database_backup_{}.db", now_jst.timestamp()));
+    let backup_path = app_data_dir.join(format!("database_backup_{}.db", now_jst.timestamp()));
 
     migrate_receipt_path_to_url(&conn, backup_path.to_str().unwrap())
         .map_err(|e| format!("マイグレーション実行エラー: {}", e))
@@ -58,8 +65,8 @@ pub async fn restore_database_from_backup(
     app_handle: AppHandle,
     backup_path: String,
 ) -> Result<String, String> {
-    let mut conn = initialize_database(&app_handle)
-        .map_err(|e| format!("データベース接続エラー: {}", e))?;
+    let mut conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {}", e))?;
 
     restore_from_backup(&mut conn, &backup_path)
         .map_err(|e| format!("データベース復元エラー: {}", e))?;
