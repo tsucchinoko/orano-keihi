@@ -4,7 +4,9 @@ import type {
 	UploadProgress, 
 	MultipleFileUploadInput, 
 	MultipleUploadResult,
-	PerformanceStats 
+	PerformanceStats,
+	UserFriendlyError,
+	OperationResult
 } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
@@ -15,6 +17,7 @@ import {
 	uploadMultipleReceiptsToR2,
 	getR2PerformanceStats,
 } from "$lib/utils/tauri";
+import { ErrorHandler, createErrorStore } from "$lib/utils/error-handler";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -68,6 +71,42 @@ $effect(() => {
 // バリデーションエラー
 let errors = $state<Record<string, string>>({});
 
+// 統一エラーハンドリング
+const errorStore = createErrorStore();
+let uploadError = $state<UserFriendlyError | null>(null);
+
+// ヘルパー関数
+function getFileType(filePath: string): string {
+	const extension = filePath.split('.').pop()?.toLowerCase();
+	switch (extension) {
+		case 'png': return 'image/png';
+		case 'jpg':
+		case 'jpeg': return 'image/jpeg';
+		case 'pdf': return 'application/pdf';
+		default: return 'application/octet-stream';
+	}
+}
+
+async function getFileSize(filePath: string): Promise<number> {
+	try {
+		// ファイル拡張子に基づいて推定サイズを返す（実際のプロジェクトではバックエンドAPIを使用）
+		const extension = filePath.toLowerCase().split('.').pop();
+		switch (extension) {
+			case 'pdf':
+				return 2 * 1024 * 1024; // 2MB
+			case 'png':
+			case 'jpg':
+			case 'jpeg':
+				return 1 * 1024 * 1024; // 1MB
+			default:
+				return 1024 * 1024; // 1MB
+		}
+	} catch (error) {
+		console.error('ファイルサイズの推定に失敗しました:', error);
+		return 1024 * 1024; // 1MB
+	}
+}
+
 // カテゴリ一覧
 const categories = [
 	{ name: "交通費", icon: "🚗" },
@@ -117,9 +156,9 @@ function validate(): boolean {
 	return Object.keys(newErrors).length === 0;
 }
 
-// 領収書ファイル選択（単一）
+// 領収書ファイル選択（統一エラーハンドリング版）
 async function selectReceipt() {
-	try {
+	const result = await ErrorHandler.executeWithErrorHandling(async () => {
 		const selected = await open({
 			multiple: false,
 			filters: [
@@ -131,23 +170,28 @@ async function selectReceipt() {
 		});
 
 		if (selected && typeof selected === "string") {
-			// ファイル形式の事前検証
-			const formatValidation = validateFileFormat(selected);
-			if (!formatValidation.valid) {
-				toastStore.error(formatValidation.error || "対応していないファイル形式です");
-				return;
-			}
-
-			// ファイルサイズの事前検証
+			// ファイルサイズを取得してFile風オブジェクトを作成
 			const fileSize = await getFileSize(selected);
-			const sizeValidation = validateFileSize(fileSize);
-			if (!sizeValidation.valid) {
-				toastStore.error(sizeValidation.error || "ファイルサイズが大きすぎます");
+			const fileName = selected.split('/').pop() || selected.split('\\').pop() || 'unknown';
+			const fileType = getFileType(selected);
+			
+			// ファイル検証用のオブジェクトを作成
+			const fileObj = {
+				name: fileName,
+				size: fileSize,
+				type: fileType
+			} as File;
+
+			// ファイル形式とサイズの検証
+			const validation = ErrorHandler.validateFileFormat(fileObj);
+			if (!validation.success && validation.error) {
+				uploadError = validation.error;
 				return;
 			}
 
 			receiptFile = selected;
 			uploadError = null; // エラーをクリア
+			errorStore.clearError();
 
 			// 画像プレビュー用（PDFの場合はプレビューなし）
 			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
@@ -159,13 +203,14 @@ async function selectReceipt() {
 			}
 
 			// ファイル選択成功を通知
-			const fileName = selected.split('/').pop() || selected.split('\\').pop();
 			const sizeMB = (fileSize / (1024 * 1024)).toFixed(1);
 			toastStore.success(`ファイルを選択しました: ${fileName} (${sizeMB}MB)`);
 		}
-	} catch (error) {
-		console.error("領収書ファイルの選択に失敗しました:", error);
-		toastStore.error("領収書ファイルの選択に失敗しました");
+	}, "領収書ファイルの選択");
+
+	if (!result.success && result.error) {
+		uploadError = result.error;
+		toastStore.error(ErrorHandler.formatErrorForDisplay(result.error));
 	}
 }
 
@@ -223,38 +268,47 @@ async function selectMultipleReceipts() {
 	}
 }
 
-// 領収書削除（R2対応）
+// 領収書削除（統一エラーハンドリング版）
 async function deleteReceiptFile() {
 	if (!expense?.id) {
-		toastStore.error("経費IDが見つかりません");
+		const error: UserFriendlyError = {
+			title: '削除エラー',
+			message: '経費IDが見つかりません。',
+			canRetry: false,
+			severity: 'error'
+		};
+		uploadError = error;
+		toastStore.error(ErrorHandler.formatErrorForDisplay(error));
 		return;
 	}
 
-	try {
-		let result;
-
-		// R2 URLがある場合はR2から削除、そうでなければローカルから削除
+	const result = await ErrorHandler.handleFileDelete(async () => {
+		// R2 URLがある場合はR2から削除、そうでなければエラー
 		if (expense.receipt_url) {
-			result = await deleteReceiptFromR2(expense.id);
+			const tauriResult = await deleteReceiptFromR2(expense.id);
+			
+			if (tauriResult.error) {
+				throw new Error(tauriResult.error);
+			}
+
+			return tauriResult.data || true;
 		} else {
-			// ローカルファイルの削除は現在サポートしていない
-			toastStore.error("ローカルファイルの削除は現在サポートしていません");
-			return;
+			throw new Error("削除対象の領収書が見つかりません");
 		}
+	}, "領収書");
 
-		if (result.error) {
-			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
-			return;
-		}
-
+	if (result.success) {
 		// プレビューとファイル選択をクリア
 		receiptPreview = undefined;
 		receiptFile = undefined;
+		uploadError = null;
+		errorStore.clearError();
 
 		toastStore.success("領収書を削除しました");
-	} catch (error) {
-		console.error("領収書削除エラー:", error);
-		toastStore.error("領収書の削除に失敗しました");
+	} else if (result.error) {
+		uploadError = result.error;
+		errorStore.setError(result.error);
+		toastStore.error(ErrorHandler.formatErrorForDisplay(result.error));
 	}
 }
 
@@ -267,17 +321,7 @@ function cancelUpload() {
 	toastStore.info("アップロードをキャンセルしました");
 }
 
-// ファイルサイズを取得する関数
-async function getFileSize(filePath: string): Promise<number> {
-	try {
-		// ファイルサイズの推定（実際のファイルサイズ取得は複雑なため、簡易的な方法を使用）
-		// 実際のプロジェクトでは、バックエンドでファイルサイズを取得することを推奨
-		return 1024 * 1024; // 1MBと仮定（実際の実装では適切なAPIを使用）
-	} catch (error) {
-		console.warn("ファイルサイズの取得に失敗しました:", error);
-		return 0;
-	}
-}
+
 
 // ファイル形式を検証する関数
 function validateFileFormat(filePath: string): { valid: boolean; error?: string } {
@@ -309,29 +353,18 @@ function validateFileSize(sizeBytes: number): { valid: boolean; error?: string }
 	return { valid: true };
 }
 
-// プログレス表示付きR2アップロード
-async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
+// プログレス表示付きR2アップロード（統一エラーハンドリング版）
+async function uploadReceiptWithProgressUnified(expenseId: number, filePath: string): Promise<OperationResult<string>> {
 	isUploading = true;
 	uploadProgress = { loaded: 0, total: 0, percentage: 0 };
 	uploadCancelled = false;
-	uploadError = null;
 
-	try {
-		// ファイル形式の検証
-		const formatValidation = validateFileFormat(filePath);
-		if (!formatValidation.valid) {
-			uploadError = formatValidation.error || "ファイル形式が無効です";
-			return;
-		}
+	const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
 
-		// ファイルサイズの取得と検証
+	const result = await ErrorHandler.handleFileUpload(async () => {
+		// ファイルサイズを取得
 		const fileSize = await getFileSize(filePath);
-		const sizeValidation = validateFileSize(fileSize);
-		if (!sizeValidation.valid) {
-			uploadError = sizeValidation.error || "ファイルサイズが無効です";
-			return;
-		}
-
+		
 		// プログレス表示の初期化
 		uploadProgress = { loaded: 0, total: fileSize, percentage: 0 };
 
@@ -355,42 +388,58 @@ async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
 			}
 		}, 200);
 
-		// R2にアップロード
-		const result = await uploadReceiptToR2(expenseId, filePath);
+		try {
+			// R2にアップロード
+			const tauriResult = await uploadReceiptToR2(expenseId, filePath);
 
-		clearInterval(progressInterval);
+			clearInterval(progressInterval);
 
-		if (uploadCancelled) {
-			return;
+			if (uploadCancelled) {
+				throw new Error("アップロードがキャンセルされました");
+			}
+
+			if (tauriResult.error) {
+				throw new Error(tauriResult.error);
+			}
+
+			// アップロード完了
+			uploadProgress = { loaded: fileSize, total: fileSize, percentage: 100 };
+
+			// 経費データを更新してreceipt_urlを設定
+			const updateSuccess = await expenseStore.modifyExpense(expenseId, {
+				receipt_url: tauriResult.data,
+			});
+
+			if (!updateSuccess) {
+				throw new Error("経費データの更新に失敗しました");
+			}
+
+			toastStore.success("領収書をクラウドにアップロードしました");
+			
+			// プレビューを更新
+			receiptPreview = tauriResult.data;
+			
+			return tauriResult.data || "";
+		} finally {
+			clearInterval(progressInterval);
 		}
+	}, fileName);
 
-		if (result.error) {
-			uploadError = result.error;
-			return;
-		}
+	isUploading = false;
 
-		// アップロード完了
-		uploadProgress = { loaded: fileSize, total: fileSize, percentage: 100 };
+	// プログレスは成功時は100%のまま、エラー時はリセット
+	if (!result.success) {
+		uploadProgress = { loaded: 0, total: 0, percentage: 0 };
+	}
 
-		// 経費データを更新してreceipt_urlを設定
-		await expenseStore.modifyExpense(expenseId, {
-			receipt_url: result.data,
-		});
+	return result;
+}
 
-		toastStore.success("領収書をクラウドにアップロードしました");
-		
-		// プレビューを更新
-		receiptPreview = result.data;
-		
-	} catch (error) {
-		console.error("アップロードエラー:", error);
-		uploadError = error instanceof Error ? error.message : "アップロードに失敗しました";
-	} finally {
-		isUploading = false;
-		// プログレスは成功時は100%のまま、エラー時はリセット
-		if (uploadError) {
-			uploadProgress = { loaded: 0, total: 0, percentage: 0 };
-		}
+// 従来のアップロード関数（後方互換性のため残す）
+async function uploadReceiptWithProgress(expenseId: number, filePath: string) {
+	const result = await uploadReceiptWithProgressUnified(expenseId, filePath);
+	if (!result.success && result.error) {
+		uploadError = result.error;
 	}
 }
 
@@ -401,7 +450,6 @@ let isSubmitting = $state(false);
 let isUploading = $state(false);
 let uploadProgress = $state<UploadProgress>({ loaded: 0, total: 0, percentage: 0 });
 let uploadCancelled = $state(false);
-let uploadError = $state<string | null>(null);
 
 // 並列アップロード関連の状態
 let isMultipleUploading = $state(false);
@@ -410,7 +458,7 @@ let multipleUploadResult = $state<MultipleUploadResult | null>(null);
 let showPerformanceStats = $state(false);
 let performanceStats = $state<PerformanceStats | null>(null);
 
-// フォーム送信
+// フォーム送信（統一エラーハンドリング版）
 async function handleSubmit(event: Event) {
 	event.preventDefault();
 
@@ -419,8 +467,10 @@ async function handleSubmit(event: Event) {
 	}
 
 	isSubmitting = true;
+	errorStore.clearError();
+	uploadError = null;
 
-	try {
+	const result = await ErrorHandler.executeWithErrorHandling(async () => {
 		const expenseData = {
 			date: date, // YYYY-MM-DD形式のまま送信
 			amount: Number.parseFloat(amount),
@@ -439,22 +489,25 @@ async function handleSubmit(event: Event) {
 		}
 
 		if (!success) {
-			toastStore.error(expenseStore.error || "経費の保存に失敗しました");
-			return;
+			throw new Error(expenseStore.error || "経費の保存に失敗しました");
 		}
 
 		// 領収書がある場合はR2にアップロード
 		if (receiptFile && !expense) {
 			// 新規作成の場合のみ領収書をアップロード
 			// 最後に追加された経費のIDを取得
-			const lastExpense =
-				expenseStore.expenses[expenseStore.expenses.length - 1];
+			const lastExpense = expenseStore.expenses[expenseStore.expenses.length - 1];
 			if (lastExpense) {
-				await uploadReceiptWithProgress(lastExpense.id, receiptFile);
+				const uploadResult = await uploadReceiptWithProgressUnified(lastExpense.id, receiptFile);
+				if (!uploadResult.success && uploadResult.error) {
+					uploadError = uploadResult.error;
+					// アップロードエラーは経費保存の成功を妨げない
+					toastStore.warning("経費は保存されましたが、領収書のアップロードに失敗しました");
+				}
 			}
 		}
 
-		// キャッシュ同期を実行（バックグラウンドで）
+		// キャッシュ同期を実行（バックグラウンドで、エラーは無視）
 		syncCacheOnOnline()
 			.then((result) => {
 				if (result.error) {
@@ -467,16 +520,20 @@ async function handleSubmit(event: Event) {
 				console.warn("キャッシュ同期エラー:", error);
 			});
 
+		return true;
+	}, expense ? "経費の更新" : "経費の追加");
+
+	if (result.success) {
 		// 成功メッセージ
 		toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");
-
 		// 成功コールバック
 		onSuccess();
-	} catch (error) {
-		toastStore.error(`エラーが発生しました: ${error}`);
-	} finally {
-		isSubmitting = false;
+	} else if (result.error) {
+		errorStore.setError(result.error);
+		toastStore.error(ErrorHandler.formatErrorForDisplay(result.error));
 	}
+
+	isSubmitting = false;
 }
 
 // 複数ファイルを並列アップロードする
@@ -659,6 +716,49 @@ async function loadPerformanceStats() {
 				{/if}
 			</div>
 
+			<!-- エラー表示 -->
+			{#if uploadError}
+				<div class="mt-3 p-3 rounded-lg border {ErrorHandler.getErrorCssClass(uploadError.severity)} bg-red-50 border-red-200">
+					<div class="flex items-start gap-2">
+						<div class="flex-shrink-0">
+							{#if uploadError.severity === 'critical'}
+								🚨
+							{:else if uploadError.severity === 'error'}
+								❌
+							{:else if uploadError.severity === 'warning'}
+								⚠️
+							{:else}
+								ℹ️
+							{/if}
+						</div>
+						<div class="flex-1">
+							<h4 class="font-semibold text-sm text-red-800">{uploadError.title}</h4>
+							<p class="text-sm text-red-700 mt-1">{uploadError.message}</p>
+							{#if uploadError.actions && uploadError.actions.length > 0}
+								<div class="flex gap-2 mt-2">
+									{#each uploadError.actions as action}
+										<button
+											type="button"
+											onclick={action.action}
+											class="text-xs px-2 py-1 rounded {action.primary ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'} hover:opacity-80"
+										>
+											{action.label}
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						<button
+							type="button"
+							onclick={() => { uploadError = null; errorStore.clearError(); }}
+							class="flex-shrink-0 text-red-500 hover:text-red-700"
+						>
+							✕
+						</button>
+					</div>
+				</div>
+			{/if}
+
 			<!-- 並列アップロード機能 -->
 			<div class="border-t pt-3 mt-3">
 				<h4 class="text-sm font-semibold mb-2 text-gray-700">
@@ -821,19 +921,24 @@ async function loadPerformanceStats() {
 				<div class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
 					<div class="flex justify-between items-center mb-2">
 						<span class="text-sm font-medium text-blue-700">
-							クラウドにアップロード中...
+							{#if errorStore.state.isRetrying}
+								🔄 再試行中... ({errorStore.state.retryCount}/{errorStore.state.maxRetries})
+							{:else}
+								📤 クラウドにアップロード中...
+							{/if}
 						</span>
 						<button
 							type="button"
 							onclick={cancelUpload}
 							class="text-xs text-red-600 hover:text-red-800"
+							disabled={errorStore.state.isRetrying}
 						>
 							キャンセル
 						</button>
 					</div>
 					<div class="w-full bg-blue-200 rounded-full h-2">
 						<div
-							class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+							class="bg-blue-600 h-2 rounded-full transition-all duration-300 {errorStore.state.isRetrying ? 'animate-pulse' : ''}"
 							style="width: {uploadProgress.percentage}%"
 						></div>
 					</div>

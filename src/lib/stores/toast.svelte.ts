@@ -5,7 +5,7 @@
 export interface ToastMessage {
 	id: number;
 	message: string;
-	type: "success" | "error" | "info";
+	type: "success" | "error" | "info" | "warning";
 }
 
 class ToastStore {
@@ -15,7 +15,7 @@ class ToastStore {
 	/**
 	 * トースト通知を表示する
 	 */
-	show(message: string, type: "success" | "error" | "info" = "info"): void {
+	show(message: string, type: "success" | "error" | "info" | "warning" = "info"): void {
 		const id = this.nextId++;
 		this.toasts = [...this.toasts, { id, message, type }];
 	}
@@ -39,6 +39,13 @@ class ToastStore {
 	 */
 	info(message: string): void {
 		this.show(message, "info");
+	}
+
+	/**
+	 * 警告メッセージを表示する
+	 */
+	warning(message: string): void {
+		this.show(message, "warning");
 	}
 
 	/**

@@ -211,3 +211,51 @@ export interface ParallelUploadConfig {
 	enable_progress: boolean;
 	enable_cancel: boolean;
 }
+
+// エラーハンドリング関連型
+export interface AppError {
+	type: 'R2ConnectionFailed' | 'UploadFailed' | 'DownloadFailed' | 'FileNotFound' | 
+	      'InvalidCredentials' | 'NetworkError' | 'FileOperationError' | 'InvalidFileFormat' | 
+	      'FileSizeError' | 'DatabaseError' | 'ConfigError' | 'CacheError' | 'InternalError';
+	details: string;
+	user_message: string;
+	retry_possible: boolean;
+	severity: 'Low' | 'Medium' | 'High' | 'Critical';
+}
+
+export interface ErrorState {
+	hasError: boolean;
+	error: AppError | null;
+	isRetrying: boolean;
+	retryCount: number;
+	maxRetries: number;
+}
+
+export interface UserFriendlyError {
+	title: string;
+	message: string;
+	canRetry: boolean;
+	severity: 'info' | 'warning' | 'error' | 'critical';
+	actions?: ErrorAction[];
+}
+
+export interface ErrorAction {
+	label: string;
+	action: () => void;
+	primary?: boolean;
+}
+
+// 操作結果型
+export interface OperationResult<T = void> {
+	success: boolean;
+	data?: T;
+	error?: UserFriendlyError;
+}
+
+// リトライ設定型
+export interface RetryConfig {
+	maxRetries: number;
+	baseDelay: number; // ミリ秒
+	maxDelay: number; // ミリ秒
+	exponentialBackoff: boolean;
+}
