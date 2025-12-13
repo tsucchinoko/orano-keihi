@@ -150,8 +150,12 @@ impl R2Client {
             .send()
             .await
             .map_err(|e| {
+                // 詳細なエラー情報を取得
                 let error_msg = format!("アップロードエラー: {}", e);
-                error!("ファイルアップロード失敗: key={}, error={}", key, error_msg);
+                let error_debug = format!("Debug: {:?}", e);
+                
+                error!("ファイルアップロード失敗: key={}, bucket={}, error={}", key, self.bucket_name, error_msg);
+                error!("詳細エラー情報: {}", error_debug);
                 
                 // セキュリティログ記録
                 let security_manager = SecurityManager::new();

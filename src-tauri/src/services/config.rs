@@ -133,15 +133,11 @@ impl R2Config {
 
     /// 環境別のバケット名を取得
     pub fn get_environment_bucket_name(&self) -> String {
-        let env = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+        // 開発環境でも本番と同じバケット名を使用（一時的な修正）
+        let bucket_name = self.bucket_name.clone();
         
-        let bucket_name = if env == "production" {
-            self.bucket_name.clone()
-        } else {
-            format!("{}-{}", self.bucket_name, env)
-        };
-
-        info!("環境別バケット名: {} (環境: {})", bucket_name, env);
+        let env = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+        info!("バケット名: {} (環境: {})", bucket_name, env);
         bucket_name
     }
 

@@ -2,6 +2,8 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
+import { uploadReceiptToR2 } from "$lib/utils/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
 interface Props {
@@ -17,6 +19,8 @@ let date = $state("");
 let amount = $state("");
 let category = $state("");
 let description = $state("");
+let receiptFile = $state<string | undefined>(undefined);
+let receiptPreview = $state<string | undefined>(undefined);
 
 // フォームの初期化
 $effect(() => {
@@ -25,12 +29,26 @@ $effect(() => {
 		amount = expense.amount.toString() || "";
 		category = expense.category || "";
 		description = expense.description || "";
+		
+		// 既存の領収書を表示
+		if (expense.receipt_url) {
+			receiptPreview = expense.receipt_url;
+		} else if (expense.receipt_path) {
+			// 後方互換性：ローカルパスの場合は変換
+			import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+				if (expense?.receipt_path) {
+					receiptPreview = convertFileSrc(expense.receipt_path);
+				}
+			});
+		}
 	} else {
 		// 新規作成時の初期値
 		date = new Date().toISOString().split("T")[0];
 		amount = "";
 		category = "";
 		description = "";
+		receiptFile = undefined;
+		receiptPreview = undefined;
 	}
 });
 
@@ -39,6 +57,7 @@ let errors = $state<Record<string, string>>({});
 
 // 送信中フラグ
 let isSubmitting = $state(false);
+let isUploading = $state(false);
 
 // カテゴリ一覧
 const categories = [
@@ -89,6 +108,46 @@ function validate(): boolean {
 	return Object.keys(newErrors).length === 0;
 }
 
+// 領収書ファイル選択
+async function selectReceipt() {
+	try {
+		const selected = await open({
+			multiple: false,
+			filters: [
+				{
+					name: "領収書",
+					extensions: ["png", "jpg", "jpeg", "pdf"],
+				},
+			],
+		});
+
+		if (selected && typeof selected === "string") {
+			receiptFile = selected;
+			
+			// 画像プレビュー用（PDFの場合はプレビューなし）
+			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
+				// Tauriのファイルパスを変換してプレビュー表示
+				const { convertFileSrc } = await import("@tauri-apps/api/core");
+				receiptPreview = convertFileSrc(selected);
+			} else {
+				receiptPreview = undefined;
+			}
+
+			toastStore.success("領収書ファイルを選択しました");
+		}
+	} catch (error) {
+		console.error("領収書ファイルの選択に失敗しました:", error);
+		toastStore.error("領収書ファイルの選択に失敗しました");
+	}
+}
+
+// 領収書削除
+function removeReceipt() {
+	receiptFile = undefined;
+	receiptPreview = undefined;
+	toastStore.success("領収書を削除しました");
+}
+
 // フォーム送信
 async function handleSubmit(event: Event) {
 	event.preventDefault();
@@ -121,8 +180,37 @@ async function handleSubmit(event: Event) {
 			throw new Error(expenseStore.error || "経費の保存に失敗しました");
 		}
 
-		// 成功メッセージ
-		toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");
+		// 領収書がある場合はR2にアップロード
+		if (receiptFile && !expense) {
+			// 新規作成の場合のみ領収書をアップロード
+			// 最後に追加された経費のIDを取得
+			const lastExpense = expenseStore.expenses[expenseStore.expenses.length - 1];
+			if (lastExpense) {
+				isUploading = true;
+				try {
+					const uploadResult = await uploadReceiptToR2(lastExpense.id, receiptFile);
+					if (uploadResult.error) {
+						console.warn("領収書アップロードエラー:", uploadResult.error);
+						toastStore.warning("経費は保存されましたが、領収書のアップロードに失敗しました");
+					} else {
+						// 経費データを更新してreceipt_urlを設定
+						await expenseStore.modifyExpense(lastExpense.id, {
+							receipt_url: uploadResult.data,
+						});
+						toastStore.success("経費と領収書を保存しました");
+					}
+				} catch (uploadError) {
+					console.warn("領収書アップロードエラー:", uploadError);
+					toastStore.warning("経費は保存されましたが、領収書のアップロードに失敗しました");
+				} finally {
+					isUploading = false;
+				}
+			}
+		} else {
+			// 成功メッセージ
+			toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");
+		}
+
 		// 成功コールバック
 		onSuccess();
 	} catch (error) {
@@ -222,17 +310,70 @@ async function handleSubmit(event: Event) {
 			</div>
 		</div>
 
+		<!-- 領収書アップロード -->
+		<div>
+			<label for="receipt-upload" class="block text-sm font-semibold mb-2">
+				領収書（オプション）
+			</label>
+			
+			<div class="flex gap-2 mb-3">
+				<button
+					id="receipt-upload"
+					type="button"
+					onclick={selectReceipt}
+					class="btn btn-info flex-1"
+					disabled={isSubmitting || isUploading}
+				>
+					📎 領収書を選択
+				</button>
+				{#if receiptFile || receiptPreview}
+					<button
+						type="button"
+						onclick={removeReceipt}
+						class="btn bg-red-500 text-white px-4"
+						title="領収書を削除"
+						disabled={isSubmitting || isUploading}
+					>
+						🗑️
+					</button>
+				{/if}
+			</div>
+
+			<!-- プレビュー表示 -->
+			{#if receiptPreview}
+				<div class="mt-3">
+					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>
+					<img
+						src={receiptPreview}
+						alt="領収書プレビュー"
+						class="max-w-full h-auto max-h-48 rounded-lg border-2 border-gray-200"
+					/>
+				</div>
+			{:else if receiptFile}
+				<div class="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+					<p class="text-sm text-gray-600 truncate">
+						📄 {receiptFile.split('/').pop() || receiptFile.split('\\').pop()}
+					</p>
+				</div>
+			{/if}
+		</div>
+
 		<!-- ボタン -->
 		<div class="flex gap-3 pt-4">
 			<button
 				type="submit"
 				class="btn btn-primary flex-1"
-				disabled={isSubmitting}
+				disabled={isSubmitting || isUploading}
 			>
 				{#if isSubmitting}
 					<span class="flex items-center gap-2">
 						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
 						保存中...
+					</span>
+				{:else if isUploading}
+					<span class="flex items-center gap-2">
+						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+						アップロード中...
 					</span>
 				{:else}
 					💾 保存
@@ -242,19 +383,23 @@ async function handleSubmit(event: Event) {
 				type="button"
 				onclick={onCancel}
 				class="btn bg-gray-300 text-gray-700 flex-1"
-				disabled={isSubmitting}
+				disabled={isSubmitting || isUploading}
 			>
 				キャンセル
 			</button>
 		</div>
 
 		<!-- 操作中の注意事項 -->
-		{#if isSubmitting}
+		{#if isSubmitting || isUploading}
 			<div class="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
 				<div class="flex items-center gap-2">
 					<span class="text-yellow-600">⚠️</span>
 					<p class="text-sm text-yellow-700">
-						経費を保存中です。ページを閉じたり、ブラウザを更新しないでください。
+						{#if isUploading}
+							領収書をアップロード中です。ページを閉じたり、ブラウザを更新しないでください。
+						{:else}
+							経費を保存中です。ページを閉じたり、ブラウザを更新しないでください。
+						{/if}
 					</p>
 				</div>
 			</div>
