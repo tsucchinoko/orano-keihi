@@ -3,6 +3,7 @@
 pub mod cache_manager;
 pub mod config;
 pub mod r2_client;
+pub mod security;
 
 // エラー型の定義
 use thiserror::Error;

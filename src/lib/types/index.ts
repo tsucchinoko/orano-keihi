@@ -112,3 +112,42 @@ export interface CacheStats {
 	max_size_bytes: number;
 	cache_hit_rate: number;
 }
+
+// セキュリティ関連型
+export interface SystemDiagnosticInfo {
+	environment: string;
+	debug_mode: string;
+	log_level: string;
+	credential_r2_account_id?: string;
+	credential_r2_access_key?: string;
+	credential_r2_bucket_name?: string;
+	rust_version: string;
+	target_arch: string;
+	target_os: string;
+}
+
+// 環境情報型
+export interface EnvironmentInfo {
+	environment: string;
+	debug_mode: string;
+	log_level: string;
+	is_production: string;
+	is_development: string;
+}
+
+// R2診断情報型
+export interface R2DiagnosticInfo {
+	bucket_name: string;
+	endpoint_url: string;
+	region: string;
+	config_account_id?: string;
+	config_access_key?: string;
+	config_bucket_name?: string;
+}
+
+// セキュリティイベント型
+export interface SecurityEvent {
+	event_type: string;
+	details: string;
+	timestamp?: string;
+}

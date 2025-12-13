@@ -1,10 +1,11 @@
 // R2クライアントモジュール
 
-use super::{config::R2Config, R2Error};
+use super::{config::R2Config, security::SecurityManager, R2Error};
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::{Client, Config};
+use log::{debug, error, info, warn};
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -15,18 +16,30 @@ pub struct R2Client {
 }
 
 impl R2Client {
-    /// R2クライアントを初期化
+    /// R2クライアントを初期化（セキュリティ強化版）
     pub async fn new(config: R2Config) -> Result<Self, R2Error> {
+        info!("R2クライアントを初期化しています...");
+        
+        // セキュリティマネージャーでログ記録
+        let security_manager = SecurityManager::new();
+        security_manager.log_security_event("r2_client_init", "R2クライアント初期化開始");
+
         // 設定を検証
         config
             .validate()
-            .map_err(|_e| R2Error::InvalidCredentials)?;
+            .map_err(|e| {
+                error!("R2設定の検証に失敗しました: {:?}", e);
+                security_manager.log_security_event("config_validation_failed", &format!("{:?}", e));
+                R2Error::InvalidCredentials
+            })?;
 
-        // 認証情報を設定
+        // 認証情報を設定（ログには出力しない）
+        debug!("認証情報を設定中...");
         let credentials =
             Credentials::new(&config.access_key, &config.secret_key, None, None, "r2");
 
         // S3互換設定を構築
+        debug!("AWS設定を構築中... エンドポイント: {}", config.endpoint_url());
         let aws_config = aws_config::defaults(BehaviorVersion::latest())
             .endpoint_url(&config.endpoint_url())
             .region(Region::new(config.region.clone()))
@@ -37,20 +50,31 @@ impl R2Client {
         let s3_config = Config::from(&aws_config);
         let client = Client::from_conf(s3_config);
 
+        // 環境別バケット名を使用
+        let bucket_name = config.get_environment_bucket_name();
+        
+        info!("R2クライアントの初期化が完了しました。バケット: {}", bucket_name);
+        security_manager.log_security_event("r2_client_init_success", &format!("バケット: {}", bucket_name));
+
         Ok(Self {
             client,
-            bucket_name: config.bucket_name.clone(),
+            bucket_name,
             config,
         })
     }
 
-    /// ファイルをR2にアップロード
+    /// ファイルをR2にアップロード（ログ強化版）
     pub async fn upload_file(
         &self,
         key: &str,
         file_data: Vec<u8>,
         content_type: &str,
     ) -> Result<String, R2Error> {
+        let file_size = file_data.len();
+        info!("ファイルアップロード開始: key={}, size={} bytes, content_type={}", key, file_size, content_type);
+        
+        let start_time = std::time::Instant::now();
+        
         let _put_object_output = self
             .client
             .put_object()
@@ -60,8 +84,19 @@ impl R2Client {
             .content_type(content_type)
             .send()
             .await
-            .map_err(|e| R2Error::UploadFailed(format!("アップロードエラー: {}", e)))?;
+            .map_err(|e| {
+                let error_msg = format!("アップロードエラー: {}", e);
+                error!("ファイルアップロード失敗: key={}, error={}", key, error_msg);
+                
+                // セキュリティログ記録
+                let security_manager = SecurityManager::new();
+                security_manager.log_security_event("upload_failed", &format!("key={}, error={}", key, error_msg));
+                
+                R2Error::UploadFailed(error_msg)
+            })?;
 
+        let duration = start_time.elapsed();
+        
         // アップロード成功時のHTTPS URLを生成
         let url = format!(
             "https://{}/{}/{}",
@@ -70,10 +105,16 @@ impl R2Client {
             key
         );
 
+        info!("ファイルアップロード成功: key={}, url={}, duration={:?}", key, url, duration);
+        
+        // セキュリティログ記録
+        let security_manager = SecurityManager::new();
+        security_manager.log_security_event("upload_success", &format!("key={}, size={} bytes", key, file_size));
+
         Ok(url)
     }
 
-    /// リトライ機能付きファイルアップロード
+    /// リトライ機能付きファイルアップロード（ログ強化版）
     pub async fn upload_file_with_retry(
         &self,
         key: &str,
@@ -82,18 +123,36 @@ impl R2Client {
         max_retries: u32,
     ) -> Result<String, R2Error> {
         let mut attempts = 0;
+        info!("リトライ機能付きアップロード開始: key={}, max_retries={}", key, max_retries);
 
         loop {
             match self.upload_file(key, file_data.clone(), content_type).await {
-                Ok(url) => return Ok(url),
+                Ok(url) => {
+                    if attempts > 0 {
+                        info!("リトライ後にアップロード成功: key={}, attempts={}", key, attempts);
+                    }
+                    return Ok(url);
+                }
                 Err(_e) if attempts < max_retries => {
                     attempts += 1;
                     // 指数バックオフ（2^attempts秒待機）
                     let delay = Duration::from_secs(2_u64.pow(attempts));
+                    warn!("アップロード失敗、リトライします: key={}, attempt={}/{}, delay={:?}s", 
+                          key, attempts, max_retries, delay);
+                    
                     tokio::time::sleep(delay).await;
                     continue;
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    error!("アップロード最終失敗: key={}, total_attempts={}", key, attempts + 1);
+                    
+                    // セキュリティログ記録
+                    let security_manager = SecurityManager::new();
+                    security_manager.log_security_event("upload_final_failure", 
+                        &format!("key={}, attempts={}", key, attempts + 1));
+                    
+                    return Err(e);
+                }
             }
         }
     }
@@ -132,17 +191,57 @@ impl R2Client {
         Ok(())
     }
 
-    /// 接続テスト
+    /// 接続テスト（詳細ログ付き）
     pub async fn test_connection(&self) -> Result<(), R2Error> {
+        info!("R2接続テストを開始します: bucket={}", self.bucket_name);
+        
+        let start_time = std::time::Instant::now();
+        
         // バケットの存在確認を行う
-        self.client
+        let _result = self.client
             .head_bucket()
             .bucket(&self.bucket_name)
             .send()
             .await
-            .map_err(|e| R2Error::ConnectionFailed(format!("接続テスト失敗: {}", e)))?;
+            .map_err(|e| {
+                let error_msg = format!("接続テスト失敗: {}", e);
+                error!("R2接続テスト失敗: bucket={}, error={}", self.bucket_name, error_msg);
+                
+                // セキュリティログ記録
+                let security_manager = SecurityManager::new();
+                security_manager.log_security_event("connection_test_failed", 
+                    &format!("bucket={}, error={}", self.bucket_name, error_msg));
+                
+                R2Error::ConnectionFailed(error_msg)
+            })?;
+
+        let duration = start_time.elapsed();
+        info!("R2接続テスト成功: bucket={}, duration={:?}", self.bucket_name, duration);
+        
+        // セキュリティログ記録
+        let security_manager = SecurityManager::new();
+        security_manager.log_security_event("connection_test_success", 
+            &format!("bucket={}, duration={:?}", self.bucket_name, duration));
 
         Ok(())
+    }
+
+    /// 詳細な診断情報を取得
+    pub fn get_diagnostic_info(&self) -> std::collections::HashMap<String, String> {
+        let mut info = std::collections::HashMap::new();
+        
+        info.insert("bucket_name".to_string(), self.bucket_name.clone());
+        info.insert("endpoint_url".to_string(), self.config.endpoint_url());
+        info.insert("region".to_string(), self.config.region.clone());
+        
+        // 設定のデバッグ情報を追加
+        let config_debug = self.config.get_debug_info();
+        for (key, value) in config_debug {
+            info.insert(format!("config_{}", key), value);
+        }
+
+        debug!("R2クライアント診断情報: {:?}", info);
+        info
     }
 
     /// ファイルキーを生成（予測困難にする）

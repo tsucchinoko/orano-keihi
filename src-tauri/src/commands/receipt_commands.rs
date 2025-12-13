@@ -1,8 +1,9 @@
 use crate::db::{expense_operations, subscription_operations};
-use crate::services::{config::R2Config, r2_client::R2Client};
+use crate::services::{config::R2Config, r2_client::R2Client, security::SecurityManager};
 use crate::AppState;
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
+use log::{debug, error, info, warn};
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -257,61 +258,126 @@ pub async fn upload_receipt_to_r2(
     file_path: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    info!("R2への領収書アップロードを開始します: expense_id={}, file_path={}", expense_id, file_path);
+    
+    let security_manager = SecurityManager::new();
+    security_manager.log_security_event("receipt_upload_started", 
+        &format!("expense_id={}, file_path={}", expense_id, file_path));
+
     // ファイルパスの検証
     let source_path = Path::new(&file_path);
     if !source_path.exists() {
-        return Err("指定されたファイルが存在しません".to_string());
+        let error_msg = "指定されたファイルが存在しません".to_string();
+        error!("{}: {}", error_msg, file_path);
+        security_manager.log_security_event("file_not_found", &format!("file_path={}", file_path));
+        return Err(error_msg);
     }
 
     // ファイル名を取得
     let filename = source_path
         .file_name()
         .and_then(|s| s.to_str())
-        .ok_or_else(|| "ファイル名の取得に失敗しました".to_string())?;
+        .ok_or_else(|| {
+            let error_msg = "ファイル名の取得に失敗しました".to_string();
+            error!("{}: {}", error_msg, file_path);
+            security_manager.log_security_event("filename_extraction_failed", &format!("file_path={}", file_path));
+            error_msg
+        })?;
+
+    debug!("ファイル名を取得しました: {}", filename);
 
     // ファイル形式の事前検証
-    R2Client::validate_file_format(filename).map_err(|e| format!("ファイル形式エラー: {}", e))?;
+    R2Client::validate_file_format(filename).map_err(|e| {
+        let error_msg = format!("ファイル形式エラー: {}", e);
+        warn!("{}: {}", error_msg, filename);
+        security_manager.log_security_event("invalid_file_format", &format!("filename={}, error={}", filename, e));
+        error_msg
+    })?;
 
     // ファイルサイズの事前検証
-    let metadata = fs::metadata(source_path)
-        .map_err(|e| format!("ファイル情報の取得に失敗しました: {}", e))?;
+    let metadata = fs::metadata(source_path).map_err(|e| {
+        let error_msg = format!("ファイル情報の取得に失敗しました: {}", e);
+        error!("{}: {}", error_msg, file_path);
+        security_manager.log_security_event("file_metadata_failed", &format!("file_path={}, error={}", file_path, e));
+        error_msg
+    })?;
 
-    R2Client::validate_file_size(metadata.len())
-        .map_err(|e| format!("ファイルサイズエラー: {}", e))?;
+    let file_size = metadata.len();
+    debug!("ファイルサイズ: {} bytes", file_size);
+
+    R2Client::validate_file_size(file_size).map_err(|e| {
+        let error_msg = format!("ファイルサイズエラー: {}", e);
+        warn!("{}: {} bytes", error_msg, file_size);
+        security_manager.log_security_event("invalid_file_size", &format!("size={} bytes, error={}", file_size, e));
+        error_msg
+    })?;
 
     // ファイルを読み込み
-    let file_data =
-        fs::read(source_path).map_err(|e| format!("ファイルの読み込みに失敗しました: {}", e))?;
+    let file_data = fs::read(source_path).map_err(|e| {
+        let error_msg = format!("ファイルの読み込みに失敗しました: {}", e);
+        error!("{}: {}", error_msg, file_path);
+        security_manager.log_security_event("file_read_failed", &format!("file_path={}, error={}", file_path, e));
+        error_msg
+    })?;
+
+    info!("ファイルを読み込みました: {} bytes", file_data.len());
 
     // R2設定を読み込み
-    let config =
-        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+    let config = R2Config::from_env().map_err(|e| {
+        let error_msg = format!("R2設定の読み込みに失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_config_load_failed", &format!("error={:?}", e));
+        error_msg
+    })?;
 
     // R2クライアントを初期化
-    let client = R2Client::new(config)
-        .await
-        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
+    let client = R2Client::new(config).await.map_err(|e| {
+        let error_msg = format!("R2クライアントの初期化に失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_client_init_failed", &format!("error={}", e));
+        error_msg
+    })?;
 
     // ファイルキーを生成
     let file_key = R2Client::generate_file_key(expense_id, filename);
+    debug!("ファイルキーを生成しました: {}", file_key);
 
     // Content-Typeを取得
     let content_type = R2Client::get_content_type(filename);
+    debug!("Content-Type: {}", content_type);
 
     // リトライ機能付きでR2にアップロード（最大3回リトライ）
     let receipt_url = client
         .upload_file_with_retry(&file_key, file_data, &content_type, 3)
         .await
-        .map_err(|e| format!("R2アップロードに失敗しました: {}", e))?;
+        .map_err(|e| {
+            let error_msg = format!("R2アップロードに失敗しました: {}", e);
+            error!("{}", error_msg);
+            security_manager.log_security_event("r2_upload_failed", &format!("file_key={}, error={}", file_key, e));
+            error_msg
+        })?;
+
+    info!("R2アップロードが成功しました: {}", receipt_url);
 
     // データベースにreceipt_urlを保存
-    let db = state
-        .db
-        .lock()
-        .map_err(|e| format!("データベースロックエラー: {}", e))?;
+    let db = state.db.lock().map_err(|e| {
+        let error_msg = format!("データベースロックエラー: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("database_lock_failed", &format!("error={}", e));
+        error_msg
+    })?;
 
-    expense_operations::set_receipt_url(&db, expense_id, receipt_url.clone())
-        .map_err(|e| format!("データベースへの保存に失敗しました: {}", e))?;
+    expense_operations::set_receipt_url(&db, expense_id, receipt_url.clone()).map_err(|e| {
+        let error_msg = format!("データベースへの保存に失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("database_save_failed", 
+            &format!("expense_id={}, receipt_url={}, error={}", expense_id, receipt_url, e));
+        error_msg
+    })?;
+
+    info!("データベースへの保存が完了しました: expense_id={}, receipt_url={}", expense_id, receipt_url);
+    security_manager.log_security_event("receipt_upload_success", 
+        &format!("expense_id={}, receipt_url={}, file_size={} bytes", expense_id, receipt_url, file_size));
 
     Ok(receipt_url)
 }
@@ -631,24 +697,40 @@ pub async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> 
 /// * `state` - アプリケーション状態
 ///
 /// # 戻り値
-/// 接続成功時はtrue、失敗時はエラーメッセージ
+/// 接続成功時はtrue、失敗時はエラーメッセージ（セキュリティ強化版）
 #[tauri::command]
 pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, String> {
+    info!("R2接続テストを開始します");
+    
+    let security_manager = SecurityManager::new();
+    security_manager.log_security_event("r2_connection_test_started", "従来のR2接続テスト開始");
+
     // 環境変数からR2設定を読み込み
-    let config =
-        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+    let config = R2Config::from_env().map_err(|e| {
+        let error_msg = format!("R2設定の読み込みに失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_config_load_failed", &error_msg);
+        error_msg
+    })?;
 
     // R2クライアントを初期化
-    let client = R2Client::new(config)
-        .await
-        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
+    let client = R2Client::new(config).await.map_err(|e| {
+        let error_msg = format!("R2クライアントの初期化に失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_client_init_failed", &error_msg);
+        error_msg
+    })?;
 
     // 接続テストを実行
-    client
-        .test_connection()
-        .await
-        .map_err(|e| format!("R2接続テストに失敗しました: {}", e))?;
+    client.test_connection().await.map_err(|e| {
+        let error_msg = format!("R2接続テストに失敗しました: {}", e);
+        error!("{}", error_msg);
+        security_manager.log_security_event("r2_connection_test_failed", &error_msg);
+        error_msg
+    })?;
 
+    info!("R2接続テストが成功しました");
+    security_manager.log_security_event("r2_connection_test_success", "従来のR2接続テスト成功");
     Ok(true)
 }
 
