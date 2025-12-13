@@ -581,7 +581,7 @@ pub async fn delete_receipt_from_r2(
 ///
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラーメッセージ
-async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> {
+pub async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> {
     // URLからファイルキーを抽出
     let url_parts: Vec<&str> = receipt_url.split('/').collect();
     if url_parts.len() < 4 {

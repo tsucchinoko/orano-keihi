@@ -239,4 +239,39 @@ mod tests {
         let file_part = parts[2];
         assert!(file_part.contains("test.jpg"));
     }
+
+    #[test]
+    fn test_file_format_validation() {
+        // 有効なファイル形式
+        assert!(R2Client::validate_file_format("test.pdf").is_ok());
+        assert!(R2Client::validate_file_format("test.png").is_ok());
+        assert!(R2Client::validate_file_format("test.jpg").is_ok());
+        assert!(R2Client::validate_file_format("test.jpeg").is_ok());
+
+        // 無効なファイル形式
+        assert!(R2Client::validate_file_format("test.txt").is_err());
+        assert!(R2Client::validate_file_format("test.doc").is_err());
+        assert!(R2Client::validate_file_format("test").is_err());
+    }
+
+    #[test]
+    fn test_file_size_validation() {
+        // 有効なファイルサイズ（10MB以下）
+        assert!(R2Client::validate_file_size(1024).is_ok()); // 1KB
+        assert!(R2Client::validate_file_size(1024 * 1024).is_ok()); // 1MB
+        assert!(R2Client::validate_file_size(10 * 1024 * 1024).is_ok()); // 10MB
+
+        // 無効なファイルサイズ（10MB超過）
+        assert!(R2Client::validate_file_size(10 * 1024 * 1024 + 1).is_err()); // 10MB + 1byte
+        assert!(R2Client::validate_file_size(20 * 1024 * 1024).is_err()); // 20MB
+    }
+
+    #[test]
+    fn test_content_type_detection() {
+        assert_eq!(R2Client::get_content_type("test.pdf"), "application/pdf");
+        assert_eq!(R2Client::get_content_type("test.png"), "image/png");
+        assert_eq!(R2Client::get_content_type("test.jpg"), "image/jpeg");
+        assert_eq!(R2Client::get_content_type("test.jpeg"), "image/jpeg");
+        assert_eq!(R2Client::get_content_type("test.unknown"), "application/octet-stream");
+    }
 }
