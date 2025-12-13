@@ -20,6 +20,7 @@ import ToastContainer from "$lib/components/ToastContainer.svelte";
 					<div class="nav-links">
 						<a href="/expenses" class="nav-link">経費一覧</a>
 						<a href="/subscriptions" class="nav-link">サブスクリプション</a>
+						<a href="/debug" class="nav-link debug-link">デバッグ</a>
 					</div>
 				</nav>
 			</header>
@@ -105,6 +106,17 @@ import ToastContainer from "$lib/components/ToastContainer.svelte";
 		background: var(--gradient-primary);
 		color: white;
 		transform: translateY(-2px);
+	}
+
+	.debug-link {
+		background: #f3f4f6;
+		color: #6b7280;
+		font-size: 0.875rem;
+	}
+
+	.debug-link:hover {
+		background: #ef4444;
+		color: white;
 	}
 
 	/* メインコンテンツエリア */

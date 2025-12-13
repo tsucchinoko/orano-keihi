@@ -387,3 +387,46 @@ export async function getR2PerformanceStats(): Promise<
 		invoke<import("../types").PerformanceStats>("get_r2_performance_stats"),
 	);
 }
+
+// ========================================
+// 統合テストとデバッグ機能
+// ========================================
+
+/**
+ * R2接続の詳細テストを実行する
+ *
+ * @returns 詳細なテスト結果またはエラー
+ */
+export async function testR2ConnectionDetailed(): Promise<
+	TauriResult<import("../types").R2ConnectionTestResult>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").R2ConnectionTestResult>("test_r2_connection_detailed"),
+	);
+}
+
+/**
+ * R2使用量監視情報を取得する
+ *
+ * @returns 使用量監視情報またはエラー
+ */
+export async function getR2UsageMonitoring(): Promise<
+	TauriResult<import("../types").R2UsageInfo>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").R2UsageInfo>("get_r2_usage_monitoring"),
+	);
+}
+
+/**
+ * 開発者向けR2デバッグ情報を取得する
+ *
+ * @returns デバッグ情報またはエラー
+ */
+export async function getR2DebugInfo(): Promise<
+	TauriResult<import("../types").R2DebugInfo>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").R2DebugInfo>("get_r2_debug_info"),
+	);
+}

@@ -109,6 +109,10 @@ pub fn run() {
             receipt_commands::upload_multiple_receipts_to_r2,
             receipt_commands::cancel_upload,
             receipt_commands::get_r2_performance_stats,
+            // 統合テストとデバッグ機能
+            receipt_commands::test_r2_connection_detailed,
+            receipt_commands::get_r2_usage_monitoring,
+            receipt_commands::get_r2_debug_info,
             // マイグレーションコマンド
             migration_commands::check_migration_status,
             migration_commands::execute_receipt_url_migration,

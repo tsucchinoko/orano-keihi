@@ -259,3 +259,50 @@ export interface RetryConfig {
 	maxDelay: number; // ミリ秒
 	exponentialBackoff: boolean;
 }
+
+// 統合テストとデバッグ機能関連型
+
+// テストステップ結果型
+export interface TestStepResult {
+	success: boolean;
+	message: string;
+	duration_ms: number;
+	details?: string;
+}
+
+// R2接続詳細テスト結果型
+export interface R2ConnectionTestResult {
+	overall_success: boolean;
+	config_validation: TestStepResult;
+	client_initialization: TestStepResult;
+	bucket_access: TestStepResult;
+	upload_test: TestStepResult;
+	download_test: TestStepResult;
+	delete_test: TestStepResult;
+	performance_metrics?: PerformanceStats;
+	total_duration_ms: number;
+	environment: string;
+}
+
+// R2使用量監視情報型
+export interface R2UsageInfo {
+	total_files: number;
+	estimated_storage_mb: number;
+	monthly_uploads: number;
+	daily_uploads: number;
+	cache_stats?: CacheStats;
+	bucket_name: string;
+	region: string;
+	last_updated: string;
+	cost_estimate_usd: number;
+}
+
+// R2デバッグ情報型
+export interface R2DebugInfo {
+	environment_variables: Record<string, string>;
+	r2_config?: Record<string, string>;
+	system_info: Record<string, string>;
+	database_stats: Record<string, string>;
+	recent_errors: string[];
+	timestamp: string;
+}

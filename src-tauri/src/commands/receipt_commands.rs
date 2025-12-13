@@ -1444,3 +1444,670 @@ pub async fn get_r2_performance_stats(_state: State<'_, AppState>) -> Result<Per
 
     Ok(stats)
 }
+
+// ========== 統合テストとデバッグ機能 ==========
+
+/// R2接続の詳細テスト（統合テスト機能）
+///
+/// # 引数
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 詳細なテスト結果、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn test_r2_connection_detailed(_state: State<'_, AppState>) -> Result<R2ConnectionTestResult, String> {
+    info!("R2接続詳細テストを開始します");
+    
+    let security_manager = SecurityManager::new();
+    security_manager.log_security_event("r2_detailed_test_started", "R2接続詳細テスト開始");
+
+    let start_time = std::time::Instant::now();
+    let mut test_result = R2ConnectionTestResult {
+        overall_success: false,
+        config_validation: TestStepResult::default(),
+        client_initialization: TestStepResult::default(),
+        bucket_access: TestStepResult::default(),
+        upload_test: TestStepResult::default(),
+        download_test: TestStepResult::default(),
+        delete_test: TestStepResult::default(),
+        performance_metrics: None,
+        total_duration_ms: 0,
+        environment: std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
+    };
+
+    // 1. 設定検証テスト
+    info!("ステップ 1: R2設定検証");
+    let config_result = test_config_validation().await;
+    test_result.config_validation = config_result.clone();
+    
+    if !config_result.success {
+        test_result.total_duration_ms = start_time.elapsed().as_millis() as u64;
+        security_manager.log_security_event("r2_detailed_test_failed", "設定検証で失敗");
+        return Ok(test_result);
+    }
+
+    // 2. クライアント初期化テスト
+    info!("ステップ 2: R2クライアント初期化");
+    let (client_result, client_opt) = test_client_initialization().await;
+    test_result.client_initialization = client_result.clone();
+    
+    if !client_result.success || client_opt.is_none() {
+        test_result.total_duration_ms = start_time.elapsed().as_millis() as u64;
+        security_manager.log_security_event("r2_detailed_test_failed", "クライアント初期化で失敗");
+        return Ok(test_result);
+    }
+    
+    let client = client_opt.unwrap();
+
+    // 3. バケットアクセステスト
+    info!("ステップ 3: バケットアクセステスト");
+    let bucket_result = test_bucket_access(&client).await;
+    test_result.bucket_access = bucket_result.clone();
+    
+    if !bucket_result.success {
+        test_result.total_duration_ms = start_time.elapsed().as_millis() as u64;
+        security_manager.log_security_event("r2_detailed_test_failed", "バケットアクセスで失敗");
+        return Ok(test_result);
+    }
+
+    // 4. アップロードテスト
+    info!("ステップ 4: アップロードテスト");
+    let (upload_result, test_key_opt) = test_upload_functionality(&client).await;
+    test_result.upload_test = upload_result.clone();
+    
+    if !upload_result.success {
+        test_result.total_duration_ms = start_time.elapsed().as_millis() as u64;
+        security_manager.log_security_event("r2_detailed_test_failed", "アップロードテストで失敗");
+        return Ok(test_result);
+    }
+
+    // 5. ダウンロードテスト
+    info!("ステップ 5: ダウンロードテスト");
+    let download_result = if let Some(test_key) = &test_key_opt {
+        test_download_functionality(&client, test_key).await
+    } else {
+        TestStepResult {
+            success: false,
+            message: "テストキーが利用できません".to_string(),
+            duration_ms: 0,
+            details: None,
+        }
+    };
+    test_result.download_test = download_result.clone();
+
+    // 6. 削除テスト
+    info!("ステップ 6: 削除テスト");
+    let delete_result = if let Some(test_key) = &test_key_opt {
+        test_delete_functionality(&client, test_key).await
+    } else {
+        TestStepResult {
+            success: false,
+            message: "テストキーが利用できません".to_string(),
+            duration_ms: 0,
+            details: None,
+        }
+    };
+    test_result.delete_test = delete_result.clone();
+
+    // 7. パフォーマンス測定
+    info!("ステップ 7: パフォーマンス測定");
+    if let Ok(perf_stats) = client.get_performance_stats().await {
+        test_result.performance_metrics = Some(perf_stats);
+    }
+
+    // 全体の成功判定
+    test_result.overall_success = test_result.config_validation.success
+        && test_result.client_initialization.success
+        && test_result.bucket_access.success
+        && test_result.upload_test.success
+        && test_result.download_test.success
+        && test_result.delete_test.success;
+
+    test_result.total_duration_ms = start_time.elapsed().as_millis() as u64;
+
+    let result_status = if test_result.overall_success { "成功" } else { "失敗" };
+    info!("R2接続詳細テスト完了: {} (総時間: {}ms)", result_status, test_result.total_duration_ms);
+    
+    security_manager.log_security_event(
+        "r2_detailed_test_completed",
+        &format!("success={}, duration={}ms", test_result.overall_success, test_result.total_duration_ms),
+    );
+
+    Ok(test_result)
+}
+
+/// R2使用量監視情報を取得する
+///
+/// # 引数
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 使用量監視情報、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2UsageInfo, String> {
+    info!("R2使用量監視情報取得開始");
+    
+    let security_manager = SecurityManager::new();
+    security_manager.log_security_event("r2_usage_monitoring_started", "R2使用量監視情報取得開始");
+
+    // データベースから統計情報を取得
+    let db_stats = {
+        let db = state.db.lock().map_err(|e| {
+            format!("データベースロックエラー: {}", e)
+        })?;
+
+        // 領収書数を取得
+        let total_receipts: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM expenses WHERE receipt_url IS NOT NULL AND receipt_url != ''",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("領収書数取得エラー: {}", e))?;
+
+        // 今月のアップロード数を取得（JSTベース）
+        let now_jst = Utc::now().with_timezone(&Tokyo);
+        let current_month = now_jst.format("%Y-%m").to_string();
+        
+        let monthly_uploads: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM expenses WHERE receipt_url IS NOT NULL AND receipt_url != '' AND date LIKE ?",
+                [format!("{}%", current_month)],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("月間アップロード数取得エラー: {}", e))?;
+
+        // 今日のアップロード数を取得（JSTベース）
+        let today = now_jst.format("%Y-%m-%d").to_string();
+        
+        let daily_uploads: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM expenses WHERE receipt_url IS NOT NULL AND receipt_url != '' AND date = ?",
+                [today],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("日間アップロード数取得エラー: {}", e))?;
+
+        (total_receipts as u64, monthly_uploads as u64, daily_uploads as u64)
+    };
+
+    // キャッシュ統計を取得（簡易実装）
+    let cache_stats = {
+        let app_data_dir = std::env::var("APPDATA")
+            .or_else(|_| std::env::var("HOME").map(|h| format!("{}/.local/share", h)))
+            .unwrap_or_else(|_| "/tmp".to_string());
+        
+        let cache_dir = std::path::PathBuf::from(app_data_dir).join("receipt_cache");
+        let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
+        
+        match cache_manager.calculate_cache_size_sync() {
+            Ok(current_size) => {
+                let db = state.db.lock().map_err(|e| {
+                    format!("データベースロックエラー: {}", e)
+                })?;
+
+                let cache_count: i64 = db
+                    .query_row("SELECT COUNT(*) FROM receipt_cache", [], |row| row.get(0))
+                    .unwrap_or(0);
+
+                Some(crate::commands::receipt_commands::CacheStats {
+                    total_files: cache_count as usize,
+                    total_size_bytes: current_size,
+                    max_size_bytes: cache_manager.max_cache_size,
+                    cache_hit_rate: 0.0,
+                })
+            }
+            Err(e) => {
+                warn!("キャッシュ統計取得エラー: {}", e);
+                None
+            }
+        }
+    };
+
+    // R2設定情報を取得
+    let config = R2Config::from_env().map_err(|e| {
+        format!("R2設定の読み込みに失敗しました: {}", e)
+    })?;
+
+    // 推定ストレージ使用量を計算（概算）
+    let estimated_storage_mb = db_stats.0 * 2; // 1ファイル平均2MBと仮定
+
+    let usage_info = R2UsageInfo {
+        total_files: db_stats.0,
+        estimated_storage_mb,
+        monthly_uploads: db_stats.1,
+        daily_uploads: db_stats.2,
+        cache_stats,
+        bucket_name: config.get_environment_bucket_name(),
+        region: config.region.clone(),
+        last_updated: Utc::now().with_timezone(&Tokyo).to_rfc3339(),
+        cost_estimate_usd: calculate_estimated_cost(db_stats.0, estimated_storage_mb),
+    };
+
+    info!("R2使用量監視情報取得完了: ファイル数={}, 推定容量={}MB", 
+          usage_info.total_files, usage_info.estimated_storage_mb);
+    
+    security_manager.log_security_event(
+        "r2_usage_monitoring_success",
+        &format!("files={}, storage={}MB", usage_info.total_files, usage_info.estimated_storage_mb),
+    );
+
+    Ok(usage_info)
+}
+
+/// 開発者向けデバッグ情報を取得する
+///
+/// # 引数
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// デバッグ情報、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn get_r2_debug_info(state: State<'_, AppState>) -> Result<R2DebugInfo, String> {
+    info!("R2デバッグ情報取得開始");
+    
+    let security_manager = SecurityManager::new();
+    security_manager.log_security_event("r2_debug_info_started", "R2デバッグ情報取得開始");
+
+    // 環境変数情報を取得（認証情報はマスク）
+    let mut env_vars = std::collections::HashMap::new();
+    
+    // 安全な環境変数のみ表示
+    let safe_env_vars = [
+        "ENVIRONMENT",
+        "R2_REGION",
+        "R2_BUCKET_NAME",
+    ];
+    
+    for var_name in &safe_env_vars {
+        if let Ok(value) = std::env::var(var_name) {
+            env_vars.insert(var_name.to_string(), value);
+        }
+    }
+    
+    // 認証情報はマスクして表示
+    if let Ok(account_id) = std::env::var("R2_ACCOUNT_ID") {
+        env_vars.insert("R2_ACCOUNT_ID".to_string(), mask_credential(&account_id));
+    }
+    
+    if let Ok(access_key) = std::env::var("R2_ACCESS_KEY") {
+        env_vars.insert("R2_ACCESS_KEY".to_string(), mask_credential(&access_key));
+    }
+    
+    env_vars.insert("R2_SECRET_KEY".to_string(), "****".to_string()); // 完全にマスク
+
+    // R2設定情報を取得
+    let config_info = match R2Config::from_env() {
+        Ok(config) => Some(config.get_debug_info()),
+        Err(e) => {
+            warn!("R2設定取得エラー: {}", e);
+            None
+        }
+    };
+
+    // システム情報を取得
+    let system_info = get_system_info();
+
+    // データベース統計を取得
+    let db_stats = {
+        let db = state.db.lock().map_err(|e| {
+            format!("データベースロックエラー: {}", e)
+        })?;
+
+        get_database_stats(&db).map_err(|e| {
+            format!("データベース統計取得エラー: {}", e)
+        })?
+    };
+
+    // 最近のエラーログを取得（セキュリティログから）
+    let recent_errors = security_manager.get_recent_security_events(10);
+
+    let debug_info = R2DebugInfo {
+        environment_variables: env_vars,
+        r2_config: config_info,
+        system_info,
+        database_stats: db_stats,
+        recent_errors,
+        timestamp: Utc::now().with_timezone(&Tokyo).to_rfc3339(),
+    };
+
+    info!("R2デバッグ情報取得完了");
+    
+    security_manager.log_security_event("r2_debug_info_success", "R2デバッグ情報取得完了");
+
+    Ok(debug_info)
+}
+
+// ========== 内部ヘルパー関数 ==========
+
+/// 設定検証テスト
+async fn test_config_validation() -> TestStepResult {
+    let start_time = std::time::Instant::now();
+    
+    match R2Config::from_env() {
+        Ok(config) => {
+            match config.validate() {
+                Ok(_) => TestStepResult {
+                    success: true,
+                    message: "設定検証成功".to_string(),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    details: Some(format!("バケット: {}, リージョン: {}", 
+                                        config.get_environment_bucket_name(), config.region)),
+                },
+                Err(e) => TestStepResult {
+                    success: false,
+                    message: format!("設定検証エラー: {}", e),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    details: None,
+                },
+            }
+        }
+        Err(e) => TestStepResult {
+            success: false,
+            message: format!("設定読み込みエラー: {}", e),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            details: None,
+        },
+    }
+}
+
+/// クライアント初期化テスト
+async fn test_client_initialization() -> (TestStepResult, Option<R2Client>) {
+    let start_time = std::time::Instant::now();
+    
+    match R2Config::from_env() {
+        Ok(config) => {
+            match R2Client::new(config).await {
+                Ok(client) => (
+                    TestStepResult {
+                        success: true,
+                        message: "クライアント初期化成功".to_string(),
+                        duration_ms: start_time.elapsed().as_millis() as u64,
+                        details: Some("R2クライアントが正常に初期化されました".to_string()),
+                    },
+                    Some(client),
+                ),
+                Err(e) => (
+                    TestStepResult {
+                        success: false,
+                        message: format!("クライアント初期化エラー: {}", e),
+                        duration_ms: start_time.elapsed().as_millis() as u64,
+                        details: None,
+                    },
+                    None,
+                ),
+            }
+        }
+        Err(e) => (
+            TestStepResult {
+                success: false,
+                message: format!("設定読み込みエラー: {}", e),
+                duration_ms: start_time.elapsed().as_millis() as u64,
+                details: None,
+            },
+            None,
+        ),
+    }
+}
+
+/// バケットアクセステスト
+async fn test_bucket_access(client: &R2Client) -> TestStepResult {
+    let start_time = std::time::Instant::now();
+    
+    match client.test_connection().await {
+        Ok(_) => TestStepResult {
+            success: true,
+            message: "バケットアクセス成功".to_string(),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            details: Some("バケットへの接続が確認されました".to_string()),
+        },
+        Err(e) => TestStepResult {
+            success: false,
+            message: format!("バケットアクセスエラー: {}", e),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            details: None,
+        },
+    }
+}
+
+/// アップロード機能テスト
+async fn test_upload_functionality(client: &R2Client) -> (TestStepResult, Option<String>) {
+    let start_time = std::time::Instant::now();
+    
+    // テスト用の小さなファイルを作成
+    let test_data = b"R2 integration test file";
+    let test_key = format!("test/integration_test_{}.txt", uuid::Uuid::new_v4());
+    
+    match client.upload_file(&test_key, test_data.to_vec(), "text/plain").await {
+        Ok(url) => (
+            TestStepResult {
+                success: true,
+                message: "アップロードテスト成功".to_string(),
+                duration_ms: start_time.elapsed().as_millis() as u64,
+                details: Some(format!("テストファイルがアップロードされました: {}", url)),
+            },
+            Some(test_key),
+        ),
+        Err(e) => (
+            TestStepResult {
+                success: false,
+                message: format!("アップロードテストエラー: {}", e),
+                duration_ms: start_time.elapsed().as_millis() as u64,
+                details: None,
+            },
+            None,
+        ),
+    }
+}
+
+/// ダウンロード機能テスト
+async fn test_download_functionality(client: &R2Client, test_key: &str) -> TestStepResult {
+    let start_time = std::time::Instant::now();
+    
+    match client.generate_presigned_url(test_key, Duration::from_secs(300)).await {
+        Ok(presigned_url) => {
+            // Presigned URLでダウンロードテスト
+            match reqwest::get(&presigned_url).await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        TestStepResult {
+                            success: true,
+                            message: "ダウンロードテスト成功".to_string(),
+                            duration_ms: start_time.elapsed().as_millis() as u64,
+                            details: Some("Presigned URLでのダウンロードが成功しました".to_string()),
+                        }
+                    } else {
+                        TestStepResult {
+                            success: false,
+                            message: format!("ダウンロードHTTPエラー: {}", response.status()),
+                            duration_ms: start_time.elapsed().as_millis() as u64,
+                            details: None,
+                        }
+                    }
+                }
+                Err(e) => TestStepResult {
+                    success: false,
+                    message: format!("ダウンロードリクエストエラー: {}", e),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    details: None,
+                },
+            }
+        }
+        Err(e) => TestStepResult {
+            success: false,
+            message: format!("Presigned URL生成エラー: {}", e),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            details: None,
+        },
+    }
+}
+
+/// 削除機能テスト
+async fn test_delete_functionality(client: &R2Client, test_key: &str) -> TestStepResult {
+    let start_time = std::time::Instant::now();
+    
+    match client.delete_file(test_key).await {
+        Ok(_) => TestStepResult {
+            success: true,
+            message: "削除テスト成功".to_string(),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            details: Some("テストファイルが正常に削除されました".to_string()),
+        },
+        Err(e) => TestStepResult {
+            success: false,
+            message: format!("削除テストエラー: {}", e),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            details: None,
+        },
+    }
+}
+
+/// 認証情報をマスクする
+fn mask_credential(credential: &str) -> String {
+    if credential.len() > 8 {
+        format!("{}****{}", &credential[..4], &credential[credential.len()-4..])
+    } else {
+        "****".to_string()
+    }
+}
+
+/// システム情報を取得する
+fn get_system_info() -> std::collections::HashMap<String, String> {
+    let mut info = std::collections::HashMap::new();
+    
+    info.insert("os".to_string(), std::env::consts::OS.to_string());
+    info.insert("arch".to_string(), std::env::consts::ARCH.to_string());
+    info.insert("family".to_string(), std::env::consts::FAMILY.to_string());
+    
+    if let Ok(hostname) = std::env::var("HOSTNAME") {
+        info.insert("hostname".to_string(), hostname);
+    }
+    
+    info.insert("rust_version".to_string(), 
+               std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()));
+    info.insert("cargo_version".to_string(), 
+               std::env::var("CARGO_VERSION").unwrap_or_else(|_| "unknown".to_string()));
+    
+    info
+}
+
+/// データベース統計を取得する
+fn get_database_stats(db: &rusqlite::Connection) -> Result<std::collections::HashMap<String, String>, rusqlite::Error> {
+    let mut stats = std::collections::HashMap::new();
+    
+    // テーブル数を取得
+    let table_count: i64 = db.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table'",
+        [],
+        |row| row.get(0),
+    )?;
+    stats.insert("table_count".to_string(), table_count.to_string());
+    
+    // 経費テーブルの行数
+    let expense_count: i64 = db.query_row(
+        "SELECT COUNT(*) FROM expenses",
+        [],
+        |row| row.get(0),
+    )?;
+    stats.insert("expense_count".to_string(), expense_count.to_string());
+    
+    // 領収書付き経費の数
+    let receipt_count: i64 = db.query_row(
+        "SELECT COUNT(*) FROM expenses WHERE receipt_url IS NOT NULL AND receipt_url != ''",
+        [],
+        |row| row.get(0),
+    )?;
+    stats.insert("receipt_count".to_string(), receipt_count.to_string());
+    
+    // キャッシュテーブルの行数（存在する場合）
+    let cache_count: i64 = db.query_row(
+        "SELECT COUNT(*) FROM receipt_cache",
+        [],
+        |row| row.get(0),
+    ).unwrap_or(0);
+    stats.insert("cache_count".to_string(), cache_count.to_string());
+    
+    Ok(stats)
+}
+
+/// 推定コストを計算する（概算）
+fn calculate_estimated_cost(file_count: u64, storage_mb: u64) -> f64 {
+    // Cloudflare R2の料金体系に基づく概算
+    // ストレージ: $0.015/GB/月
+    // Class A操作（PUT/POST）: $4.50/百万リクエスト
+    // Class B操作（GET/HEAD）: $0.36/百万リクエスト
+    
+    let storage_gb = storage_mb as f64 / 1024.0;
+    let storage_cost = storage_gb * 0.015; // 月額ストレージコスト
+    
+    let put_operations = file_count as f64;
+    let put_cost = (put_operations / 1_000_000.0) * 4.50;
+    
+    // 月間100回のGET操作を仮定
+    let get_operations = file_count as f64 * 100.0;
+    let get_cost = (get_operations / 1_000_000.0) * 0.36;
+    
+    storage_cost + put_cost + get_cost
+}
+
+// ========== データ構造体 ==========
+
+/// R2接続テスト結果
+#[derive(serde::Serialize)]
+pub struct R2ConnectionTestResult {
+    pub overall_success: bool,
+    pub config_validation: TestStepResult,
+    pub client_initialization: TestStepResult,
+    pub bucket_access: TestStepResult,
+    pub upload_test: TestStepResult,
+    pub download_test: TestStepResult,
+    pub delete_test: TestStepResult,
+    pub performance_metrics: Option<PerformanceStats>,
+    pub total_duration_ms: u64,
+    pub environment: String,
+}
+
+/// テストステップ結果
+#[derive(serde::Serialize, Clone)]
+pub struct TestStepResult {
+    pub success: bool,
+    pub message: String,
+    pub duration_ms: u64,
+    pub details: Option<String>,
+}
+
+impl Default for TestStepResult {
+    fn default() -> Self {
+        Self {
+            success: false,
+            message: "未実行".to_string(),
+            duration_ms: 0,
+            details: None,
+        }
+    }
+}
+
+/// R2使用量情報
+#[derive(serde::Serialize)]
+pub struct R2UsageInfo {
+    pub total_files: u64,
+    pub estimated_storage_mb: u64,
+    pub monthly_uploads: u64,
+    pub daily_uploads: u64,
+    pub cache_stats: Option<CacheStats>,
+    pub bucket_name: String,
+    pub region: String,
+    pub last_updated: String,
+    pub cost_estimate_usd: f64,
+}
+
+/// R2デバッグ情報
+#[derive(serde::Serialize)]
+pub struct R2DebugInfo {
+    pub environment_variables: std::collections::HashMap<String, String>,
+    pub r2_config: Option<std::collections::HashMap<String, String>>,
+    pub system_info: std::collections::HashMap<String, String>,
+    pub database_stats: std::collections::HashMap<String, String>,
+    pub recent_errors: Vec<String>,
+    pub timestamp: String,
+}
