@@ -33,14 +33,22 @@ const months = [
 	{ value: 12, label: "12月" },
 ];
 
-// 選択中の年と月を分解
-const [selectedYear, selectedMonthNum] = selectedMonth.split("-").map(Number);
+// 選択中の年と月を分解（リアクティブに）
+const selectedYear = $derived(() => {
+	const [year] = selectedMonth.split("-").map(Number);
+	return year;
+});
+
+const selectedMonthNum = $derived(() => {
+	const [, month] = selectedMonth.split("-").map(Number);
+	return month;
+});
 
 // 年の変更
 function handleYearChange(event: Event) {
 	const target = event.target as HTMLSelectElement;
 	const newYear = target.value;
-	const newMonth = String(selectedMonthNum).padStart(2, "0");
+	const newMonth = String(selectedMonthNum()).padStart(2, "0");
 	onMonthChange(`${newYear}-${newMonth}`);
 }
 
@@ -48,13 +56,13 @@ function handleYearChange(event: Event) {
 function handleMonthChange(event: Event) {
 	const target = event.target as HTMLSelectElement;
 	const newMonth = String(target.value).padStart(2, "0");
-	onMonthChange(`${selectedYear}-${newMonth}`);
+	onMonthChange(`${selectedYear()}-${newMonth}`);
 }
 
 // 前月へ
 function previousMonth() {
-	let year = selectedYear;
-	let month = selectedMonthNum - 1;
+	let year = selectedYear();
+	let month = selectedMonthNum() - 1;
 
 	if (month < 1) {
 		month = 12;
@@ -67,8 +75,8 @@ function previousMonth() {
 
 // 次月へ
 function nextMonth() {
-	let year = selectedYear;
-	let month = selectedMonthNum + 1;
+	let year = selectedYear();
+	let month = selectedMonthNum() + 1;
 
 	if (month > 12) {
 		month = 1;
@@ -89,12 +97,12 @@ function goToCurrentMonth() {
 
 // 次月ボタンの無効化判定（未来の月は選択不可）
 const isNextDisabled = $derived(() => {
-	return selectedYear === currentYear && selectedMonthNum >= currentMonth;
+	return selectedYear() === currentYear && selectedMonthNum() >= currentMonth;
 });
 
 // 今月かどうか
 const isCurrentMonth = $derived(() => {
-	return selectedYear === currentYear && selectedMonthNum === currentMonth;
+	return selectedYear() === currentYear && selectedMonthNum() === currentMonth;
 });
 </script>
 
@@ -113,7 +121,7 @@ const isCurrentMonth = $derived(() => {
 		<!-- 年月選択 -->
 		<div class="flex-1 flex items-center gap-2">
 			<select
-				value={selectedYear}
+				value={selectedYear()}
 				onchange={handleYearChange}
 				class="input flex-1"
 			>
@@ -123,7 +131,7 @@ const isCurrentMonth = $derived(() => {
 			</select>
 
 			<select
-				value={selectedMonthNum}
+				value={selectedMonthNum()}
 				onchange={handleMonthChange}
 				class="input flex-1"
 			>
@@ -161,7 +169,7 @@ const isCurrentMonth = $derived(() => {
 	<!-- 選択中の月を大きく表示 -->
 	<div class="mt-4 text-center">
 		<p class="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-			{selectedYear}年 {selectedMonthNum}月
+			{selectedYear()}年 {selectedMonthNum()}月
 		</p>
 	</div>
 </div>

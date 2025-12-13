@@ -62,6 +62,11 @@ pub fn get_user(user_id: i64) -> Option<User> {
 - Rust/Tauri関連のコマンドは通常通り`cargo`を使用すること
 - 例：`cargo build`, `cargo tauri dev`
 
+### Tauriアプリケーション開発
+- **Tauriアプリケーションの開発・テストには`pnpm tauri dev`を使用すること**
+- フロントエンドのみのテストには`pnpm dev`を使用
+- Tauriアプリケーション全体（フロントエンド + バックエンド）のテストには`pnpm tauri dev`を使用
+
 ## 日時の扱い
 
 ### タイムゾーン規則
@@ -100,3 +105,82 @@ const today = new Date().toISOString().split('T')[0];
 - `new Date().toISOString()`はUTCを返すため、日付の比較には使用しない
 - 日付文字列（YYYY-MM-DD）の比較は文字列として直接比較可能
 - タイムスタンプ生成時は必ずJSTを使用すること
+
+## Svelte 5 リアクティブルール
+
+### $state の使用規則
+- **propsの初期値キャプチャを避けること**
+- propsの値を$stateの初期値として直接使用しない
+- 代わりに$effectブロック内でpropsの値を設定する
+
+#### 悪い例
+```typescript
+let { expense }: Props = $props();
+let amount = $state(expense?.amount.toString() || ""); // NG: 初期値のみキャプチャ
+```
+
+#### 良い例
+```typescript
+let { expense }: Props = $props();
+let amount = $state("");
+
+$effect(() => {
+    // propsが変更されたときにリアクティブに更新
+    if (expense) {
+        amount = expense.amount.toString() || "";
+    } else {
+        amount = "";
+    }
+});
+```
+
+### $derived の使用規則
+- **propsの値を使用する計算値は$derivedを使用すること**
+- propsの値に依存する値は関数として定義する
+
+#### 例
+```typescript
+let { selectedMonth }: Props = $props();
+
+// propsの値を使用する計算値
+const selectedYear = $derived(() => {
+    const [year] = selectedMonth.split("-").map(Number);
+    return year;
+});
+
+// 使用時は関数として呼び出す
+console.log(selectedYear()); // selectedYear ではなく selectedYear()
+```
+
+### クラス属性でのリアクティブ値
+- **クラス属性内でリアクティブ値を使用する場合は`class:`ディレクティブを使用すること**
+
+#### 悪い例
+```svelte
+<button class="nav-link {isActive('/expenses') ? 'active' : ''}">
+```
+
+#### 良い例
+```svelte
+<button class="nav-link" class:active={isActive('/expenses')}>
+```
+
+### ナビゲーション
+- **SvelteKitのクライアントサイドルーティングには`goto`関数を使用すること**
+- 通常の`<a>`タグではなく、プログラム的ナビゲーションを推奨
+- `data-sveltekit-preload-data`属性と組み合わせて使用
+
+#### 例
+```svelte
+<script>
+import { goto } from "$app/navigation";
+
+function navigateTo(path: string) {
+    goto(path);
+}
+</script>
+
+<button onclick={() => navigateTo('/expenses')}>
+    経費一覧
+</button>
+```

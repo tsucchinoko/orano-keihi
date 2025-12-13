@@ -130,6 +130,7 @@ impl EnvironmentConfig {
 }
 
 /// セキュリティマネージャー
+#[derive(Clone)]
 pub struct SecurityManager {
     credentials: SecureCredentials,
     env_config: EnvironmentConfig,

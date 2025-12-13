@@ -8,12 +8,54 @@ use commands::{expense_commands, migration_commands, receipt_commands, security_
 use log::{error, info, warn};
 use rusqlite::Connection;
 use services::security::{EnvironmentConfig, SecurityManager};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
-/// アプリケーション状態（データベース接続を保持）
+/// R2接続テストのキャッシュ
+#[derive(Debug)]
+pub struct R2ConnectionCache {
+    pub last_test_time: Option<Instant>,
+    pub last_test_result: Option<bool>,
+    pub cache_duration: Duration,
+}
+
+impl R2ConnectionCache {
+    pub fn new() -> Self {
+        Self {
+            last_test_time: None,
+            last_test_result: None,
+            cache_duration: Duration::from_secs(300), // 5分間キャッシュ
+        }
+    }
+
+    pub fn is_cache_valid(&self) -> bool {
+        if let Some(last_time) = self.last_test_time {
+            last_time.elapsed() < self.cache_duration
+        } else {
+            false
+        }
+    }
+
+    pub fn update_cache(&mut self, result: bool) {
+        self.last_test_time = Some(Instant::now());
+        self.last_test_result = Some(result);
+    }
+
+    pub fn get_cached_result(&self) -> Option<bool> {
+        if self.is_cache_valid() {
+            self.last_test_result
+        } else {
+            None
+        }
+    }
+}
+
+/// アプリケーション状態（データベース接続とセキュリティマネージャーを保持）
 pub struct AppState {
     pub db: Mutex<Connection>,
+    pub security_manager: SecurityManager,
+    pub r2_connection_cache: Arc<Mutex<R2ConnectionCache>>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -69,13 +111,16 @@ pub fn run() {
             info!("データベースの初期化が完了しました");
             security_manager.log_security_event("database_init_success", "データベース初期化完了");
 
-            // データベース接続をアプリ状態に保存
+            // データベース接続とセキュリティマネージャーをアプリ状態に保存
+            let security_manager_clone = security_manager.clone();
             app.manage(AppState {
                 db: Mutex::new(db_conn),
+                security_manager,
+                r2_connection_cache: Arc::new(Mutex::new(R2ConnectionCache::new())),
             });
 
             info!("アプリケーション初期化が完了しました");
-            security_manager.log_security_event("app_init_success", "アプリケーション初期化完了");
+            security_manager_clone.log_security_event("app_init_success", "アプリケーション初期化完了");
 
             Ok(())
         })

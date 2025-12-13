@@ -1404,10 +1404,10 @@ pub async fn cancel_upload(upload_id: String) -> Result<bool, String> {
 /// # 戻り値
 /// パフォーマンス統計、または失敗時はエラーメッセージ
 #[tauri::command]
-pub async fn get_r2_performance_stats(_state: State<'_, AppState>) -> Result<PerformanceStats, String> {
+pub async fn get_r2_performance_stats(state: State<'_, AppState>) -> Result<PerformanceStats, String> {
     info!("R2パフォーマンス統計取得開始");
     
-    let security_manager = SecurityManager::new();
+    let security_manager = &state.security_manager;
     security_manager.log_security_event("performance_stats_requested", "R2パフォーマンス統計取得開始");
 
     // R2設定を読み込み
@@ -1426,8 +1426,22 @@ pub async fn get_r2_performance_stats(_state: State<'_, AppState>) -> Result<Per
         error_msg
     })?;
 
-    // パフォーマンス統計を取得
-    let stats = client.get_performance_stats().await.map_err(|e| {
+    // キャッシュされた接続テスト結果を確認
+    let connection_cache = state.r2_connection_cache.clone();
+    let cached_result = {
+        let cache = connection_cache.lock().unwrap();
+        cache.get_cached_result()
+    };
+
+    // キャッシュが有効で接続が失敗している場合は、統計取得をスキップ
+    if let Some(false) = cached_result {
+        let error_msg = "R2接続が利用できません（キャッシュされた結果）".to_string();
+        security_manager.log_security_event("performance_stats_skipped", "cached_connection_failed");
+        return Err(error_msg);
+    }
+
+    // パフォーマンス統計を取得（接続テストを含む）
+    let stats = client.get_performance_stats_with_cache(connection_cache).await.map_err(|e| {
         let error_msg = format!("パフォーマンス統計の取得に失敗しました: {}", e);
         error!("{}", error_msg);
         security_manager.log_security_event("performance_stats_failed", &format!("error={}", e));

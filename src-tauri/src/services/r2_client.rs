@@ -1,15 +1,17 @@
 // R2クライアントモジュール
 
 use super::{config::R2Config, security::SecurityManager, R2Error};
+use crate::R2ConnectionCache;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::{Client, Config};
 use log::{debug, error, info, warn};
 use std::time::{Duration, Instant};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::{Semaphore, mpsc};
 use futures::future::join_all;
+use uuid::Uuid;
 
 /// 複数ファイルアップロード用の構造体
 #[derive(Debug, Clone)]
@@ -562,6 +564,74 @@ impl R2Client {
         
         // テストファイルを削除
         let _ = self.delete_file(&test_key).await;
+        
+        // スループット計算（bytes/sec）
+        let throughput_bps = if upload_duration.as_secs_f64() > 0.0 {
+            test_data.len() as f64 / upload_duration.as_secs_f64()
+        } else {
+            0.0
+        };
+        
+        Ok(PerformanceStats {
+            latency_ms: latency.as_millis() as u64,
+            throughput_bps: throughput_bps as u64,
+            connection_status: "healthy".to_string(),
+            last_measured: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    /// キャッシュ対応のパフォーマンス統計を取得する
+    pub async fn get_performance_stats_with_cache(
+        &self,
+        connection_cache: Arc<Mutex<R2ConnectionCache>>,
+    ) -> Result<PerformanceStats, R2Error> {
+        let start_time = Instant::now();
+        
+        // キャッシュされた接続テスト結果を確認
+        let cached_result = {
+            let cache = connection_cache.lock().unwrap();
+            cache.get_cached_result()
+        };
+
+        let latency = if let Some(true) = cached_result {
+            // キャッシュされた成功結果がある場合は、接続テストをスキップ
+            info!("R2接続テストをスキップ（キャッシュされた成功結果を使用）");
+            Duration::from_millis(50) // 推定レイテンシ
+        } else {
+            // 接続テストを実行してキャッシュを更新
+            match self.test_connection().await {
+                Ok(_) => {
+                    let latency = start_time.elapsed();
+                    {
+                        let mut cache = connection_cache.lock().unwrap();
+                        cache.update_cache(true);
+                    }
+                    latency
+                }
+                Err(e) => {
+                    {
+                        let mut cache = connection_cache.lock().unwrap();
+                        cache.update_cache(false);
+                    }
+                    return Err(e);
+                }
+            }
+        };
+        
+        // 小さなテストファイルでスループットを測定（軽量化）
+        let test_data = vec![0u8; 512]; // 512バイトに削減
+        let test_key = format!("perf_test_{}", Uuid::new_v4());
+        
+        let upload_start = Instant::now();
+        let _url = self.upload_file(&test_key, test_data.clone(), "application/octet-stream").await?;
+        let upload_duration = upload_start.elapsed();
+        
+        // テストファイルを削除（バックグラウンドで実行）
+        let client_clone = self.clone();
+        let test_key_clone = test_key.clone();
+        tokio::spawn(async move {
+            let _ = client_clone.delete_file(&test_key_clone).await;
+        });
         
         // スループット計算（bytes/sec）
         let throughput_bps = if upload_duration.as_secs_f64() > 0.0 {
