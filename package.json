@@ -14,8 +14,6 @@
 		"tauri:dev": "tauri dev",
 		"tauri:build": "tauri build",
 		"tauri:build:dmg": "tauri build --bundles dmg",
-		"tauri:open:dmg": "./script/open_dmg_installer.sh",
-		"tauri:build:install": "pnpm tauri:build:dmg && pnpm tauri:open:dmg",
 		"fmt": "biome format --write .",
 		"fmt:check": "biome format .",
 		"lint": "biome lint --write .",
