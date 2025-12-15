@@ -15,7 +15,10 @@ class ToastStore {
 	/**
 	 * トースト通知を表示する
 	 */
-	show(message: string, type: "success" | "error" | "info" | "warning" = "info"): void {
+	show(
+		message: string,
+		type: "success" | "error" | "info" | "warning" = "info",
+	): void {
 		const id = this.nextId++;
 		this.toasts = [...this.toasts, { id, message, type }];
 	}

@@ -51,21 +51,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             )",
             [],
         )?;
-        
+
         println!("新規データベースを作成しました（receipt_urlスキーマ）");
     } else {
         // 既存インストール: 必要なカラムを安全に追加
         println!("既存のデータベースを確認中...");
-        
+
         // receipt_urlカラムが存在するかチェック
         let has_receipt_url = check_column_exists(conn, "expenses", "receipt_url");
-        
+
         if !has_receipt_url {
             println!("receipt_urlカラムを追加します...");
             // receipt_urlカラムを追加（エラーを無視）
             let _ = conn.execute("ALTER TABLE expenses ADD COLUMN receipt_url TEXT", []);
         }
-        
+
         // receipt_pathカラムが存在する場合は警告を出力（削除はしない）
         let has_receipt_path = check_column_exists(conn, "expenses", "receipt_path");
         if has_receipt_path {
@@ -649,7 +649,7 @@ mod tests {
 /// カラムが存在する場合はtrue、存在しないかエラーの場合はfalse
 fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -> bool {
     let query = format!("PRAGMA table_info({})", table_name);
-    
+
     match conn.prepare(&query) {
         Ok(mut stmt) => {
             match stmt.query_map([], |row| {

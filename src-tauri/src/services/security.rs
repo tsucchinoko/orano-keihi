@@ -25,20 +25,26 @@ impl SecureCredentials {
     /// 認証情報を追加（自動的にマスク処理）
     pub fn add_credential(&mut self, key: &str, value: &str) {
         // 実際の値を保存
-        self.actual_credentials.insert(key.to_string(), value.to_string());
-        
+        self.actual_credentials
+            .insert(key.to_string(), value.to_string());
+
         // マスクされた値を保存（最初の4文字と最後の4文字のみ表示）
         let masked_value = if value.len() > 8 {
-            format!("{}****{}", &value[..4], &value[value.len()-4..])
+            format!("{}****{}", &value[..4], &value[value.len() - 4..])
         } else if value.len() > 4 {
             format!("{}****", &value[..2])
         } else {
             "****".to_string()
         };
-        
-        self.masked_credentials.insert(key.to_string(), masked_value);
-        
-        info!("認証情報を追加しました: {} = {}", key, self.masked_credentials.get(key).unwrap());
+
+        self.masked_credentials
+            .insert(key.to_string(), masked_value);
+
+        info!(
+            "認証情報を追加しました: {} = {}",
+            key,
+            self.masked_credentials.get(key).unwrap()
+        );
     }
 
     /// 実際の認証情報を取得
@@ -58,8 +64,13 @@ impl SecureCredentials {
 
     /// 認証情報の検証
     pub fn validate_all(&self) -> Result<(), String> {
-        let required_keys = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET_NAME"];
-        
+        let required_keys = [
+            "R2_ACCOUNT_ID",
+            "R2_ACCESS_KEY",
+            "R2_SECRET_KEY",
+            "R2_BUCKET_NAME",
+        ];
+
         for key in &required_keys {
             if let Some(value) = self.actual_credentials.get(*key) {
                 if value.is_empty() {
@@ -103,8 +114,10 @@ impl EnvironmentConfig {
             }
         });
 
-        info!("環境設定を読み込みました: environment={}, debug_mode={}, log_level={}", 
-              environment, debug_mode, log_level);
+        info!(
+            "環境設定を読み込みました: environment={}, debug_mode={}, log_level={}",
+            environment, debug_mode, log_level
+        );
 
         Self {
             environment,
@@ -140,7 +153,7 @@ impl SecurityManager {
     /// 新しいSecurityManagerインスタンスを作成
     pub fn new() -> Self {
         info!("セキュリティマネージャーを初期化しています...");
-        
+
         let mut credentials = SecureCredentials::new();
         let env_config = EnvironmentConfig::from_env();
 
@@ -179,19 +192,27 @@ impl SecurityManager {
     /// システム診断情報を取得
     pub fn get_diagnostic_info(&self) -> HashMap<String, String> {
         let mut info = HashMap::new();
-        
-        info.insert("environment".to_string(), self.env_config.environment.clone());
-        info.insert("debug_mode".to_string(), self.env_config.debug_mode.to_string());
+
+        info.insert(
+            "environment".to_string(),
+            self.env_config.environment.clone(),
+        );
+        info.insert(
+            "debug_mode".to_string(),
+            self.env_config.debug_mode.to_string(),
+        );
         info.insert("log_level".to_string(), self.env_config.log_level.clone());
-        
+
         // マスクされた認証情報を追加
         for (key, value) in self.credentials.get_all_masked() {
             info.insert(format!("credential_{}", key.to_lowercase()), value.clone());
         }
 
         // システム情報を追加
-        info.insert("rust_version".to_string(), 
-                   env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()));
+        info.insert(
+            "rust_version".to_string(),
+            env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()),
+        );
         info.insert("target_arch".to_string(), env::consts::ARCH.to_string());
         info.insert("target_os".to_string(), env::consts::OS.to_string());
 
@@ -202,10 +223,10 @@ impl SecurityManager {
     /// 設定の検証
     pub fn validate_configuration(&self) -> Result<(), String> {
         info!("設定の検証を開始します...");
-        
+
         // 認証情報の検証
         self.credentials.validate_all()?;
-        
+
         // 環境設定の検証
         if self.env_config.environment.is_empty() {
             let error_msg = "環境設定が空です".to_string();
@@ -220,8 +241,10 @@ impl SecurityManager {
     /// セキュリティ監査ログを出力
     pub fn log_security_event(&self, event_type: &str, details: &str) {
         let masked_info = self.credentials.get_all_masked();
-        warn!("セキュリティイベント: type={}, details={}, credentials={:?}", 
-              event_type, details, masked_info);
+        warn!(
+            "セキュリティイベント: type={}, details={}, credentials={:?}",
+            event_type, details, masked_info
+        );
     }
 
     /// 最近のセキュリティイベントを取得（簡易実装）
@@ -245,11 +268,17 @@ impl LogFilter {
     /// ログメッセージから認証情報をマスク
     pub fn mask_sensitive_data(message: &str) -> String {
         let mut masked = message.to_string();
-        
+
         // よくある認証情報のパターンをマスク
         let patterns = [
-            (r"(?i)(access[_-]?key[_-]?id?)\s*[:=]\s*([a-zA-Z0-9+/]{16,})", "$1: ****"),
-            (r"(?i)(secret[_-]?key)\s*[:=]\s*([a-zA-Z0-9+/]{16,})", "$1: ****"),
+            (
+                r"(?i)(access[_-]?key[_-]?id?)\s*[:=]\s*([a-zA-Z0-9+/]{16,})",
+                "$1: ****",
+            ),
+            (
+                r"(?i)(secret[_-]?key)\s*[:=]\s*([a-zA-Z0-9+/]{16,})",
+                "$1: ****",
+            ),
             (r"(?i)(password)\s*[:=]\s*([^\s,}]+)", "$1: ****"),
             (r"(?i)(token)\s*[:=]\s*([a-zA-Z0-9+/]{16,})", "$1: ****"),
         ];
@@ -272,17 +301,26 @@ mod tests {
     fn test_secure_credentials_masking() {
         let mut credentials = SecureCredentials::new();
         credentials.add_credential("TEST_KEY", "abcdefghijklmnop");
-        
-        assert_eq!(credentials.get_credential("TEST_KEY"), Some(&"abcdefghijklmnop".to_string()));
-        assert_eq!(credentials.get_masked_credential("TEST_KEY"), Some(&"abcd****mnop".to_string()));
+
+        assert_eq!(
+            credentials.get_credential("TEST_KEY"),
+            Some(&"abcdefghijklmnop".to_string())
+        );
+        assert_eq!(
+            credentials.get_masked_credential("TEST_KEY"),
+            Some(&"abcd****mnop".to_string())
+        );
     }
 
     #[test]
     fn test_short_credential_masking() {
         let mut credentials = SecureCredentials::new();
         credentials.add_credential("SHORT", "abc");
-        
-        assert_eq!(credentials.get_masked_credential("SHORT"), Some(&"****".to_string()));
+
+        assert_eq!(
+            credentials.get_masked_credential("SHORT"),
+            Some(&"****".to_string())
+        );
     }
 
     #[test]
@@ -292,7 +330,7 @@ mod tests {
         credentials.add_credential("R2_ACCESS_KEY", "test_key");
         credentials.add_credential("R2_SECRET_KEY", "test_secret");
         credentials.add_credential("R2_BUCKET_NAME", "test_bucket");
-        
+
         assert!(credentials.validate_all().is_ok());
     }
 
@@ -310,18 +348,19 @@ mod tests {
 
     #[test]
     fn test_log_filter_masking() {
-        let message = "access_key=AKIAIOSFODNN7EXAMPLE secret_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        let message =
+            "access_key=AKIAIOSFODNN7EXAMPLE secret_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
         let masked = LogFilter::mask_sensitive_data(message);
-        
+
         println!("Original: {}", message);
         println!("Masked: {}", masked);
-        
+
         // secret_keyは正しくマスクされることを確認
         assert!(masked.contains("secret_key: ****"));
-        
+
         // 少なくとも一部の認証情報がマスクされていることを確認
         assert!(!masked.contains("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
-        
+
         // マスク機能が動作していることを確認（完全でなくても部分的にマスクされていればOK）
         assert!(masked.len() < message.len() || masked.contains("****"));
     }

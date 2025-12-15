@@ -192,7 +192,7 @@ export interface MultipleUploadResult {
 export interface UploadProgressEvent {
 	file_index: number;
 	file_key: string;
-	status: 'Started' | 'InProgress' | 'Completed' | 'Failed' | 'Cancelled';
+	status: "Started" | "InProgress" | "Completed" | "Failed" | "Cancelled";
 	bytes_uploaded: number;
 	total_bytes: number;
 	speed_bps: number;
@@ -214,13 +214,24 @@ export interface ParallelUploadConfig {
 
 // エラーハンドリング関連型
 export interface AppError {
-	type: 'R2ConnectionFailed' | 'UploadFailed' | 'DownloadFailed' | 'FileNotFound' | 
-	      'InvalidCredentials' | 'NetworkError' | 'FileOperationError' | 'InvalidFileFormat' | 
-	      'FileSizeError' | 'DatabaseError' | 'ConfigError' | 'CacheError' | 'InternalError';
+	type:
+		| "R2ConnectionFailed"
+		| "UploadFailed"
+		| "DownloadFailed"
+		| "FileNotFound"
+		| "InvalidCredentials"
+		| "NetworkError"
+		| "FileOperationError"
+		| "InvalidFileFormat"
+		| "FileSizeError"
+		| "DatabaseError"
+		| "ConfigError"
+		| "CacheError"
+		| "InternalError";
 	details: string;
 	user_message: string;
 	retry_possible: boolean;
-	severity: 'Low' | 'Medium' | 'High' | 'Critical';
+	severity: "Low" | "Medium" | "High" | "Critical";
 }
 
 export interface ErrorState {
@@ -235,7 +246,7 @@ export interface UserFriendlyError {
 	title: string;
 	message: string;
 	canRetry: boolean;
-	severity: 'info' | 'warning' | 'error' | 'critical';
+	severity: "info" | "warning" | "error" | "critical";
 	actions?: ErrorAction[];
 }
 

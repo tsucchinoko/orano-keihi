@@ -359,10 +359,9 @@ mod tests {
     use super::*;
     use rusqlite::Connection;
 
-
     fn create_test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        
+
         // テスト用のテーブルを作成
         conn.execute(
             "CREATE TABLE expenses (
@@ -376,7 +375,8 @@ mod tests {
                 updated_at TEXT NOT NULL
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         conn.execute(
             "CREATE TABLE receipt_cache (
@@ -388,7 +388,8 @@ mod tests {
                 last_accessed TEXT NOT NULL
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         conn
     }
@@ -424,7 +425,10 @@ mod tests {
 
         let updated = update_expense(&conn, expense.id, update_dto).unwrap();
         assert_eq!(updated.amount, 1500.0);
-        assert_eq!(updated.description, Some("更新されたテスト経費".to_string()));
+        assert_eq!(
+            updated.description,
+            Some("更新されたテスト経費".to_string())
+        );
 
         // 経費削除のテスト
         delete_expense(&conn, expense.id).unwrap();
@@ -549,7 +553,8 @@ mod tests {
         assert_eq!(food_expenses.len(), 2);
 
         // 月とカテゴリの組み合わせフィルターのテスト
-        let jan_food_expenses = get_expenses(&conn, Some("2024-01".to_string()), Some("食費".to_string())).unwrap();
+        let jan_food_expenses =
+            get_expenses(&conn, Some("2024-01".to_string()), Some("食費".to_string())).unwrap();
         assert_eq!(jan_food_expenses.len(), 2);
 
         // フィルターなしのテスト

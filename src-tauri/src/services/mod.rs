@@ -6,50 +6,50 @@ pub mod r2_client;
 pub mod security;
 
 // 統一されたエラーハンドリングシステム
-use thiserror::Error;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// 統一されたアプリケーションエラー型
 #[derive(Debug, Error, Clone, Serialize, Deserialize)]
 pub enum AppError {
     // R2関連エラー
     #[error("R2接続に失敗しました")]
-    R2ConnectionFailed { 
+    R2ConnectionFailed {
         details: String,
         user_message: String,
         retry_possible: bool,
     },
 
     #[error("アップロードに失敗しました")]
-    UploadFailed { 
+    UploadFailed {
         details: String,
         user_message: String,
         retry_possible: bool,
     },
 
     #[error("ダウンロードに失敗しました")]
-    DownloadFailed { 
+    DownloadFailed {
         details: String,
         user_message: String,
         retry_possible: bool,
     },
 
     #[error("ファイルが見つかりません")]
-    FileNotFound { 
+    FileNotFound {
         details: String,
         user_message: String,
         retry_possible: bool,
     },
 
     #[error("認証情報が無効です")]
-    InvalidCredentials { 
+    InvalidCredentials {
         details: String,
         user_message: String,
         retry_possible: bool,
     },
 
     #[error("ネットワークエラーが発生しました")]
-    NetworkError { 
+    NetworkError {
         details: String,
         user_message: String,
         retry_possible: bool,
@@ -57,21 +57,21 @@ pub enum AppError {
 
     // ファイル関連エラー
     #[error("ファイル操作エラー")]
-    FileOperationError { 
+    FileOperationError {
         details: String,
         user_message: String,
         retry_possible: bool,
     },
 
     #[error("ファイル形式エラー")]
-    InvalidFileFormat { 
+    InvalidFileFormat {
         details: String,
         user_message: String,
         retry_possible: bool,
     },
 
     #[error("ファイルサイズエラー")]
-    FileSizeError { 
+    FileSizeError {
         details: String,
         user_message: String,
         retry_possible: bool,
@@ -79,7 +79,7 @@ pub enum AppError {
 
     // データベース関連エラー
     #[error("データベースエラー")]
-    DatabaseError { 
+    DatabaseError {
         details: String,
         user_message: String,
         retry_possible: bool,
@@ -87,7 +87,7 @@ pub enum AppError {
 
     // 設定関連エラー
     #[error("設定エラー")]
-    ConfigError { 
+    ConfigError {
         details: String,
         user_message: String,
         retry_possible: bool,
@@ -95,7 +95,7 @@ pub enum AppError {
 
     // キャッシュ関連エラー
     #[error("キャッシュエラー")]
-    CacheError { 
+    CacheError {
         details: String,
         user_message: String,
         retry_possible: bool,
@@ -103,7 +103,7 @@ pub enum AppError {
 
     // 一般的なエラー
     #[error("内部エラーが発生しました")]
-    InternalError { 
+    InternalError {
         details: String,
         user_message: String,
         retry_possible: bool,
@@ -224,32 +224,44 @@ impl From<R2Error> for AppError {
         match error {
             R2Error::ConnectionFailed(details) => AppError::R2ConnectionFailed {
                 details: details.clone(),
-                user_message: "クラウドストレージへの接続に失敗しました。ネットワーク接続を確認してください。".to_string(),
+                user_message:
+                    "クラウドストレージへの接続に失敗しました。ネットワーク接続を確認してください。"
+                        .to_string(),
                 retry_possible: true,
             },
             R2Error::UploadFailed(details) => AppError::UploadFailed {
                 details: details.clone(),
-                user_message: "ファイルのアップロードに失敗しました。しばらく時間をおいて再試行してください。".to_string(),
+                user_message:
+                    "ファイルのアップロードに失敗しました。しばらく時間をおいて再試行してください。"
+                        .to_string(),
                 retry_possible: true,
             },
             R2Error::DownloadFailed(details) => AppError::DownloadFailed {
                 details: details.clone(),
-                user_message: "ファイルのダウンロードに失敗しました。しばらく時間をおいて再試行してください。".to_string(),
+                user_message:
+                    "ファイルのダウンロードに失敗しました。しばらく時間をおいて再試行してください。"
+                        .to_string(),
                 retry_possible: true,
             },
             R2Error::FileNotFound(details) => AppError::FileNotFound {
                 details: details.clone(),
-                user_message: "指定されたファイルが見つかりません。ファイルが削除されている可能性があります。".to_string(),
+                user_message:
+                    "指定されたファイルが見つかりません。ファイルが削除されている可能性があります。"
+                        .to_string(),
                 retry_possible: false,
             },
             R2Error::InvalidCredentials => AppError::InvalidCredentials {
                 details: "R2認証情報が無効です".to_string(),
-                user_message: "クラウドストレージの認証に失敗しました。管理者にお問い合わせください。".to_string(),
+                user_message:
+                    "クラウドストレージの認証に失敗しました。管理者にお問い合わせください。"
+                        .to_string(),
                 retry_possible: false,
             },
             R2Error::NetworkError(details) => AppError::NetworkError {
                 details: details.clone(),
-                user_message: "ネットワークエラーが発生しました。インターネット接続を確認してください。".to_string(),
+                user_message:
+                    "ネットワークエラーが発生しました。インターネット接続を確認してください。"
+                        .to_string(),
                 retry_possible: true,
             },
         }
@@ -320,8 +332,8 @@ pub struct ErrorHandler;
 impl ErrorHandler {
     /// エラーをログに記録し、ユーザーフレンドリーなメッセージを返す
     pub fn handle_error(error: AppError) -> String {
-        use log::{error, warn, info};
-        
+        use log::{error, info, warn};
+
         // 重要度に応じてログレベルを変更
         match error.severity() {
             ErrorSeverity::Critical => {
@@ -342,7 +354,12 @@ impl ErrorHandler {
         let security_manager = security::SecurityManager::new();
         security_manager.log_security_event(
             "error_handled",
-            &format!("severity={:?}, error={}, details={}", error.severity(), error, error.details()),
+            &format!(
+                "severity={:?}, error={}, details={}",
+                error.severity(),
+                error,
+                error.details()
+            ),
         );
 
         // ユーザーフレンドリーなメッセージを返す
@@ -352,14 +369,22 @@ impl ErrorHandler {
     /// ファイル操作エラーを作成
     pub fn file_operation_error(operation: &str, path: &str, error: std::io::Error) -> AppError {
         AppError::FileOperationError {
-            details: format!("ファイル操作「{}」が失敗しました: パス={}, エラー={}", operation, path, error),
+            details: format!(
+                "ファイル操作「{}」が失敗しました: パス={}, エラー={}",
+                operation, path, error
+            ),
             user_message: match error.kind() {
                 std::io::ErrorKind::NotFound => "指定されたファイルが見つかりません。".to_string(),
-                std::io::ErrorKind::PermissionDenied => "ファイルへのアクセス権限がありません。".to_string(),
+                std::io::ErrorKind::PermissionDenied => {
+                    "ファイルへのアクセス権限がありません。".to_string()
+                }
                 std::io::ErrorKind::AlreadyExists => "同名のファイルが既に存在します。".to_string(),
                 _ => "ファイル操作中にエラーが発生しました。".to_string(),
             },
-            retry_possible: matches!(error.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted),
+            retry_possible: matches!(
+                error.kind(),
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
+            ),
         }
     }
 
@@ -378,7 +403,10 @@ impl ErrorHandler {
     /// ファイルサイズエラーを作成
     pub fn file_size_error(size: u64, max_size: u64) -> AppError {
         AppError::FileSizeError {
-            details: format!("ファイルサイズ超過: {}bytes (最大: {}bytes)", size, max_size),
+            details: format!(
+                "ファイルサイズ超過: {}bytes (最大: {}bytes)",
+                size, max_size
+            ),
             user_message: format!(
                 "ファイルサイズが制限を超えています。最大サイズ: {}MB",
                 max_size / (1024 * 1024)
@@ -391,7 +419,9 @@ impl ErrorHandler {
     pub fn database_error(operation: &str, error: rusqlite::Error) -> AppError {
         AppError::DatabaseError {
             details: format!("データベース操作「{}」が失敗しました: {}", operation, error),
-            user_message: "データベース操作中にエラーが発生しました。しばらく時間をおいて再試行してください。".to_string(),
+            user_message:
+                "データベース操作中にエラーが発生しました。しばらく時間をおいて再試行してください。"
+                    .to_string(),
             retry_possible: true,
         }
     }

@@ -95,7 +95,7 @@ async function loadFromR2() {
 			throw new Error(result.error);
 		}
 		fileData = result.data || null;
-		
+
 		// 成功時にキャッシュ情報を表示
 		if (fileData) {
 			toastStore.success("領収書を読み込みました");
@@ -121,14 +121,15 @@ async function tryLoadFromCache() {
 		fileData = result.data || null;
 		isOfflineMode = true;
 		loadError = null;
-		
+
 		// オフラインモードでの読み込み成功を通知
 		if (fileData) {
 			toastStore.info("オフラインキャッシュから領収書を表示しています");
 		}
 	} catch (error) {
 		console.error("キャッシュからの領収書取得に失敗しました:", error);
-		const errorMessage = error instanceof Error ? error.message : "不明なエラー";
+		const errorMessage =
+			error instanceof Error ? error.message : "不明なエラー";
 		loadError = `領収書の取得に失敗しました: ${errorMessage}`;
 		isOfflineMode = false;
 	}

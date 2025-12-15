@@ -33,9 +33,11 @@ $effect(() => {
 		name = subscription.name || "";
 		amount = subscription.amount.toString() || "";
 		billingCycle = subscription.billing_cycle || "monthly";
-		startDate = subscription.start_date.split("T")[0] || new Date().toISOString().split("T")[0];
+		startDate =
+			subscription.start_date.split("T")[0] ||
+			new Date().toISOString().split("T")[0];
 		category = subscription.category || "";
-		
+
 		// 既存の領収書パスを変換してプレビュー表示
 		if (subscription.receipt_path) {
 			import("@tauri-apps/api/core").then(({ convertFileSrc }) => {

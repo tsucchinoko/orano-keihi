@@ -29,7 +29,7 @@ $effect(() => {
 		amount = expense.amount.toString() || "";
 		category = expense.category || "";
 		description = expense.description || "";
-		
+
 		// 既存の領収書を表示
 		if (expense.receipt_url) {
 			receiptPreview = expense.receipt_url;
@@ -123,7 +123,7 @@ async function selectReceipt() {
 
 		if (selected && typeof selected === "string") {
 			receiptFile = selected;
-			
+
 			// 画像プレビュー用（PDFの場合はプレビューなし）
 			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
 				// Tauriのファイルパスを変換してプレビュー表示
@@ -184,14 +184,20 @@ async function handleSubmit(event: Event) {
 		if (receiptFile && !expense) {
 			// 新規作成の場合のみ領収書をアップロード
 			// 最後に追加された経費のIDを取得
-			const lastExpense = expenseStore.expenses[expenseStore.expenses.length - 1];
+			const lastExpense =
+				expenseStore.expenses[expenseStore.expenses.length - 1];
 			if (lastExpense) {
 				isUploading = true;
 				try {
-					const uploadResult = await uploadReceiptToR2(lastExpense.id, receiptFile);
+					const uploadResult = await uploadReceiptToR2(
+						lastExpense.id,
+						receiptFile,
+					);
 					if (uploadResult.error) {
 						console.warn("領収書アップロードエラー:", uploadResult.error);
-						toastStore.warning("経費は保存されましたが、領収書のアップロードに失敗しました");
+						toastStore.warning(
+							"経費は保存されましたが、領収書のアップロードに失敗しました",
+						);
 					} else {
 						// 経費データを更新してreceipt_urlを設定
 						await expenseStore.modifyExpense(lastExpense.id, {
@@ -201,7 +207,9 @@ async function handleSubmit(event: Event) {
 					}
 				} catch (uploadError) {
 					console.warn("領収書アップロードエラー:", uploadError);
-					toastStore.warning("経費は保存されましたが、領収書のアップロードに失敗しました");
+					toastStore.warning(
+						"経費は保存されましたが、領収書のアップロードに失敗しました",
+					);
 				} finally {
 					isUploading = false;
 				}
@@ -215,13 +223,13 @@ async function handleSubmit(event: Event) {
 		onSuccess();
 	} catch (error) {
 		console.error("経費保存エラー:", error);
-		toastStore.error(error instanceof Error ? error.message : "経費の保存に失敗しました");
+		toastStore.error(
+			error instanceof Error ? error.message : "経費の保存に失敗しました",
+		);
 	} finally {
 		isSubmitting = false;
 	}
 }
-
-
 </script>
 
 <div class="card max-w-2xl mx-auto">

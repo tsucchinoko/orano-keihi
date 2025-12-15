@@ -1,114 +1,114 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { 
-		testR2ConnectionDetailed, 
-		getR2UsageMonitoring, 
-		getR2DebugInfo,
-		getR2PerformanceStats
-	} from '$lib/utils/tauri';
-	import type { 
-		R2ConnectionTestResult, 
-		R2UsageInfo, 
-		R2DebugInfo,
-		PerformanceStats
-	} from '$lib/types';
+import { onMount } from "svelte";
+import {
+	testR2ConnectionDetailed,
+	getR2UsageMonitoring,
+	getR2DebugInfo,
+	getR2PerformanceStats,
+} from "$lib/utils/tauri";
+import type {
+	R2ConnectionTestResult,
+	R2UsageInfo,
+	R2DebugInfo,
+	PerformanceStats,
+} from "$lib/types";
 
-	let connectionTestResult: R2ConnectionTestResult | null = null;
-	let usageInfo: R2UsageInfo | null = null;
-	let debugInfo: R2DebugInfo | null = null;
-	let performanceStats: PerformanceStats | null = null;
-	let isLoading = false;
-	let error: string | null = null;
+let connectionTestResult: R2ConnectionTestResult | null = null;
+let usageInfo: R2UsageInfo | null = null;
+let debugInfo: R2DebugInfo | null = null;
+let performanceStats: PerformanceStats | null = null;
+let isLoading = false;
+let error: string | null = null;
 
-	async function runConnectionTest() {
-		isLoading = true;
-		error = null;
-		
-		try {
-			const result = await testR2ConnectionDetailed();
-			if (result.error) {
-				error = result.error;
-			} else {
-				connectionTestResult = result.data || null;
-			}
-		} catch (e) {
-			error = `接続テストエラー: ${e}`;
-		} finally {
-			isLoading = false;
+async function runConnectionTest() {
+	isLoading = true;
+	error = null;
+
+	try {
+		const result = await testR2ConnectionDetailed();
+		if (result.error) {
+			error = result.error;
+		} else {
+			connectionTestResult = result.data || null;
 		}
+	} catch (e) {
+		error = `接続テストエラー: ${e}`;
+	} finally {
+		isLoading = false;
 	}
+}
 
-	async function loadUsageInfo() {
-		isLoading = true;
-		error = null;
-		
-		try {
-			const result = await getR2UsageMonitoring();
-			if (result.error) {
-				error = result.error;
-			} else {
-				usageInfo = result.data || null;
-			}
-		} catch (e) {
-			error = `使用量情報取得エラー: ${e}`;
-		} finally {
-			isLoading = false;
+async function loadUsageInfo() {
+	isLoading = true;
+	error = null;
+
+	try {
+		const result = await getR2UsageMonitoring();
+		if (result.error) {
+			error = result.error;
+		} else {
+			usageInfo = result.data || null;
 		}
+	} catch (e) {
+		error = `使用量情報取得エラー: ${e}`;
+	} finally {
+		isLoading = false;
 	}
+}
 
-	async function loadDebugInfo() {
-		isLoading = true;
-		error = null;
-		
-		try {
-			const result = await getR2DebugInfo();
-			if (result.error) {
-				error = result.error;
-			} else {
-				debugInfo = result.data || null;
-			}
-		} catch (e) {
-			error = `デバッグ情報取得エラー: ${e}`;
-		} finally {
-			isLoading = false;
+async function loadDebugInfo() {
+	isLoading = true;
+	error = null;
+
+	try {
+		const result = await getR2DebugInfo();
+		if (result.error) {
+			error = result.error;
+		} else {
+			debugInfo = result.data || null;
 		}
+	} catch (e) {
+		error = `デバッグ情報取得エラー: ${e}`;
+	} finally {
+		isLoading = false;
 	}
+}
 
-	async function loadPerformanceStats() {
-		isLoading = true;
-		error = null;
-		
-		try {
-			const result = await getR2PerformanceStats();
-			if (result.error) {
-				error = result.error;
-			} else {
-				performanceStats = result.data || null;
-			}
-		} catch (e) {
-			error = `パフォーマンス統計取得エラー: ${e}`;
-		} finally {
-			isLoading = false;
+async function loadPerformanceStats() {
+	isLoading = true;
+	error = null;
+
+	try {
+		const result = await getR2PerformanceStats();
+		if (result.error) {
+			error = result.error;
+		} else {
+			performanceStats = result.data || null;
 		}
+	} catch (e) {
+		error = `パフォーマンス統計取得エラー: ${e}`;
+	} finally {
+		isLoading = false;
 	}
+}
 
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return '0 Bytes';
-		const k = 1024;
-		const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-	}
+function formatBytes(bytes: number): string {
+	if (bytes === 0) return "0 Bytes";
+	const k = 1024;
+	const sizes = ["Bytes", "KB", "MB", "GB"];
+	const i = Math.floor(Math.log(bytes) / Math.log(k));
+	return parseFloat((bytes / k ** i).toFixed(2)) + " " + sizes[i];
+}
 
-	function formatDuration(ms: number): string {
-		if (ms < 1000) return `${ms}ms`;
-		return `${(ms / 1000).toFixed(2)}s`;
-	}
+function formatDuration(ms: number): string {
+	if (ms < 1000) return `${ms}ms`;
+	return `${(ms / 1000).toFixed(2)}s`;
+}
 
-	onMount(() => {
-		// ページ読み込み時にパフォーマンス統計を自動取得
-		loadPerformanceStats();
-	});
+onMount(() => {
+	// ページ読み込み時にパフォーマンス統計を自動取得
+	loadPerformanceStats();
+});
 </script>
 
 <svelte:head>

@@ -4,7 +4,10 @@ pub mod db;
 mod models;
 mod services;
 
-use commands::{expense_commands, migration_commands, receipt_commands, security_commands, subscription_commands};
+use commands::{
+    expense_commands, migration_commands, receipt_commands, security_commands,
+    subscription_commands,
+};
 use log::{error, info, warn};
 use rusqlite::Connection;
 use services::security::{EnvironmentConfig, SecurityManager};
@@ -179,7 +182,7 @@ pub fn run() {
 fn initialize_logging_system() {
     // 環境設定を取得
     let env_config = EnvironmentConfig::from_env();
-    
+
     // ログレベルを設定
     let log_level = match env_config.log_level.to_lowercase().as_str() {
         "error" => log::LevelFilter::Error,
@@ -198,6 +201,8 @@ fn initialize_logging_system() {
         .format_target(false)
         .init();
 
-    info!("ログシステムを初期化しました: level={}, environment={}", 
-          env_config.log_level, env_config.environment);
+    info!(
+        "ログシステムを初期化しました: level={}, environment={}",
+        env_config.log_level, env_config.environment
+    );
 }

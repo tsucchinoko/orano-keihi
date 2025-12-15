@@ -371,7 +371,9 @@ export async function uploadMultipleReceiptsToR2(
  * @param uploadId - アップロードID
  * @returns キャンセル成功またはエラー
  */
-export async function cancelUpload(uploadId: string): Promise<TauriResult<boolean>> {
+export async function cancelUpload(
+	uploadId: string,
+): Promise<TauriResult<boolean>> {
 	return handleTauriCommand(invoke<boolean>("cancel_upload", { uploadId }));
 }
 
@@ -401,7 +403,9 @@ export async function testR2ConnectionDetailed(): Promise<
 	TauriResult<import("../types").R2ConnectionTestResult>
 > {
 	return handleTauriCommand(
-		invoke<import("../types").R2ConnectionTestResult>("test_r2_connection_detailed"),
+		invoke<import("../types").R2ConnectionTestResult>(
+			"test_r2_connection_detailed",
+		),
 	);
 }
 

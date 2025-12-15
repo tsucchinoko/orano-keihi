@@ -1,6 +1,11 @@
 // フロントエンド用統一エラーハンドリング
 
-import type { UserFriendlyError, ErrorAction, OperationResult, RetryConfig } from '$lib/types';
+import type {
+	UserFriendlyError,
+	ErrorAction,
+	OperationResult,
+	RetryConfig,
+} from "$lib/types";
 
 /**
  * エラーハンドリングユーティリティクラス
@@ -11,113 +16,116 @@ export class ErrorHandler {
 	 */
 	static handleTauriError(error: string): UserFriendlyError {
 		// エラーメッセージの内容に基づいて適切なエラー情報を生成
-		if (error.includes('ネットワーク') || error.includes('接続')) {
+		if (error.includes("ネットワーク") || error.includes("接続")) {
 			return {
-				title: 'ネットワークエラー',
+				title: "ネットワークエラー",
 				message: error,
 				canRetry: true,
-				severity: 'warning',
+				severity: "warning",
 				actions: [
 					{
-						label: '再試行',
+						label: "再試行",
 						action: () => window.location.reload(),
-						primary: true
+						primary: true,
 					},
 					{
-						label: 'ネットワーク設定を確認',
+						label: "ネットワーク設定を確認",
 						action: () => {
 							// ネットワーク設定のヘルプページを開く等
-							console.log('ネットワーク設定の確認が必要です');
-						}
-					}
-				]
-			};
-		}
-
-		if (error.includes('ファイル形式') || error.includes('サポートされていない')) {
-			return {
-				title: 'ファイル形式エラー',
-				message: error,
-				canRetry: false,
-				severity: 'error',
-				actions: [
-					{
-						label: '対応形式を確認',
-						action: () => {
-							alert('対応形式: PNG, JPG, JPEG, PDF（最大10MB）');
+							console.log("ネットワーク設定の確認が必要です");
 						},
-						primary: true
-					}
-				]
+					},
+				],
 			};
 		}
 
-		if (error.includes('ファイルサイズ') || error.includes('10MB')) {
+		if (
+			error.includes("ファイル形式") ||
+			error.includes("サポートされていない")
+		) {
 			return {
-				title: 'ファイルサイズエラー',
+				title: "ファイル形式エラー",
 				message: error,
 				canRetry: false,
-				severity: 'error',
+				severity: "error",
 				actions: [
 					{
-						label: 'ファイルを圧縮',
+						label: "対応形式を確認",
 						action: () => {
-							alert('ファイルサイズを10MB以下に圧縮してください');
+							alert("対応形式: PNG, JPG, JPEG, PDF（最大10MB）");
 						},
-						primary: true
-					}
-				]
+						primary: true,
+					},
+				],
 			};
 		}
 
-		if (error.includes('認証') || error.includes('管理者')) {
+		if (error.includes("ファイルサイズ") || error.includes("10MB")) {
 			return {
-				title: '認証エラー',
+				title: "ファイルサイズエラー",
 				message: error,
 				canRetry: false,
-				severity: 'critical',
+				severity: "error",
 				actions: [
 					{
-						label: '管理者に連絡',
+						label: "ファイルを圧縮",
+						action: () => {
+							alert("ファイルサイズを10MB以下に圧縮してください");
+						},
+						primary: true,
+					},
+				],
+			};
+		}
+
+		if (error.includes("認証") || error.includes("管理者")) {
+			return {
+				title: "認証エラー",
+				message: error,
+				canRetry: false,
+				severity: "critical",
+				actions: [
+					{
+						label: "管理者に連絡",
 						action: () => {
 							// 管理者連絡フォームを開く等
-							console.log('管理者への連絡が必要です');
+							console.log("管理者への連絡が必要です");
 						},
-						primary: true
-					}
-				]
+						primary: true,
+					},
+				],
 			};
 		}
 
-		if (error.includes('データベース')) {
+		if (error.includes("データベース")) {
 			return {
-				title: 'データベースエラー',
+				title: "データベースエラー",
 				message: error,
 				canRetry: true,
-				severity: 'error',
+				severity: "error",
 				actions: [
 					{
-						label: '再試行',
+						label: "再試行",
 						action: () => window.location.reload(),
-						primary: true
-					}
-				]
+						primary: true,
+					},
+				],
 			};
 		}
 
 		// デフォルトのエラー処理
 		return {
-			title: 'エラーが発生しました',
+			title: "エラーが発生しました",
 			message: error,
 			canRetry: true,
-			severity: 'error',
+			severity: "error",
 			actions: [
 				{
-					label: '再試行',
+					label: "再試行",
 					action: () => window.location.reload(),
-					primary: true
-				}
-			]
+					primary: true,
+				},
+			],
 		};
 	}
 
@@ -126,23 +134,24 @@ export class ErrorHandler {
 	 */
 	static async executeWithErrorHandling<T>(
 		operation: () => Promise<T>,
-		operationName: string = '操作'
+		operationName: string = "操作",
 	): Promise<OperationResult<T>> {
 		try {
 			const data = await operation();
 			return {
 				success: true,
-				data
+				data,
 			};
 		} catch (error) {
 			console.error(`${operationName}中にエラーが発生しました:`, error);
-			
-			const errorMessage = error instanceof Error ? error.message : String(error);
-			const userFriendlyError = this.handleTauriError(errorMessage);
-			
+
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			const userFriendlyError = ErrorHandler.handleTauriError(errorMessage);
+
 			return {
 				success: false,
-				error: userFriendlyError
+				error: userFriendlyError,
 			};
 		}
 	}
@@ -156,47 +165,55 @@ export class ErrorHandler {
 			maxRetries: 3,
 			baseDelay: 1000,
 			maxDelay: 10000,
-			exponentialBackoff: true
+			exponentialBackoff: true,
 		},
-		operationName: string = '操作'
+		operationName: string = "操作",
 	): Promise<OperationResult<T>> {
 		let lastError: Error | null = null;
-		
+
 		for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
 			try {
 				const data = await operation();
-				
+
 				if (attempt > 0) {
-					console.log(`${operationName}が${attempt + 1}回目の試行で成功しました`);
+					console.log(
+						`${operationName}が${attempt + 1}回目の試行で成功しました`,
+					);
 				}
-				
+
 				return {
 					success: true,
-					data
+					data,
 				};
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
-				
+
 				if (attempt < config.maxRetries) {
-					const delay = config.exponentialBackoff 
-						? Math.min(config.baseDelay * Math.pow(2, attempt), config.maxDelay)
+					const delay = config.exponentialBackoff
+						? Math.min(config.baseDelay * 2 ** attempt, config.maxDelay)
 						: config.baseDelay;
-					
-					console.warn(`${operationName}が失敗しました（${attempt + 1}/${config.maxRetries + 1}）。${delay}ms後に再試行します:`, error);
-					
-					await new Promise(resolve => setTimeout(resolve, delay));
+
+					console.warn(
+						`${operationName}が失敗しました（${attempt + 1}/${config.maxRetries + 1}）。${delay}ms後に再試行します:`,
+						error,
+					);
+
+					await new Promise((resolve) => setTimeout(resolve, delay));
 				}
 			}
 		}
-		
-		console.error(`${operationName}が最大試行回数（${config.maxRetries + 1}回）で失敗しました:`, lastError);
-		
-		const errorMessage = lastError?.message || '不明なエラー';
-		const userFriendlyError = this.handleTauriError(errorMessage);
-		
+
+		console.error(
+			`${operationName}が最大試行回数（${config.maxRetries + 1}回）で失敗しました:`,
+			lastError,
+		);
+
+		const errorMessage = lastError?.message || "不明なエラー";
+		const userFriendlyError = ErrorHandler.handleTauriError(errorMessage);
+
 		return {
 			success: false,
-			error: userFriendlyError
+			error: userFriendlyError,
 		};
 	}
 
@@ -205,17 +222,17 @@ export class ErrorHandler {
 	 */
 	static async handleFileUpload(
 		uploadFunction: () => Promise<string>,
-		fileName: string
+		fileName: string,
 	): Promise<OperationResult<string>> {
-		return this.executeWithRetry(
+		return ErrorHandler.executeWithRetry(
 			uploadFunction,
 			{
 				maxRetries: 2, // ファイルアップロードは2回まで
 				baseDelay: 2000,
 				maxDelay: 8000,
-				exponentialBackoff: true
+				exponentialBackoff: true,
 			},
-			`ファイル「${fileName}」のアップロード`
+			`ファイル「${fileName}」のアップロード`,
 		);
 	}
 
@@ -224,17 +241,17 @@ export class ErrorHandler {
 	 */
 	static async handleFileDownload(
 		downloadFunction: () => Promise<string>,
-		fileName: string = '領収書'
+		fileName: string = "領収書",
 	): Promise<OperationResult<string>> {
-		return this.executeWithRetry(
+		return ErrorHandler.executeWithRetry(
 			downloadFunction,
 			{
 				maxRetries: 3,
 				baseDelay: 1000,
 				maxDelay: 5000,
-				exponentialBackoff: true
+				exponentialBackoff: true,
 			},
-			`${fileName}のダウンロード`
+			`${fileName}のダウンロード`,
 		);
 	}
 
@@ -243,12 +260,9 @@ export class ErrorHandler {
 	 */
 	static async handleFileDelete(
 		deleteFunction: () => Promise<boolean>,
-		fileName: string = '領収書'
+		fileName: string = "領収書",
 	): Promise<OperationResult<boolean>> {
-		return this.executeWithErrorHandling(
-			deleteFunction,
-			`${fileName}の削除`
-		);
+		return ErrorHandler.executeWithErrorHandling(deleteFunction, `${fileName}の削除`);
 	}
 
 	/**
@@ -261,18 +275,18 @@ export class ErrorHandler {
 	/**
 	 * エラーの重要度に基づいてCSSクラスを取得
 	 */
-	static getErrorCssClass(severity: UserFriendlyError['severity']): string {
+	static getErrorCssClass(severity: UserFriendlyError["severity"]): string {
 		switch (severity) {
-			case 'info':
-				return 'alert-info';
-			case 'warning':
-				return 'alert-warning';
-			case 'error':
-				return 'alert-error';
-			case 'critical':
-				return 'alert-critical';
+			case "info":
+				return "alert-info";
+			case "warning":
+				return "alert-warning";
+			case "error":
+				return "alert-error";
+			case "critical":
+				return "alert-critical";
 			default:
-				return 'alert-error';
+				return "alert-error";
 		}
 	}
 
@@ -280,18 +294,24 @@ export class ErrorHandler {
 	 * ファイル形式を検証
 	 */
 	static validateFileFormat(file: File): OperationResult<void> {
-		const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+		const allowedTypes = [
+			"image/png",
+			"image/jpeg",
+			"image/jpg",
+			"application/pdf",
+		];
 		const maxSize = 10 * 1024 * 1024; // 10MB
 
 		if (!allowedTypes.includes(file.type)) {
 			return {
 				success: false,
 				error: {
-					title: 'ファイル形式エラー',
-					message: 'サポートされていないファイル形式です。PNG、JPG、PDFファイルのみアップロード可能です。',
+					title: "ファイル形式エラー",
+					message:
+						"サポートされていないファイル形式です。PNG、JPG、PDFファイルのみアップロード可能です。",
 					canRetry: false,
-					severity: 'error'
-				}
+					severity: "error",
+				},
 			};
 		}
 
@@ -299,11 +319,11 @@ export class ErrorHandler {
 			return {
 				success: false,
 				error: {
-					title: 'ファイルサイズエラー',
+					title: "ファイルサイズエラー",
 					message: `ファイルサイズが制限を超えています。最大サイズ: 10MB（現在: ${(file.size / (1024 * 1024)).toFixed(1)}MB）`,
 					canRetry: false,
-					severity: 'error'
-				}
+					severity: "error",
+				},
 			};
 		}
 
@@ -320,7 +340,7 @@ export function createErrorStore() {
 		error: null as UserFriendlyError | null,
 		isRetrying: false,
 		retryCount: 0,
-		maxRetries: 3
+		maxRetries: 3,
 	});
 
 	return {
@@ -347,7 +367,10 @@ export function createErrorStore() {
 		},
 
 		canRetry(): boolean {
-			return errorState.error?.canRetry === true && errorState.retryCount < errorState.maxRetries;
-		}
+			return (
+				errorState.error?.canRetry === true &&
+				errorState.retryCount < errorState.maxRetries
+			);
+		},
 	};
 }

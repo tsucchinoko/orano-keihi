@@ -1,22 +1,24 @@
 // セキュリティ関連のユーティリティ関数
 
-import { invoke } from '@tauri-apps/api/core';
-import type { 
-	SystemDiagnosticInfo, 
-	EnvironmentInfo, 
-	R2DiagnosticInfo, 
-	SecurityEvent 
-} from '../types';
+import { invoke } from "@tauri-apps/api/core";
+import type {
+	SystemDiagnosticInfo,
+	EnvironmentInfo,
+	R2DiagnosticInfo,
+	SecurityEvent,
+} from "../types";
 
 /**
  * システム診断情報を取得
  */
 export async function getSystemDiagnosticInfo(): Promise<SystemDiagnosticInfo> {
 	try {
-		const result = await invoke<Record<string, string>>('get_system_diagnostic_info');
+		const result = await invoke<Record<string, string>>(
+			"get_system_diagnostic_info",
+		);
 		return result as unknown as SystemDiagnosticInfo;
 	} catch (error) {
-		console.error('システム診断情報の取得に失敗しました:', error);
+		console.error("システム診断情報の取得に失敗しました:", error);
 		throw error;
 	}
 }
@@ -26,10 +28,10 @@ export async function getSystemDiagnosticInfo(): Promise<SystemDiagnosticInfo> {
  */
 export async function validateSecurityConfiguration(): Promise<boolean> {
 	try {
-		const result = await invoke<boolean>('validate_security_configuration');
+		const result = await invoke<boolean>("validate_security_configuration");
 		return result;
 	} catch (error) {
-		console.error('セキュリティ設定の検証に失敗しました:', error);
+		console.error("セキュリティ設定の検証に失敗しました:", error);
 		throw error;
 	}
 }
@@ -39,10 +41,10 @@ export async function validateSecurityConfiguration(): Promise<boolean> {
  */
 export async function testR2ConnectionSecure(): Promise<boolean> {
 	try {
-		const result = await invoke<boolean>('test_r2_connection_secure');
+		const result = await invoke<boolean>("test_r2_connection_secure");
 		return result;
 	} catch (error) {
-		console.error('R2接続テストに失敗しました:', error);
+		console.error("R2接続テストに失敗しました:", error);
 		throw error;
 	}
 }
@@ -52,10 +54,10 @@ export async function testR2ConnectionSecure(): Promise<boolean> {
  */
 export async function getEnvironmentInfo(): Promise<EnvironmentInfo> {
 	try {
-		const result = await invoke<Record<string, string>>('get_environment_info');
+		const result = await invoke<Record<string, string>>("get_environment_info");
 		return result as unknown as EnvironmentInfo;
 	} catch (error) {
-		console.error('環境情報の取得に失敗しました:', error);
+		console.error("環境情報の取得に失敗しました:", error);
 		throw error;
 	}
 }
@@ -63,14 +65,17 @@ export async function getEnvironmentInfo(): Promise<EnvironmentInfo> {
 /**
  * セキュリティイベントをログに記録
  */
-export async function logSecurityEvent(eventType: string, details: string): Promise<void> {
+export async function logSecurityEvent(
+	eventType: string,
+	details: string,
+): Promise<void> {
 	try {
-		await invoke('log_security_event', {
+		await invoke("log_security_event", {
 			eventType,
-			details
+			details,
 		});
 	} catch (error) {
-		console.error('セキュリティイベントのログ記録に失敗しました:', error);
+		console.error("セキュリティイベントのログ記録に失敗しました:", error);
 		throw error;
 	}
 }
@@ -80,10 +85,12 @@ export async function logSecurityEvent(eventType: string, details: string): Prom
  */
 export async function getR2DiagnosticInfo(): Promise<R2DiagnosticInfo> {
 	try {
-		const result = await invoke<Record<string, string>>('get_r2_diagnostic_info');
+		const result = await invoke<Record<string, string>>(
+			"get_r2_diagnostic_info",
+		);
 		return result as unknown as R2DiagnosticInfo;
 	} catch (error) {
-		console.error('R2診断情報の取得に失敗しました:', error);
+		console.error("R2診断情報の取得に失敗しました:", error);
 		throw error;
 	}
 }
@@ -93,9 +100,9 @@ export async function getR2DiagnosticInfo(): Promise<R2DiagnosticInfo> {
  */
 export function maskCredential(credential: string): string {
 	if (!credential || credential.length <= 8) {
-		return '****';
+		return "****";
 	}
-	
+
 	return `${credential.slice(0, 4)}****${credential.slice(-4)}`;
 }
 
@@ -112,17 +119,17 @@ export async function checkSecurityStatus(): Promise<{
 		const [isValid, envInfo, diagnosticInfo] = await Promise.all([
 			validateSecurityConfiguration(),
 			getEnvironmentInfo(),
-			getSystemDiagnosticInfo()
+			getSystemDiagnosticInfo(),
 		]);
 
 		return {
 			isValid,
 			environment: envInfo.environment,
-			isProduction: envInfo.is_production === 'true',
-			diagnosticInfo
+			isProduction: envInfo.is_production === "true",
+			diagnosticInfo,
 		};
 	} catch (error) {
-		console.error('セキュリティ状態の確認に失敗しました:', error);
+		console.error("セキュリティ状態の確認に失敗しました:", error);
 		throw error;
 	}
 }
@@ -138,18 +145,18 @@ export async function checkR2Status(): Promise<{
 	try {
 		const [isConnected, diagnosticInfo] = await Promise.all([
 			testR2ConnectionSecure(),
-			getR2DiagnosticInfo()
+			getR2DiagnosticInfo(),
 		]);
 
 		return {
 			isConnected,
-			diagnosticInfo
+			diagnosticInfo,
 		};
 	} catch (error) {
-		console.error('R2接続状態の確認に失敗しました:', error);
+		console.error("R2接続状態の確認に失敗しました:", error);
 		return {
 			isConnected: false,
-			error: error instanceof Error ? error.message : String(error)
+			error: error instanceof Error ? error.message : String(error),
 		};
 	}
 }
@@ -157,21 +164,25 @@ export async function checkR2Status(): Promise<{
 /**
  * デバッグ情報を安全に表示（認証情報をマスク）
  */
-export function formatDebugInfo(info: Record<string, string>): Record<string, string> {
+export function formatDebugInfo(
+	info: Record<string, string>,
+): Record<string, string> {
 	const masked: Record<string, string> = {};
-	
+
 	for (const [key, value] of Object.entries(info)) {
 		// 認証情報と思われるキーをマスク
-		if (key.toLowerCase().includes('key') || 
-			key.toLowerCase().includes('secret') || 
-			key.toLowerCase().includes('token') ||
-			key.toLowerCase().includes('password')) {
+		if (
+			key.toLowerCase().includes("key") ||
+			key.toLowerCase().includes("secret") ||
+			key.toLowerCase().includes("token") ||
+			key.toLowerCase().includes("password")
+		) {
 			masked[key] = maskCredential(value);
 		} else {
 			masked[key] = value;
 		}
 	}
-	
+
 	return masked;
 }
 
@@ -183,36 +194,40 @@ export const SecurityEvents = {
 	 * ページアクセスをログ記録
 	 */
 	async logPageAccess(pageName: string): Promise<void> {
-		await logSecurityEvent('page_access', `ページアクセス: ${pageName}`);
+		await logSecurityEvent("page_access", `ページアクセス: ${pageName}`);
 	},
 
 	/**
 	 * ファイルアップロード開始をログ記録
 	 */
 	async logUploadStart(fileName: string, fileSize: number): Promise<void> {
-		await logSecurityEvent('upload_start', 
-			`ファイルアップロード開始: ${fileName} (${fileSize} bytes)`);
+		await logSecurityEvent(
+			"upload_start",
+			`ファイルアップロード開始: ${fileName} (${fileSize} bytes)`,
+		);
 	},
 
 	/**
 	 * ファイルアップロード完了をログ記録
 	 */
 	async logUploadComplete(fileName: string, receiptUrl: string): Promise<void> {
-		await logSecurityEvent('upload_complete', 
-			`ファイルアップロード完了: ${fileName} -> ${receiptUrl}`);
+		await logSecurityEvent(
+			"upload_complete",
+			`ファイルアップロード完了: ${fileName} -> ${receiptUrl}`,
+		);
 	},
 
 	/**
 	 * エラーをログ記録
 	 */
 	async logError(errorType: string, errorMessage: string): Promise<void> {
-		await logSecurityEvent('error', `${errorType}: ${errorMessage}`);
+		await logSecurityEvent("error", `${errorType}: ${errorMessage}`);
 	},
 
 	/**
 	 * 設定変更をログ記録
 	 */
 	async logConfigChange(configType: string, details: string): Promise<void> {
-		await logSecurityEvent('config_change', `${configType}: ${details}`);
-	}
+		await logSecurityEvent("config_change", `${configType}: ${details}`);
+	},
 };

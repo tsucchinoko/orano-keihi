@@ -151,7 +151,11 @@ pub async fn update_expense(
 /// # 戻り値
 /// 成功時は空、失敗時はエラーメッセージ
 #[tauri::command]
-pub async fn delete_expense(id: i64, app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn delete_expense(
+    id: i64,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     use chrono::Utc;
     use chrono_tz::Asia::Tokyo;
 
@@ -169,14 +173,16 @@ pub async fn delete_expense(id: i64, app: tauri::AppHandle, state: State<'_, App
     // 領収書がR2に存在する場合は削除
     if let Some(receipt_url) = current_receipt_url {
         // R2からファイルを削除（トランザクション的な削除処理：R2→DB順）
-        let deletion_result = crate::commands::receipt_commands::delete_from_r2_with_retry(&receipt_url).await;
+        let deletion_result =
+            crate::commands::receipt_commands::delete_from_r2_with_retry(&receipt_url).await;
 
         match deletion_result {
             Ok(_) => {
                 // R2削除成功 - キャッシュからも削除
                 if let Ok(app_data_dir) = app.path().app_data_dir() {
                     let cache_dir = app_data_dir.join("receipt_cache");
-                    let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
+                    let cache_manager =
+                        crate::services::cache_manager::CacheManager::new(cache_dir, 100);
 
                     let db = state
                         .db
@@ -214,5 +220,3 @@ pub async fn delete_expense(id: i64, app: tauri::AppHandle, state: State<'_, App
     expense_operations::delete_expense(&db, id)
         .map_err(|e| format!("経費の削除に失敗しました: {e}"))
 }
-
-
