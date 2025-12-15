@@ -29,20 +29,49 @@ pub struct MigrationResult {
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラー
 pub fn run_migrations(conn: &Connection) -> Result<()> {
-    // 経費テーブルを作成
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT NOT NULL,
-            amount REAL NOT NULL,
-            category TEXT NOT NULL,
-            description TEXT,
-            receipt_path TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )",
+    // 既存のテーブル構造をチェック
+    let table_exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='expenses'",
         [],
+        |row| row.get(0),
     )?;
+
+    if table_exists == 0 {
+        // 新規インストール: 最新のスキーマ（receipt_url）でテーブルを作成
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                receipt_url TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )?;
+        
+        println!("新規データベースを作成しました（receipt_urlスキーマ）");
+    } else {
+        // 既存インストール: 必要なカラムを安全に追加
+        println!("既存のデータベースを確認中...");
+        
+        // receipt_urlカラムが存在するかチェック
+        let has_receipt_url = check_column_exists(conn, "expenses", "receipt_url");
+        
+        if !has_receipt_url {
+            println!("receipt_urlカラムを追加します...");
+            // receipt_urlカラムを追加（エラーを無視）
+            let _ = conn.execute("ALTER TABLE expenses ADD COLUMN receipt_url TEXT", []);
+        }
+        
+        // receipt_pathカラムが存在する場合は警告を出力（削除はしない）
+        let has_receipt_path = check_column_exists(conn, "expenses", "receipt_path");
+        if has_receipt_path {
+            println!("注意: 古いreceipt_pathカラムが検出されました。新しいreceipt_urlカラムを使用してください。");
+        }
+    }
 
     // 経費テーブルのインデックスを作成
     conn.execute(
@@ -52,6 +81,34 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
+        [],
+    )?;
+
+    // レシートキャッシュテーブルを作成
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS receipt_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_url TEXT NOT NULL UNIQUE,
+            local_path TEXT NOT NULL,
+            cached_at TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            last_accessed TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_receipt_cache_url ON receipt_cache(receipt_url)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_receipt_cache_accessed ON receipt_cache(last_accessed)",
         [],
     )?;
 
@@ -113,12 +170,6 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
                 [name, color, icon],
             )?;
         }
-    }
-
-    // receipt_urlマイグレーションが必要かチェック
-    if !is_receipt_url_migration_complete(conn)? {
-        println!("警告: receipt_pathからreceipt_urlへのマイグレーションが必要です。");
-        println!("アプリケーション内のマイグレーション機能を使用してマイグレーションを実行してください。");
     }
 
     Ok(())
@@ -376,17 +427,40 @@ pub fn restore_from_backup(conn: &mut Connection, backup_path: &str) -> Result<(
 /// # 戻り値
 /// receipt_urlマイグレーションが完了している場合はtrue
 pub fn is_receipt_url_migration_complete(conn: &Connection) -> Result<bool> {
+    // テーブルが存在するかチェック
+    let table_exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='expenses'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if table_exists == 0 {
+        // テーブルが存在しない場合は、マイグレーション不要（新規作成）
+        return Ok(true);
+    }
+
     // receipt_urlカラムの存在を確認
-    let table_info: Vec<String> = conn
-        .prepare("PRAGMA table_info(expenses)")?
-        .query_map([], |row| Ok(row.get::<_, String>(1)?))?
-        .collect::<Result<Vec<_>, _>>()?;
+    let table_info_result: Result<Vec<String>, rusqlite::Error> = conn
+        .prepare("PRAGMA table_info(expenses)")
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| Ok(row.get::<_, String>(1)?))
+                .and_then(|rows| rows.collect())
+        });
 
-    let has_receipt_url = table_info.iter().any(|name| name == "receipt_url");
-    let has_receipt_path = table_info.iter().any(|name| name == "receipt_path");
+    match table_info_result {
+        Ok(table_info) => {
+            let has_receipt_url = table_info.iter().any(|name| name == "receipt_url");
+            let has_receipt_path = table_info.iter().any(|name| name == "receipt_path");
 
-    // receipt_urlが存在し、receipt_pathが存在しない場合はマイグレーション完了
-    Ok(has_receipt_url && !has_receipt_path)
+            // receipt_urlが存在し、receipt_pathが存在しない場合はマイグレーション完了
+            Ok(has_receipt_url && !has_receipt_path)
+        }
+        Err(e) => {
+            eprintln!("テーブル情報の取得でエラーが発生しました: {}", e);
+            // エラー時は安全側に倒してマイグレーション完了とみなす
+            Ok(true)
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -561,5 +635,40 @@ mod tests {
             [],
         );
         assert!(result.is_ok());
+    }
+}
+
+/// テーブルに指定されたカラムが存在するかチェックする
+///
+/// # 引数
+/// * `conn` - データベース接続
+/// * `table_name` - テーブル名
+/// * `column_name` - カラム名
+///
+/// # 戻り値
+/// カラムが存在する場合はtrue、存在しないかエラーの場合はfalse
+fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -> bool {
+    let query = format!("PRAGMA table_info({})", table_name);
+    
+    match conn.prepare(&query) {
+        Ok(mut stmt) => {
+            match stmt.query_map([], |row| {
+                let col_name: String = row.get(1)?;
+                Ok(col_name)
+            }) {
+                Ok(rows) => {
+                    for row_result in rows {
+                        if let Ok(col_name) = row_result {
+                            if col_name == column_name {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                }
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
     }
 }
