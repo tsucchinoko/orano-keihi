@@ -191,7 +191,7 @@ pub fn migrate_receipt_path_to_url(
     if let Err(e) = create_backup(conn, backup_path) {
         return Ok(MigrationResult {
             success: false,
-            message: format!("バックアップ作成に失敗しました: {}", e),
+            message: format!("バックアップ作成に失敗しました: {e}"),
             backup_path: None,
         });
     }
@@ -207,7 +207,7 @@ pub fn migrate_receipt_path_to_url(
                 tx.rollback()?;
                 return Ok(MigrationResult {
                     success: false,
-                    message: format!("マイグレーション検証に失敗しました: {}", e),
+                    message: format!("マイグレーション検証に失敗しました: {e}"),
                     backup_path: Some(backup_path.to_string()),
                 });
             }
@@ -227,7 +227,7 @@ pub fn migrate_receipt_path_to_url(
             tx.rollback()?;
             Ok(MigrationResult {
                 success: false,
-                message: format!("マイグレーション実行に失敗しました: {}", e),
+                message: format!("マイグレーション実行に失敗しました: {e}"),
                 backup_path: Some(backup_path.to_string()),
             })
         }
@@ -443,7 +443,7 @@ pub fn is_receipt_url_migration_complete(conn: &Connection) -> Result<bool> {
     let table_info_result: Result<Vec<String>, rusqlite::Error> = conn
         .prepare("PRAGMA table_info(expenses)")
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| Ok(row.get::<_, String>(1)?))
+            stmt.query_map([], |row| row.get::<_, String>(1))
                 .and_then(|rows| rows.collect())
         });
 
@@ -456,10 +456,45 @@ pub fn is_receipt_url_migration_complete(conn: &Connection) -> Result<bool> {
             Ok(has_receipt_url && !has_receipt_path)
         }
         Err(e) => {
-            eprintln!("テーブル情報の取得でエラーが発生しました: {}", e);
+            eprintln!("テーブル情報の取得でエラーが発生しました: {e}");
             // エラー時は安全側に倒してマイグレーション完了とみなす
             Ok(true)
         }
+    }
+}
+
+/// テーブルに指定されたカラムが存在するかチェックする
+///
+/// # 引数
+/// * `conn` - データベース接続
+/// * `table_name` - テーブル名
+/// * `column_name` - カラム名
+///
+/// # 戻り値
+/// カラムが存在する場合はtrue、存在しないかエラーの場合はfalse
+fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -> bool {
+    let query = format!("PRAGMA table_info({table_name})");
+
+    match conn.prepare(&query) {
+        Ok(mut stmt) => {
+            match stmt.query_map([], |row| {
+                let col_name: String = row.get(1)?;
+                Ok(col_name)
+            }) {
+                Ok(rows) => {
+                    for row_result in rows {
+                        if let Ok(col_name) = row_result {
+                            if col_name == column_name {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                }
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
     }
 }
 #[cfg(test)]
@@ -534,7 +569,7 @@ mod tests {
         let table_info: Vec<String> = conn
             .prepare("PRAGMA table_info(expenses)")
             .unwrap()
-            .query_map([], |row| Ok(row.get::<_, String>(1)?))
+            .query_map([], |row| row.get::<_, String>(1))
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
@@ -635,40 +670,5 @@ mod tests {
             [],
         );
         assert!(result.is_ok());
-    }
-}
-
-/// テーブルに指定されたカラムが存在するかチェックする
-///
-/// # 引数
-/// * `conn` - データベース接続
-/// * `table_name` - テーブル名
-/// * `column_name` - カラム名
-///
-/// # 戻り値
-/// カラムが存在する場合はtrue、存在しないかエラーの場合はfalse
-fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -> bool {
-    let query = format!("PRAGMA table_info({})", table_name);
-
-    match conn.prepare(&query) {
-        Ok(mut stmt) => {
-            match stmt.query_map([], |row| {
-                let col_name: String = row.get(1)?;
-                Ok(col_name)
-            }) {
-                Ok(rows) => {
-                    for row_result in rows {
-                        if let Ok(col_name) = row_result {
-                            if col_name == column_name {
-                                return true;
-                            }
-                        }
-                    }
-                    false
-                }
-                Err(_) => false,
-            }
-        }
-        Err(_) => false,
     }
 }

@@ -262,7 +262,10 @@ export class ErrorHandler {
 		deleteFunction: () => Promise<boolean>,
 		fileName: string = "領収書",
 	): Promise<OperationResult<boolean>> {
-		return ErrorHandler.executeWithErrorHandling(deleteFunction, `${fileName}の削除`);
+		return ErrorHandler.executeWithErrorHandling(
+			deleteFunction,
+			`${fileName}の削除`,
+		);
 	}
 
 	/**

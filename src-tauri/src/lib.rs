@@ -23,6 +23,12 @@ pub struct R2ConnectionCache {
     pub cache_duration: Duration,
 }
 
+impl Default for R2ConnectionCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl R2ConnectionCache {
     pub fn new() -> Self {
         Self {
@@ -73,7 +79,7 @@ pub fn run() {
             info!("アプリケーション初期化を開始します...");
 
             // 環境変数を読み込み（.envファイルがある場合）
-            if let Err(_) = dotenv::dotenv() {
+            if dotenv::dotenv().is_err() {
                 // .envファイルがない場合は無視（本番環境では環境変数が直接設定される）
                 warn!(".envファイルが見つかりません。環境変数が直接設定されていることを確認してください。");
             } else {
@@ -85,13 +91,13 @@ pub fn run() {
 
             // セキュリティ設定の検証
             if let Err(e) = security_manager.validate_configuration() {
-                error!("セキュリティ設定の検証に失敗しました: {}", e);
+                error!("セキュリティ設定の検証に失敗しました: {e}");
                 // 本番環境では起動を停止する場合もある
                 let env_config = security_manager.get_env_config();
                 if env_config.is_production() {
                     return Err(Box::new(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        format!("本番環境でのセキュリティ設定エラー: {}", e)
+                        format!("本番環境でのセキュリティ設定エラー: {e}")
                     )));
                 } else {
                     warn!("開発環境のため、セキュリティ設定エラーを無視して続行します");
@@ -100,14 +106,14 @@ pub fn run() {
 
             // 診断情報をログ出力
             let diagnostic_info = security_manager.get_diagnostic_info();
-            info!("システム診断情報: {:?}", diagnostic_info);
+            info!("システム診断情報: {diagnostic_info:?}");
 
             // アプリ起動時にデータベースを初期化
             info!("データベースを初期化しています...");
             let db_conn = db::initialize_database(app.handle())
                 .map_err(|e| {
-                    error!("データベースの初期化に失敗しました: {}", e);
-                    security_manager.log_security_event("database_init_failed", &format!("{}", e));
+                    error!("データベースの初期化に失敗しました: {e}");
+                    security_manager.log_security_event("database_init_failed", &e.to_string());
                     e
                 })?;
 

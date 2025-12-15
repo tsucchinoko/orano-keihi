@@ -190,22 +190,20 @@ pub async fn delete_expense(
                         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
                     if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
-                        eprintln!("キャッシュ削除エラー: {}", e);
+                        eprintln!("キャッシュ削除エラー: {e}");
                     }
                 }
 
                 // 削除操作のログ記録
                 let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
                 println!(
-                    "経費削除時の領収書削除完了: expense_id={}, receipt_url={}, timestamp={}",
-                    id, receipt_url, now
+                    "経費削除時の領収書削除完了: expense_id={id}, receipt_url={receipt_url}, timestamp={now}"
                 );
             }
             Err(e) => {
                 // R2削除失敗 - データベースの状態は変更しない
                 return Err(format!(
-                    "R2からのファイル削除に失敗しました。経費の削除を中止します: {}",
-                    e
+                    "R2からのファイル削除に失敗しました。経費の削除を中止します: {e}"
                 ));
             }
         }

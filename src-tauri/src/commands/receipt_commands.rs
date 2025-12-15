@@ -265,14 +265,13 @@ pub async fn upload_receipt_to_r2(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     info!(
-        "R2への領収書アップロードを開始します: expense_id={}, file_path={}",
-        expense_id, file_path
+        "R2への領収書アップロードを開始します: expense_id={expense_id}, file_path={file_path}"
     );
 
     let security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "receipt_upload_started",
-        &format!("expense_id={}, file_path={}", expense_id, file_path),
+        &format!("expense_id={expense_id}, file_path={file_path}"),
     );
 
     // 統一エラーハンドリングを使用してアップロード処理を実行
@@ -281,12 +280,11 @@ pub async fn upload_receipt_to_r2(
     match result {
         Ok(url) => {
             info!(
-                "領収書アップロード成功: expense_id={}, url={}",
-                expense_id, url
+                "領収書アップロード成功: expense_id={expense_id}, url={url}"
             );
             security_manager.log_security_event(
                 "receipt_upload_success",
-                &format!("expense_id={}, url={}", expense_id, url),
+                &format!("expense_id={expense_id}, url={url}"),
             );
             Ok(url)
         }
@@ -318,13 +316,13 @@ async fn upload_receipt_internal(
         .file_name()
         .and_then(|s| s.to_str())
         .ok_or_else(|| AppError::FileOperationError {
-            details: format!("ファイル名の取得に失敗しました: {}", file_path),
+            details: format!("ファイル名の取得に失敗しました: {file_path}"),
             user_message: "ファイル名を取得できませんでした。ファイルパスを確認してください。"
                 .to_string(),
             retry_possible: false,
         })?;
 
-    debug!("ファイル名を取得しました: {}", filename);
+    debug!("ファイル名を取得しました: {filename}");
 
     // ファイル形式の事前検証
     R2Client::validate_file_format(filename).map_err(|_| {
@@ -336,7 +334,7 @@ async fn upload_receipt_internal(
         .map_err(|e| ErrorHandler::file_operation_error("ファイル情報取得", &file_path, e))?;
 
     let file_size = metadata.len();
-    debug!("ファイルサイズ: {} bytes", file_size);
+    debug!("ファイルサイズ: {file_size} bytes");
 
     const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
     if file_size > MAX_FILE_SIZE {
@@ -357,16 +355,16 @@ async fn upload_receipt_internal(
 
     // ファイルキーを生成
     let file_key = R2Client::generate_file_key(expense_id, filename);
-    debug!("ファイルキーを生成しました: {}", file_key);
+    debug!("ファイルキーを生成しました: {file_key}");
 
     // Content-Typeを取得
     let content_type = R2Client::get_content_type(filename);
-    debug!("Content-Type: {}", content_type);
+    debug!("Content-Type: {content_type}");
 
     // 現在のreceipt_urlを保存（ロールバック用）
     let original_receipt_url = {
         let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-            details: format!("データベースロック取得エラー: {}", e),
+            details: format!("データベースロック取得エラー: {e}"),
             user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
             retry_possible: true,
         })?;
@@ -381,12 +379,12 @@ async fn upload_receipt_internal(
         .await
         .map_err(AppError::from)?;
 
-    info!("R2アップロードが成功しました: {}", receipt_url);
+    info!("R2アップロードが成功しました: {receipt_url}");
 
     // データベースにreceipt_urlを保存（失敗時は状態を保持）
     let db_result = {
         let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-            details: format!("データベースロック取得エラー: {}", e),
+            details: format!("データベースロック取得エラー: {e}"),
             user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
             retry_possible: true,
         })?;
@@ -397,29 +395,26 @@ async fn upload_receipt_internal(
     match db_result {
         Ok(_) => {
             info!(
-                "データベースへの保存が完了しました: expense_id={}, receipt_url={}",
-                expense_id, receipt_url
+                "データベースへの保存が完了しました: expense_id={expense_id}, receipt_url={receipt_url}"
             );
             Ok(receipt_url)
         }
         Err(db_error) => {
             // データベース保存に失敗した場合、R2からファイルを削除してロールバック
             warn!(
-                "データベース保存に失敗しました。R2からファイルを削除してロールバックします: {}",
-                db_error
+                "データベース保存に失敗しました。R2からファイルを削除してロールバックします: {db_error}"
             );
 
             if let Err(delete_error) = client.delete_file(&file_key).await {
                 error!(
-                    "ロールバック中のR2ファイル削除に失敗しました: {}",
-                    delete_error
+                    "ロールバック中のR2ファイル削除に失敗しました: {delete_error}"
                 );
             }
 
             // 元のreceipt_urlを復元（もしあれば）
             if let Some(original_url) = original_receipt_url {
                 let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-                    details: format!("ロールバック時のデータベースロック取得エラー: {}", e),
+                    details: format!("ロールバック時のデータベースロック取得エラー: {e}"),
                     user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
                     retry_possible: true,
                 })?;
@@ -427,7 +422,7 @@ async fn upload_receipt_internal(
                 if let Err(restore_error) =
                     expense_operations::set_receipt_url(&db, expense_id, original_url)
                 {
-                    error!("元のreceipt_urlの復元に失敗しました: {}", restore_error);
+                    error!("元のreceipt_urlの復元に失敗しました: {restore_error}");
                 }
             }
 
@@ -452,14 +447,13 @@ pub async fn get_receipt_from_r2(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     info!(
-        "R2からの領収書取得を開始します: receipt_url={}",
-        receipt_url
+        "R2からの領収書取得を開始します: receipt_url={receipt_url}"
     );
 
     let security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "receipt_download_started",
-        &format!("receipt_url={}", receipt_url),
+        &format!("receipt_url={receipt_url}"),
     );
 
     // 統一エラーハンドリングを使用して取得処理を実行
@@ -467,10 +461,10 @@ pub async fn get_receipt_from_r2(
 
     match result {
         Ok(base64_data) => {
-            info!("領収書取得成功: receipt_url={}", receipt_url);
+            info!("領収書取得成功: receipt_url={receipt_url}");
             security_manager.log_security_event(
                 "receipt_download_success",
-                &format!("receipt_url={}", receipt_url),
+                &format!("receipt_url={receipt_url}"),
             );
             Ok(base64_data)
         }
@@ -490,7 +484,7 @@ async fn get_receipt_internal(
     // URLの検証
     if !receipt_url.starts_with("https://") {
         return Err(AppError::InvalidFileFormat {
-            details: format!("無効なreceipt_URL: {}", receipt_url),
+            details: format!("無効なreceipt_URL: {receipt_url}"),
             user_message: "領収書URLの形式が正しくありません（HTTPS URLである必要があります）。"
                 .to_string(),
             retry_possible: false,
@@ -502,7 +496,7 @@ async fn get_receipt_internal(
         .path()
         .app_data_dir()
         .map_err(|e| AppError::InternalError {
-            details: format!("アプリデータディレクトリの取得に失敗しました: {}", e),
+            details: format!("アプリデータディレクトリの取得に失敗しました: {e}"),
             user_message: "アプリケーションの設定取得中にエラーが発生しました。".to_string(),
             retry_possible: false,
         })?;
@@ -513,7 +507,7 @@ async fn get_receipt_internal(
     // まずキャッシュから取得を試行
     let cached_result = {
         let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-            details: format!("キャッシュ確認時のデータベースロック取得エラー: {}", e),
+            details: format!("キャッシュ確認時のデータベースロック取得エラー: {e}"),
             user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
             retry_possible: true,
         })?;
@@ -524,7 +518,7 @@ async fn get_receipt_internal(
     match cached_result {
         Ok(Some(cached_data)) => {
             // キャッシュヒット - Base64エンコードして返却
-            debug!("キャッシュヒット: receipt_url={}", receipt_url);
+            debug!("キャッシュヒット: receipt_url={receipt_url}");
             use base64::{engine::general_purpose, Engine as _};
             let base64_data = general_purpose::STANDARD.encode(&cached_data);
             return Ok(base64_data);
@@ -532,13 +526,12 @@ async fn get_receipt_internal(
         Ok(None) => {
             // キャッシュミス - R2から取得
             debug!(
-                "キャッシュミス、R2から取得します: receipt_url={}",
-                receipt_url
+                "キャッシュミス、R2から取得します: receipt_url={receipt_url}"
             );
         }
         Err(e) => {
             // キャッシュエラーはログに記録するが、R2からの取得を続行
-            warn!("キャッシュ取得エラー（R2から取得を続行）: {}", e);
+            warn!("キャッシュ取得エラー（R2から取得を続行）: {e}");
         }
     }
 
@@ -548,18 +541,18 @@ async fn get_receipt_internal(
     // 取得したファイルをキャッシュに保存（エラーは無視）
     {
         let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-            details: format!("キャッシュ保存時のデータベースロック取得エラー: {}", e),
+            details: format!("キャッシュ保存時のデータベースロック取得エラー: {e}"),
             user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
             retry_possible: true,
         })?;
 
         if let Err(e) = cache_manager.cache_file(&receipt_url, file_data.clone(), &db) {
-            warn!("キャッシュ保存エラー（無視して続行）: {}", e);
+            warn!("キャッシュ保存エラー（無視して続行）: {e}");
         }
 
         // キャッシュサイズ管理（エラーは無視）
         if let Err(e) = cache_manager.manage_cache_size(&db) {
-            warn!("キャッシュサイズ管理エラー（無視して続行）: {}", e);
+            warn!("キャッシュサイズ管理エラー（無視して続行）: {e}");
         }
     }
 
@@ -575,7 +568,7 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
     let url_parts: Vec<&str> = receipt_url.split('/').collect();
     if url_parts.len() < 4 {
         return Err(AppError::InvalidFileFormat {
-            details: format!("無効なreceipt_URL形式: {}", receipt_url),
+            details: format!("無効なreceipt_URL形式: {receipt_url}"),
             user_message: "領収書URLの形式が正しくありません。".to_string(),
             retry_possible: false,
         });
@@ -593,7 +586,7 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
         url_parts[url_parts.len() - 3..].join("/")
     } else {
         return Err(AppError::InvalidFileFormat {
-            details: format!("URLからファイルキーを抽出できません: {}", receipt_url),
+            details: format!("URLからファイルキーを抽出できません: {receipt_url}"),
             user_message: "領収書URLからファイル情報を取得できませんでした。".to_string(),
             retry_possible: false,
         });
@@ -617,8 +610,7 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
                         Ok(file_data) => {
                             if attempts > 0 {
                                 info!(
-                                    "リトライ後にダウンロード成功: file_key={}, attempts={}",
-                                    file_key, attempts
+                                    "リトライ後にダウンロード成功: file_key={file_key}, attempts={attempts}"
                                 );
                             }
                             return Ok(file_data.to_vec());
@@ -627,13 +619,12 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
                             if attempts < MAX_RETRIES {
                                 attempts += 1;
                                 let delay = Duration::from_secs(2_u64.pow(attempts));
-                                warn!("ファイルデータ取得失敗、リトライします: file_key={}, attempt={}/{}, delay={:?}s", 
-                                      file_key, attempts, MAX_RETRIES, delay);
+                                warn!("ファイルデータ取得失敗、リトライします: file_key={file_key}, attempt={attempts}/{MAX_RETRIES}, delay={delay:?}s");
                                 tokio::time::sleep(delay).await;
                                 continue;
                             } else {
                                 return Err(AppError::DownloadFailed {
-                                    details: format!("ファイルデータの取得に失敗しました: {}", e),
+                                    details: format!("ファイルデータの取得に失敗しました: {e}"),
                                     user_message: "ファイルのダウンロード中にエラーが発生しました。しばらく時間をおいて再試行してください。".to_string(),
                                     retry_possible: true,
                                 });
@@ -642,7 +633,7 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
                     }
                 } else if response.status().as_u16() == 404 {
                     return Err(AppError::FileNotFound {
-                        details: format!("ファイルが見つかりません: {}", file_key),
+                        details: format!("ファイルが見つかりません: {file_key}"),
                         user_message: "指定された領収書ファイルが見つかりません。ファイルが削除されている可能性があります。".to_string(),
                         retry_possible: false,
                     });
@@ -659,14 +650,13 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
                     attempts += 1;
                     let delay = Duration::from_secs(2_u64.pow(attempts));
                     warn!(
-                        "ダウンロード失敗、リトライします: file_key={}, attempt={}/{}, delay={:?}s",
-                        file_key, attempts, MAX_RETRIES, delay
+                        "ダウンロード失敗、リトライします: file_key={file_key}, attempt={attempts}/{MAX_RETRIES}, delay={delay:?}s"
                     );
                     tokio::time::sleep(delay).await;
                     continue;
                 } else {
                     return Err(AppError::NetworkError {
-                        details: format!("ファイルダウンロードに失敗しました: {}", e),
+                        details: format!("ファイルダウンロードに失敗しました: {e}"),
                         user_message: "ネットワークエラーが発生しました。インターネット接続を確認してください。".to_string(),
                         retry_possible: true,
                     });
@@ -692,12 +682,12 @@ async fn download_from_r2(receipt_url: &str) -> Result<Vec<u8>, String> {
 
     // R2設定を読み込み
     let config =
-        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {e}"))?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config)
         .await
-        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
+        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {e}"))?;
 
     // ファイルキーを抽出（receipts/expense_id/filename形式を想定）
     let file_key = if url_parts.len() >= 6 {
@@ -711,7 +701,7 @@ async fn download_from_r2(receipt_url: &str) -> Result<Vec<u8>, String> {
     let presigned_url = client
         .generate_presigned_url(&file_key, Duration::from_secs(3600))
         .await
-        .map_err(|e| format!("Presigned URL生成に失敗しました: {}", e))?;
+        .map_err(|e| format!("Presigned URL生成に失敗しました: {e}"))?;
 
     // リトライ機能付きでHTTPクライアントでファイルをダウンロード
     let mut attempts = 0;
@@ -730,7 +720,7 @@ async fn download_from_r2(receipt_url: &str) -> Result<Vec<u8>, String> {
                                 tokio::time::sleep(delay).await;
                                 continue;
                             } else {
-                                return Err(format!("ファイルデータの取得に失敗しました: {}", e));
+                                return Err(format!("ファイルデータの取得に失敗しました: {e}"));
                             }
                         }
                     }
@@ -747,7 +737,7 @@ async fn download_from_r2(receipt_url: &str) -> Result<Vec<u8>, String> {
                     tokio::time::sleep(delay).await;
                     continue;
                 } else {
-                    return Err(format!("ファイルダウンロードに失敗しました: {}", e));
+                    return Err(format!("ファイルダウンロードに失敗しました: {e}"));
                 }
             }
         }
@@ -769,12 +759,12 @@ pub async fn delete_receipt_from_r2(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    info!("R2からの領収書削除を開始します: expense_id={}", expense_id);
+    info!("R2からの領収書削除を開始します: expense_id={expense_id}");
 
     let security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "receipt_delete_started",
-        &format!("expense_id={}", expense_id),
+        &format!("expense_id={expense_id}"),
     );
 
     // 統一エラーハンドリングを使用して削除処理を実行
@@ -782,10 +772,10 @@ pub async fn delete_receipt_from_r2(
 
     match result {
         Ok(success) => {
-            info!("領収書削除成功: expense_id={}", expense_id);
+            info!("領収書削除成功: expense_id={expense_id}");
             security_manager.log_security_event(
                 "receipt_delete_success",
-                &format!("expense_id={}", expense_id),
+                &format!("expense_id={expense_id}"),
             );
             Ok(success)
         }
@@ -805,7 +795,7 @@ async fn delete_receipt_internal(
     // 現在のreceipt_urlを取得
     let current_receipt_url = {
         let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-            details: format!("データベースロック取得エラー: {}", e),
+            details: format!("データベースロック取得エラー: {e}"),
             user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
             retry_possible: true,
         })?;
@@ -820,7 +810,7 @@ async fn delete_receipt_internal(
             .path()
             .app_data_dir()
             .map_err(|e| AppError::InternalError {
-                details: format!("アプリデータディレクトリの取得に失敗しました: {}", e),
+                details: format!("アプリデータディレクトリの取得に失敗しました: {e}"),
                 user_message: "アプリケーションの設定取得中にエラーが発生しました。".to_string(),
                 retry_possible: false,
             })?;
@@ -832,25 +822,25 @@ async fn delete_receipt_internal(
         // 1. R2からファイルを削除
         delete_from_r2_with_retry_internal(&receipt_url).await?;
 
-        info!("R2からのファイル削除が成功しました: {}", receipt_url);
+        info!("R2からのファイル削除が成功しました: {receipt_url}");
 
         // 2. キャッシュからも削除（エラーは無視）
         {
             let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-                details: format!("キャッシュ削除時のデータベースロック取得エラー: {}", e),
+                details: format!("キャッシュ削除時のデータベースロック取得エラー: {e}"),
                 user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
                 retry_possible: true,
             })?;
 
             if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
-                warn!("キャッシュ削除エラー（無視して続行）: {}", e);
+                warn!("キャッシュ削除エラー（無視して続行）: {e}");
             }
         }
 
         // 3. データベースからreceipt_urlを削除
         {
             let db = state.db.lock().map_err(|e| AppError::DatabaseError {
-                details: format!("データベースロック取得エラー: {}", e),
+                details: format!("データベースロック取得エラー: {e}"),
                 user_message: "データベースへのアクセス中にエラーが発生しました。".to_string(),
                 retry_possible: true,
             })?;
@@ -862,23 +852,20 @@ async fn delete_receipt_internal(
         // 削除操作のログ記録
         let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
         info!(
-            "領収書削除完了: expense_id={}, receipt_url={}, timestamp={}",
-            expense_id, receipt_url, now
+            "領収書削除完了: expense_id={expense_id}, receipt_url={receipt_url}, timestamp={now}"
         );
 
         let security_manager = SecurityManager::new();
         security_manager.log_security_event(
             "receipt_delete_completed",
             &format!(
-                "expense_id={}, receipt_url={}, timestamp={}",
-                expense_id, receipt_url, now
+                "expense_id={expense_id}, receipt_url={receipt_url}, timestamp={now}"
             ),
         );
     } else {
         // receipt_urlが存在しない場合は何もしない
         info!(
-            "削除対象の領収書URLが存在しません: expense_id={}",
-            expense_id
+            "削除対象の領収書URLが存在しません: expense_id={expense_id}"
         );
     }
 
@@ -891,7 +878,7 @@ async fn delete_from_r2_with_retry_internal(receipt_url: &str) -> Result<(), App
     let url_parts: Vec<&str> = receipt_url.split('/').collect();
     if url_parts.len() < 4 {
         return Err(AppError::InvalidFileFormat {
-            details: format!("無効なreceipt_URL形式: {}", receipt_url),
+            details: format!("無効なreceipt_URL形式: {receipt_url}"),
             user_message: "領収書URLの形式が正しくありません。".to_string(),
             retry_possible: false,
         });
@@ -902,7 +889,7 @@ async fn delete_from_r2_with_retry_internal(receipt_url: &str) -> Result<(), App
         url_parts[url_parts.len() - 3..].join("/")
     } else {
         return Err(AppError::InvalidFileFormat {
-            details: format!("URLからファイルキーを抽出できません: {}", receipt_url),
+            details: format!("URLからファイルキーを抽出できません: {receipt_url}"),
             user_message: "領収書URLからファイル情報を取得できませんでした。".to_string(),
             retry_possible: false,
         });
@@ -923,8 +910,7 @@ async fn delete_from_r2_with_retry_internal(receipt_url: &str) -> Result<(), App
             Ok(_) => {
                 if attempts > 0 {
                     info!(
-                        "リトライ後にR2削除成功: file_key={}, attempts={}",
-                        file_key, attempts
+                        "リトライ後にR2削除成功: file_key={file_key}, attempts={attempts}"
                     );
                 }
                 return Ok(());
@@ -934,8 +920,7 @@ async fn delete_from_r2_with_retry_internal(receipt_url: &str) -> Result<(), App
                     attempts += 1;
                     let delay = Duration::from_secs(2_u64.pow(attempts));
                     warn!(
-                        "R2削除失敗、リトライします: file_key={}, attempt={}/{}, delay={:?}s",
-                        file_key, attempts, MAX_RETRIES, delay
+                        "R2削除失敗、リトライします: file_key={file_key}, attempt={attempts}/{MAX_RETRIES}, delay={delay:?}s"
                     );
 
                     tokio::time::sleep(delay).await;
@@ -976,12 +961,12 @@ pub async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> 
 
     // R2設定を読み込み
     let config =
-        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {e}"))?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config)
         .await
-        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {}", e))?;
+        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {e}"))?;
 
     // リトライ機能付きでR2からファイルを削除
     let mut attempts = 0;
@@ -997,7 +982,7 @@ pub async fn delete_from_r2_with_retry(receipt_url: &str) -> Result<(), String> 
                     tokio::time::sleep(delay).await;
                     continue;
                 } else {
-                    return Err(format!("R2削除エラー（最大リトライ回数に到達）: {}", e));
+                    return Err(format!("R2削除エラー（最大リトライ回数に到達）: {e}"));
                 }
             }
         }
@@ -1020,24 +1005,24 @@ pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, Str
 
     // 環境変数からR2設定を読み込み
     let config = R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {}", e);
-        error!("{}", error_msg);
+        let error_msg = format!("R2設定の読み込みに失敗しました: {e}");
+        error!("{error_msg}");
         security_manager.log_security_event("r2_config_load_failed", &error_msg);
         error_msg
     })?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config).await.map_err(|e| {
-        let error_msg = format!("R2クライアントの初期化に失敗しました: {}", e);
-        error!("{}", error_msg);
+        let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
+        error!("{error_msg}");
         security_manager.log_security_event("r2_client_init_failed", &error_msg);
         error_msg
     })?;
 
     // 接続テストを実行
     client.test_connection().await.map_err(|e| {
-        let error_msg = format!("R2接続テストに失敗しました: {}", e);
-        error!("{}", error_msg);
+        let error_msg = format!("R2接続テストに失敗しました: {e}");
+        error!("{error_msg}");
         security_manager.log_security_event("r2_connection_test_failed", &error_msg);
         error_msg
     })?;
@@ -1071,7 +1056,7 @@ pub async fn get_receipt_offline(
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {e}"))?;
 
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
@@ -1081,7 +1066,7 @@ pub async fn get_receipt_offline(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+            .map_err(|e| format!("データベースロックエラー: {e}"))?;
         cache_manager.get_offline_cached_file(&receipt_url, &db)
     };
 
@@ -1096,7 +1081,7 @@ pub async fn get_receipt_offline(
             Err("オフライン時：領収書がキャッシュに見つかりません。オンライン時に一度表示してください。".to_string())
         }
         Err(e) => {
-            Err(format!("キャッシュ取得エラー: {}", e))
+            Err(format!("キャッシュ取得エラー: {e}"))
         }
     }
 }
@@ -1118,7 +1103,7 @@ pub async fn sync_cache_on_online(
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {e}"))?;
 
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
@@ -1128,21 +1113,20 @@ pub async fn sync_cache_on_online(
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+            .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
         // 古いキャッシュをクリーンアップ
         let cleaned_count = cache_manager
             .cleanup_old_cache(&db)
-            .map_err(|e| format!("キャッシュクリーンアップエラー: {}", e))?;
+            .map_err(|e| format!("キャッシュクリーンアップエラー: {e}"))?;
 
         // キャッシュサイズを管理
         cache_manager
             .manage_cache_size(&db)
-            .map_err(|e| format!("キャッシュサイズ管理エラー: {}", e))?;
+            .map_err(|e| format!("キャッシュサイズ管理エラー: {e}"))?;
 
         println!(
-            "キャッシュ同期完了: {}個のファイルをクリーンアップしました",
-            cleaned_count
+            "キャッシュ同期完了: {cleaned_count}個のファイルをクリーンアップしました"
         );
 
         Ok(cleaned_count)
@@ -1150,7 +1134,7 @@ pub async fn sync_cache_on_online(
 
     match sync_result {
         Ok(synced_count) => Ok(synced_count),
-        Err(e) => Err(format!("キャッシュ同期エラー: {}", e)),
+        Err(e) => Err(format!("キャッシュ同期エラー: {e}")),
     }
 }
 
@@ -1171,7 +1155,7 @@ pub async fn get_cache_stats(
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリの取得に失敗しました: {e}"))?;
 
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = crate::services::cache_manager::CacheManager::new(cache_dir, 100);
@@ -1179,18 +1163,18 @@ pub async fn get_cache_stats(
     // キャッシュサイズを計算（同期版を使用）
     let current_size = cache_manager
         .calculate_cache_size_sync()
-        .map_err(|e| format!("キャッシュサイズ計算エラー: {}", e))?;
+        .map_err(|e| format!("キャッシュサイズ計算エラー: {e}"))?;
 
     // データベースからキャッシュ数を取得
     let cache_count = {
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+            .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
         let count: i64 = db
             .query_row("SELECT COUNT(*) FROM receipt_cache", [], |row| row.get(0))
-            .map_err(|e| format!("キャッシュ数取得エラー: {}", e))?;
+            .map_err(|e| format!("キャッシュ数取得エラー: {e}"))?;
 
         count as usize
     };
@@ -1276,17 +1260,17 @@ pub async fn upload_multiple_receipts_to_r2(
 
     // R2設定を読み込み
     let config = R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {}", e);
-        error!("{}", error_msg);
-        security_manager.log_security_event("r2_config_load_failed", &format!("error={:?}", e));
+        let error_msg = format!("R2設定の読み込みに失敗しました: {e}");
+        error!("{error_msg}");
+        security_manager.log_security_event("r2_config_load_failed", &format!("error={e:?}"));
         error_msg
     })?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config).await.map_err(|e| {
-        let error_msg = format!("R2クライアントの初期化に失敗しました: {}", e);
-        error!("{}", error_msg);
-        security_manager.log_security_event("r2_client_init_failed", &format!("error={}", e));
+        let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
+        error!("{error_msg}");
+        security_manager.log_security_event("r2_client_init_failed", &format!("error={e}"));
         error_msg
     })?;
 
@@ -1310,7 +1294,7 @@ pub async fn upload_multiple_receipts_to_r2(
 
         // ファイル形式の事前検証
         if let Err(e) = R2Client::validate_file_format(filename) {
-            warn!("ファイル形式エラー: {} - {}", filename, e);
+            warn!("ファイル形式エラー: {filename} - {e}");
             continue;
         }
 
@@ -1323,7 +1307,7 @@ pub async fn upload_multiple_receipts_to_r2(
         })?;
 
         if let Err(e) = R2Client::validate_file_size(metadata.len()) {
-            warn!("ファイルサイズエラー: {} - {}", filename, e);
+            warn!("ファイルサイズエラー: {filename} - {e}");
             continue;
         }
 
@@ -1358,7 +1342,7 @@ pub async fn upload_multiple_receipts_to_r2(
     // プログレス受信タスクを起動（バックグラウンドで実行）
     tokio::spawn(async move {
         while let Some(progress) = progress_rx.recv().await {
-            debug!("アップロードプログレス: {:?}", progress);
+            debug!("アップロードプログレス: {progress:?}");
             // 必要に応じてフロントエンドに通知
         }
     });
@@ -1373,9 +1357,9 @@ pub async fn upload_multiple_receipts_to_r2(
         )
         .await
         .map_err(|e| {
-            let error_msg = format!("並列アップロードに失敗しました: {}", e);
-            error!("{}", error_msg);
-            security_manager.log_security_event("parallel_upload_failed", &format!("error={}", e));
+            let error_msg = format!("並列アップロードに失敗しました: {e}");
+            error!("{error_msg}");
+            security_manager.log_security_event("parallel_upload_failed", &format!("error={e}"));
             error_msg
         })?;
 
@@ -1391,7 +1375,7 @@ pub async fn upload_multiple_receipts_to_r2(
                 let db = state
                     .db
                     .lock()
-                    .map_err(|e| format!("データベースロックエラー: {}", e))?;
+                    .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
                 if let Err(e) =
                     expense_operations::set_receipt_url(&db, upload_file.expense_id, url.clone())
@@ -1405,7 +1389,7 @@ pub async fn upload_multiple_receipts_to_r2(
                         expense_id: upload_file.expense_id,
                         success: false,
                         url: None,
-                        error: Some(format!("データベース保存エラー: {}", e)),
+                        error: Some(format!("データベース保存エラー: {e}")),
                         file_size: upload_result.file_size,
                         duration_ms: upload_result.duration.as_millis() as u64,
                     });
@@ -1437,8 +1421,7 @@ pub async fn upload_multiple_receipts_to_r2(
     let total_duration = start_time.elapsed();
 
     info!(
-        "複数ファイル並列アップロード完了: 成功={}, 失敗={}, 総時間={:?}",
-        successful_uploads, failed_uploads, total_duration
+        "複数ファイル並列アップロード完了: 成功={successful_uploads}, 失敗={failed_uploads}, 総時間={total_duration:?}"
     );
 
     security_manager.log_security_event(
@@ -1471,7 +1454,7 @@ pub async fn upload_multiple_receipts_to_r2(
 #[tauri::command]
 pub async fn cancel_upload(upload_id: String) -> Result<bool, String> {
     // 現在の実装では簡単なログ出力のみ
-    info!("アップロードキャンセル要求: upload_id={}", upload_id);
+    info!("アップロードキャンセル要求: upload_id={upload_id}");
 
     // 将来的にはアクティブなアップロードタスクを管理し、
     // キャンセルトークンを使用してタスクを停止する実装を追加
@@ -1500,17 +1483,17 @@ pub async fn get_r2_performance_stats(
 
     // R2設定を読み込み
     let config = R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {}", e);
-        error!("{}", error_msg);
-        security_manager.log_security_event("r2_config_load_failed", &format!("error={:?}", e));
+        let error_msg = format!("R2設定の読み込みに失敗しました: {e}");
+        error!("{error_msg}");
+        security_manager.log_security_event("r2_config_load_failed", &format!("error={e:?}"));
         error_msg
     })?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config).await.map_err(|e| {
-        let error_msg = format!("R2クライアントの初期化に失敗しました: {}", e);
-        error!("{}", error_msg);
-        security_manager.log_security_event("r2_client_init_failed", &format!("error={}", e));
+        let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
+        error!("{error_msg}");
+        security_manager.log_security_event("r2_client_init_failed", &format!("error={e}"));
         error_msg
     })?;
 
@@ -1534,10 +1517,10 @@ pub async fn get_r2_performance_stats(
         .get_performance_stats_with_cache(connection_cache)
         .await
         .map_err(|e| {
-            let error_msg = format!("パフォーマンス統計の取得に失敗しました: {}", e);
-            error!("{}", error_msg);
+            let error_msg = format!("パフォーマンス統計の取得に失敗しました: {e}");
+            error!("{error_msg}");
             security_manager
-                .log_security_event("performance_stats_failed", &format!("error={}", e));
+                .log_security_event("performance_stats_failed", &format!("error={e}"));
             error_msg
         })?;
 
@@ -1719,7 +1702,7 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+            .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
         // 領収書数を取得
         let total_receipts: i64 = db
@@ -1728,7 +1711,7 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
                 [],
                 |row| row.get(0),
             )
-            .map_err(|e| format!("領収書数取得エラー: {}", e))?;
+            .map_err(|e| format!("領収書数取得エラー: {e}"))?;
 
         // 今月のアップロード数を取得（JSTベース）
         let now_jst = Utc::now().with_timezone(&Tokyo);
@@ -1737,10 +1720,10 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
         let monthly_uploads: i64 = db
             .query_row(
                 "SELECT COUNT(*) FROM expenses WHERE receipt_url IS NOT NULL AND receipt_url != '' AND date LIKE ?",
-                [format!("{}%", current_month)],
+                [format!("{current_month}%")],
                 |row| row.get(0),
             )
-            .map_err(|e| format!("月間アップロード数取得エラー: {}", e))?;
+            .map_err(|e| format!("月間アップロード数取得エラー: {e}"))?;
 
         // 今日のアップロード数を取得（JSTベース）
         let today = now_jst.format("%Y-%m-%d").to_string();
@@ -1751,7 +1734,7 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
                 [today],
                 |row| row.get(0),
             )
-            .map_err(|e| format!("日間アップロード数取得エラー: {}", e))?;
+            .map_err(|e| format!("日間アップロード数取得エラー: {e}"))?;
 
         (
             total_receipts as u64,
@@ -1763,7 +1746,7 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
     // キャッシュ統計を取得（簡易実装）
     let cache_stats = {
         let app_data_dir = std::env::var("APPDATA")
-            .or_else(|_| std::env::var("HOME").map(|h| format!("{}/.local/share", h)))
+            .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/.local/share")))
             .unwrap_or_else(|_| "/tmp".to_string());
 
         let cache_dir = std::path::PathBuf::from(app_data_dir).join("receipt_cache");
@@ -1774,7 +1757,7 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
                 let db = state
                     .db
                     .lock()
-                    .map_err(|e| format!("データベースロックエラー: {}", e))?;
+                    .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
                 let cache_count: i64 = db
                     .query_row("SELECT COUNT(*) FROM receipt_cache", [], |row| row.get(0))
@@ -1788,7 +1771,7 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
                 })
             }
             Err(e) => {
-                warn!("キャッシュ統計取得エラー: {}", e);
+                warn!("キャッシュ統計取得エラー: {e}");
                 None
             }
         }
@@ -1796,7 +1779,7 @@ pub async fn get_r2_usage_monitoring(state: State<'_, AppState>) -> Result<R2Usa
 
     // R2設定情報を取得
     let config =
-        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {}", e))?;
+        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {e}"))?;
 
     // 推定ストレージ使用量を計算（概算）
     let estimated_storage_mb = db_stats.0 * 2; // 1ファイル平均2MBと仮定
@@ -1870,7 +1853,7 @@ pub async fn get_r2_debug_info(state: State<'_, AppState>) -> Result<R2DebugInfo
     let config_info = match R2Config::from_env() {
         Ok(config) => Some(config.get_debug_info()),
         Err(e) => {
-            warn!("R2設定取得エラー: {}", e);
+            warn!("R2設定取得エラー: {e}");
             None
         }
     };
@@ -1883,9 +1866,9 @@ pub async fn get_r2_debug_info(state: State<'_, AppState>) -> Result<R2DebugInfo
         let db = state
             .db
             .lock()
-            .map_err(|e| format!("データベースロックエラー: {}", e))?;
+            .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-        get_database_stats(&db).map_err(|e| format!("データベース統計取得エラー: {}", e))?
+        get_database_stats(&db).map_err(|e| format!("データベース統計取得エラー: {e}"))?
     };
 
     // 最近のエラーログを取得（セキュリティログから）
@@ -1927,14 +1910,14 @@ async fn test_config_validation() -> TestStepResult {
             },
             Err(e) => TestStepResult {
                 success: false,
-                message: format!("設定検証エラー: {}", e),
+                message: format!("設定検証エラー: {e}"),
                 duration_ms: start_time.elapsed().as_millis() as u64,
                 details: None,
             },
         },
         Err(e) => TestStepResult {
             success: false,
-            message: format!("設定読み込みエラー: {}", e),
+            message: format!("設定読み込みエラー: {e}"),
             duration_ms: start_time.elapsed().as_millis() as u64,
             details: None,
         },
@@ -1959,7 +1942,7 @@ async fn test_client_initialization() -> (TestStepResult, Option<R2Client>) {
             Err(e) => (
                 TestStepResult {
                     success: false,
-                    message: format!("クライアント初期化エラー: {}", e),
+                    message: format!("クライアント初期化エラー: {e}"),
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     details: None,
                 },
@@ -1969,7 +1952,7 @@ async fn test_client_initialization() -> (TestStepResult, Option<R2Client>) {
         Err(e) => (
             TestStepResult {
                 success: false,
-                message: format!("設定読み込みエラー: {}", e),
+                message: format!("設定読み込みエラー: {e}"),
                 duration_ms: start_time.elapsed().as_millis() as u64,
                 details: None,
             },
@@ -1991,7 +1974,7 @@ async fn test_bucket_access(client: &R2Client) -> TestStepResult {
         },
         Err(e) => TestStepResult {
             success: false,
-            message: format!("バケットアクセスエラー: {}", e),
+            message: format!("バケットアクセスエラー: {e}"),
             duration_ms: start_time.elapsed().as_millis() as u64,
             details: None,
         },
@@ -2015,14 +1998,14 @@ async fn test_upload_functionality(client: &R2Client) -> (TestStepResult, Option
                 success: true,
                 message: "アップロードテスト成功".to_string(),
                 duration_ms: start_time.elapsed().as_millis() as u64,
-                details: Some(format!("テストファイルがアップロードされました: {}", url)),
+                details: Some(format!("テストファイルがアップロードされました: {url}")),
             },
             Some(test_key),
         ),
         Err(e) => (
             TestStepResult {
                 success: false,
-                message: format!("アップロードテストエラー: {}", e),
+                message: format!("アップロードテストエラー: {e}"),
                 duration_ms: start_time.elapsed().as_millis() as u64,
                 details: None,
             },
@@ -2063,7 +2046,7 @@ async fn test_download_functionality(client: &R2Client, test_key: &str) -> TestS
                 }
                 Err(e) => TestStepResult {
                     success: false,
-                    message: format!("ダウンロードリクエストエラー: {}", e),
+                    message: format!("ダウンロードリクエストエラー: {e}"),
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     details: None,
                 },
@@ -2071,7 +2054,7 @@ async fn test_download_functionality(client: &R2Client, test_key: &str) -> TestS
         }
         Err(e) => TestStepResult {
             success: false,
-            message: format!("Presigned URL生成エラー: {}", e),
+            message: format!("Presigned URL生成エラー: {e}"),
             duration_ms: start_time.elapsed().as_millis() as u64,
             details: None,
         },
@@ -2091,7 +2074,7 @@ async fn test_delete_functionality(client: &R2Client, test_key: &str) -> TestSte
         },
         Err(e) => TestStepResult {
             success: false,
-            message: format!("削除テストエラー: {}", e),
+            message: format!("削除テストエラー: {e}"),
             duration_ms: start_time.elapsed().as_millis() as u64,
             details: None,
         },

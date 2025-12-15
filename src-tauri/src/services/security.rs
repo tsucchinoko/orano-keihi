@@ -13,6 +13,12 @@ pub struct SecureCredentials {
     actual_credentials: HashMap<String, String>,
 }
 
+impl Default for SecureCredentials {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecureCredentials {
     /// 新しいSecureCredentialsインスタンスを作成
     pub fn new() -> Self {
@@ -74,13 +80,13 @@ impl SecureCredentials {
         for key in &required_keys {
             if let Some(value) = self.actual_credentials.get(*key) {
                 if value.is_empty() {
-                    let error_msg = format!("必須の認証情報が空です: {}", key);
-                    error!("{}", error_msg);
+                    let error_msg = format!("必須の認証情報が空です: {key}");
+                    error!("{error_msg}");
                     return Err(error_msg);
                 }
             } else {
-                let error_msg = format!("必須の認証情報が見つかりません: {}", key);
-                error!("{}", error_msg);
+                let error_msg = format!("必須の認証情報が見つかりません: {key}");
+                error!("{error_msg}");
                 return Err(error_msg);
             }
         }
@@ -115,8 +121,7 @@ impl EnvironmentConfig {
         });
 
         info!(
-            "環境設定を読み込みました: environment={}, debug_mode={}, log_level={}",
-            environment, debug_mode, log_level
+            "環境設定を読み込みました: environment={environment}, debug_mode={debug_mode}, log_level={log_level}"
         );
 
         Self {
@@ -147,6 +152,12 @@ impl EnvironmentConfig {
 pub struct SecurityManager {
     credentials: SecureCredentials,
     env_config: EnvironmentConfig,
+}
+
+impl Default for SecurityManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SecurityManager {
@@ -216,7 +227,7 @@ impl SecurityManager {
         info.insert("target_arch".to_string(), env::consts::ARCH.to_string());
         info.insert("target_os".to_string(), env::consts::OS.to_string());
 
-        debug!("診断情報を生成しました: {:?}", info);
+        debug!("診断情報を生成しました: {info:?}");
         info
     }
 
@@ -230,7 +241,7 @@ impl SecurityManager {
         // 環境設定の検証
         if self.env_config.environment.is_empty() {
             let error_msg = "環境設定が空です".to_string();
-            error!("{}", error_msg);
+            error!("{error_msg}");
             return Err(error_msg);
         }
 
@@ -242,8 +253,7 @@ impl SecurityManager {
     pub fn log_security_event(&self, event_type: &str, details: &str) {
         let masked_info = self.credentials.get_all_masked();
         warn!(
-            "セキュリティイベント: type={}, details={}, credentials={:?}",
-            event_type, details, masked_info
+            "セキュリティイベント: type={event_type}, details={details}, credentials={masked_info:?}"
         );
     }
 
@@ -352,8 +362,8 @@ mod tests {
             "access_key=AKIAIOSFODNN7EXAMPLE secret_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
         let masked = LogFilter::mask_sensitive_data(message);
 
-        println!("Original: {}", message);
-        println!("Masked: {}", masked);
+        println!("Original: {message}");
+        println!("Masked: {masked}");
 
         // secret_keyは正しくマスクされることを確認
         assert!(masked.contains("secret_key: ****"));

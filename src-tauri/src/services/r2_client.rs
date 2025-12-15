@@ -91,8 +91,8 @@ impl R2Client {
 
         // 設定を検証
         config.validate().map_err(|e| {
-            error!("R2設定の検証に失敗しました: {:?}", e);
-            security_manager.log_security_event("config_validation_failed", &format!("{:?}", e));
+            error!("R2設定の検証に失敗しました: {e:?}");
+            security_manager.log_security_event("config_validation_failed", &format!("{e:?}"));
             R2Error::InvalidCredentials
         })?;
 
@@ -107,7 +107,7 @@ impl R2Client {
             config.endpoint_url()
         );
         let aws_config = aws_config::defaults(BehaviorVersion::latest())
-            .endpoint_url(&config.endpoint_url())
+            .endpoint_url(config.endpoint_url())
             .region(Region::new(config.region.clone()))
             .credentials_provider(SharedCredentialsProvider::new(credentials))
             .load()
@@ -120,12 +120,11 @@ impl R2Client {
         let bucket_name = config.get_environment_bucket_name();
 
         info!(
-            "R2クライアントの初期化が完了しました。バケット: {}",
-            bucket_name
+            "R2クライアントの初期化が完了しました。バケット: {bucket_name}"
         );
         security_manager.log_security_event(
             "r2_client_init_success",
-            &format!("バケット: {}", bucket_name),
+            &format!("バケット: {bucket_name}"),
         );
 
         Ok(Self {
@@ -144,8 +143,7 @@ impl R2Client {
     ) -> Result<String, R2Error> {
         let file_size = file_data.len();
         info!(
-            "ファイルアップロード開始: key={}, size={} bytes, content_type={}",
-            key, file_size, content_type
+            "ファイルアップロード開始: key={key}, size={file_size} bytes, content_type={content_type}"
         );
 
         let start_time = std::time::Instant::now();
@@ -161,20 +159,20 @@ impl R2Client {
             .await
             .map_err(|e| {
                 // 詳細なエラー情報を取得
-                let error_msg = format!("アップロードエラー: {}", e);
-                let error_debug = format!("Debug: {:?}", e);
+                let error_msg = format!("アップロードエラー: {e}");
+                let error_debug = format!("Debug: {e:?}");
 
                 error!(
                     "ファイルアップロード失敗: key={}, bucket={}, error={}",
                     key, self.bucket_name, error_msg
                 );
-                error!("詳細エラー情報: {}", error_debug);
+                error!("詳細エラー情報: {error_debug}");
 
                 // セキュリティログ記録
                 let security_manager = SecurityManager::new();
                 security_manager.log_security_event(
                     "upload_failed",
-                    &format!("key={}, error={}", key, error_msg),
+                    &format!("key={key}, error={error_msg}"),
                 );
 
                 R2Error::UploadFailed(error_msg)
@@ -191,15 +189,14 @@ impl R2Client {
         );
 
         info!(
-            "ファイルアップロード成功: key={}, url={}, duration={:?}",
-            key, url, duration
+            "ファイルアップロード成功: key={key}, url={url}, duration={duration:?}"
         );
 
         // セキュリティログ記録
         let security_manager = SecurityManager::new();
         security_manager.log_security_event(
             "upload_success",
-            &format!("key={}, size={} bytes", key, file_size),
+            &format!("key={key}, size={file_size} bytes"),
         );
 
         Ok(url)
@@ -215,8 +212,7 @@ impl R2Client {
     ) -> Result<String, R2Error> {
         let mut attempts = 0;
         info!(
-            "リトライ機能付きアップロード開始: key={}, max_retries={}",
-            key, max_retries
+            "リトライ機能付きアップロード開始: key={key}, max_retries={max_retries}"
         );
 
         loop {
@@ -224,8 +220,7 @@ impl R2Client {
                 Ok(url) => {
                     if attempts > 0 {
                         info!(
-                            "リトライ後にアップロード成功: key={}, attempts={}",
-                            key, attempts
+                            "リトライ後にアップロード成功: key={key}, attempts={attempts}"
                         );
                     }
                     return Ok(url);
@@ -235,8 +230,7 @@ impl R2Client {
                     // 指数バックオフ（2^attempts秒待機）
                     let delay = Duration::from_secs(2_u64.pow(attempts));
                     warn!(
-                        "アップロード失敗、リトライします: key={}, attempt={}/{}, delay={:?}s",
-                        key, attempts, max_retries, delay
+                        "アップロード失敗、リトライします: key={key}, attempt={attempts}/{max_retries}, delay={delay:?}s"
                     );
 
                     tokio::time::sleep(delay).await;
@@ -269,7 +263,7 @@ impl R2Client {
         expires_in: Duration,
     ) -> Result<String, R2Error> {
         let presigning_config = PresigningConfig::expires_in(expires_in)
-            .map_err(|e| R2Error::NetworkError(format!("Presigned URL設定エラー: {}", e)))?;
+            .map_err(|e| R2Error::NetworkError(format!("Presigned URL設定エラー: {e}")))?;
 
         let presigned_request = self
             .client
@@ -278,7 +272,7 @@ impl R2Client {
             .key(key)
             .presigned(presigning_config)
             .await
-            .map_err(|e| R2Error::NetworkError(format!("Presigned URL生成エラー: {}", e)))?;
+            .map_err(|e| R2Error::NetworkError(format!("Presigned URL生成エラー: {e}")))?;
 
         Ok(presigned_request.uri().to_string())
     }
@@ -291,7 +285,7 @@ impl R2Client {
             .key(key)
             .send()
             .await
-            .map_err(|e| R2Error::NetworkError(format!("削除エラー: {}", e)))?;
+            .map_err(|e| R2Error::NetworkError(format!("削除エラー: {e}")))?;
 
         Ok(())
     }
@@ -310,7 +304,7 @@ impl R2Client {
             .send()
             .await
             .map_err(|e| {
-                let error_msg = format!("接続テスト失敗: {}", e);
+                let error_msg = format!("接続テスト失敗: {e}");
                 error!(
                     "R2接続テスト失敗: bucket={}, error={}",
                     self.bucket_name, error_msg
@@ -353,10 +347,10 @@ impl R2Client {
         // 設定のデバッグ情報を追加
         let config_debug = self.config.get_debug_info();
         for (key, value) in config_debug {
-            info.insert(format!("config_{}", key), value);
+            info.insert(format!("config_{key}"), value);
         }
 
-        debug!("R2クライアント診断情報: {:?}", info);
+        debug!("R2クライアント診断情報: {info:?}");
         info
     }
 
@@ -365,8 +359,7 @@ impl R2Client {
         let timestamp = chrono::Utc::now().timestamp();
         let uuid = uuid::Uuid::new_v4();
         format!(
-            "receipts/{}/{}-{}-{}",
-            expense_id, timestamp, uuid, filename
+            "receipts/{expense_id}/{timestamp}-{uuid}-{filename}"
         )
     }
 
@@ -570,13 +563,13 @@ impl R2Client {
                 }
                 Ok(Err(e)) => {
                     failed_uploads += 1;
-                    error!("アップロードタスクエラー: {}", e);
+                    error!("アップロードタスクエラー: {e}");
                     return Err(e);
                 }
                 Err(e) => {
                     failed_uploads += 1;
-                    error!("タスク実行エラー: {}", e);
-                    return Err(R2Error::UploadFailed(format!("タスク実行エラー: {}", e)));
+                    error!("タスク実行エラー: {e}");
+                    return Err(R2Error::UploadFailed(format!("タスク実行エラー: {e}")));
                 }
             }
         }
@@ -584,8 +577,7 @@ impl R2Client {
         let total_duration = start_time.elapsed();
 
         info!(
-            "並列アップロード完了: 成功={}, 失敗={}, 総時間={:?}",
-            successful_uploads, failed_uploads, total_duration
+            "並列アップロード完了: 成功={successful_uploads}, 失敗={failed_uploads}, 総時間={total_duration:?}"
         );
 
         // セキュリティログ記録
@@ -593,8 +585,7 @@ impl R2Client {
         security_manager.log_security_event(
             "parallel_upload_completed",
             &format!(
-                "total_files={}, successful={}, failed={}, duration={:?}",
-                total_files, successful_uploads, failed_uploads, total_duration
+                "total_files={total_files}, successful={successful_uploads}, failed={failed_uploads}, duration={total_duration:?}"
             ),
         );
 
@@ -716,8 +707,7 @@ impl R2Client {
         };
 
         info!(
-            "アップロード統計: サイズ={}bytes, 時間={:?}, 速度={}bps, 成功={}",
-            file_size, duration, speed_bps, success
+            "アップロード統計: サイズ={file_size}bytes, 時間={duration:?}, 速度={speed_bps}bps, 成功={success}"
         );
 
         // セキュリティログ記録
@@ -725,8 +715,7 @@ impl R2Client {
         security_manager.log_security_event(
             "upload_stats",
             &format!(
-                "size={}, duration={:?}, speed={}bps, success={}",
-                file_size, duration, speed_bps, success
+                "size={file_size}, duration={duration:?}, speed={speed_bps}bps, success={success}"
             ),
         );
     }

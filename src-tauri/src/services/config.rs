@@ -26,7 +26,7 @@ impl R2Config {
         // 設定の検証
         security_manager
             .validate_configuration()
-            .map_err(|e| ConfigError::LoadFailed(e))?;
+            .map_err(ConfigError::LoadFailed)?;
 
         let account_id = credentials
             .get_credential("R2_ACCOUNT_ID")
@@ -140,7 +140,7 @@ impl R2Config {
     /// R2エンドポイントURLを生成
     pub fn endpoint_url(&self) -> String {
         let url = format!("https://{}.r2.cloudflarestorage.com", self.account_id);
-        debug!("R2エンドポイントURL: {}", url);
+        debug!("R2エンドポイントURL: {url}");
         url
     }
 
@@ -150,7 +150,7 @@ impl R2Config {
         let bucket_name = self.bucket_name.clone();
 
         let env = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
-        info!("バケット名: {} (環境: {})", bucket_name, env);
+        info!("バケット名: {bucket_name} (環境: {env})");
         bucket_name
     }
 
@@ -165,7 +165,7 @@ impl R2Config {
         info.insert("region".to_string(), self.region.clone());
         info.insert("endpoint_url".to_string(), self.endpoint_url());
 
-        debug!("R2設定デバッグ情報: {:?}", info);
+        debug!("R2設定デバッグ情報: {info:?}");
         info
     }
 

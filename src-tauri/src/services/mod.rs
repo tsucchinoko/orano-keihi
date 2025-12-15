@@ -293,7 +293,7 @@ impl From<ConfigError> for AppError {
     fn from(error: ConfigError) -> Self {
         let (details, user_message) = match error {
             ConfigError::LoadFailed(msg) => (
-                format!("設定読み込みエラー: {}", msg),
+                format!("設定読み込みエラー: {msg}"),
                 "設定の読み込みに失敗しました。設定ファイルを確認してください。".to_string(),
             ),
             ConfigError::MissingAccountId => (
@@ -313,7 +313,7 @@ impl From<ConfigError> for AppError {
                 "クラウドストレージの設定が不完全です。管理者にお問い合わせください。".to_string(),
             ),
             ConfigError::EnvVarError(e) => (
-                format!("環境変数エラー: {}", e),
+                format!("環境変数エラー: {e}"),
                 "システム設定の読み込みに失敗しました。管理者にお問い合わせください。".to_string(),
             ),
         };
@@ -370,8 +370,7 @@ impl ErrorHandler {
     pub fn file_operation_error(operation: &str, path: &str, error: std::io::Error) -> AppError {
         AppError::FileOperationError {
             details: format!(
-                "ファイル操作「{}」が失敗しました: パス={}, エラー={}",
-                operation, path, error
+                "ファイル操作「{operation}」が失敗しました: パス={path}, エラー={error}"
             ),
             user_message: match error.kind() {
                 std::io::ErrorKind::NotFound => "指定されたファイルが見つかりません。".to_string(),
@@ -391,7 +390,7 @@ impl ErrorHandler {
     /// ファイル形式エラーを作成
     pub fn invalid_file_format_error(filename: &str, allowed_formats: &[&str]) -> AppError {
         AppError::InvalidFileFormat {
-            details: format!("無効なファイル形式: {}", filename),
+            details: format!("無効なファイル形式: {filename}"),
             user_message: format!(
                 "サポートされていないファイル形式です。対応形式: {}",
                 allowed_formats.join(", ")
@@ -404,8 +403,7 @@ impl ErrorHandler {
     pub fn file_size_error(size: u64, max_size: u64) -> AppError {
         AppError::FileSizeError {
             details: format!(
-                "ファイルサイズ超過: {}bytes (最大: {}bytes)",
-                size, max_size
+                "ファイルサイズ超過: {size}bytes (最大: {max_size}bytes)"
             ),
             user_message: format!(
                 "ファイルサイズが制限を超えています。最大サイズ: {}MB",
@@ -418,7 +416,7 @@ impl ErrorHandler {
     /// データベースエラーを作成
     pub fn database_error(operation: &str, error: rusqlite::Error) -> AppError {
         AppError::DatabaseError {
-            details: format!("データベース操作「{}」が失敗しました: {}", operation, error),
+            details: format!("データベース操作「{operation}」が失敗しました: {error}"),
             user_message:
                 "データベース操作中にエラーが発生しました。しばらく時間をおいて再試行してください。"
                     .to_string(),

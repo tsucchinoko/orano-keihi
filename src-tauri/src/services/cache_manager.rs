@@ -55,7 +55,7 @@ impl CacheManager {
     pub fn initialize_sync(&self) -> Result<(), CacheError> {
         if !self.cache_dir.exists() {
             std::fs::create_dir_all(&self.cache_dir).map_err(|e| {
-                CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {}", e))
+                CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {e}"))
             })?;
         }
         Ok(())
@@ -70,7 +70,7 @@ impl CacheManager {
             async_fs::create_dir_all(&self.cache_dir)
                 .await
                 .map_err(|e| {
-                    CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {}", e))
+                    CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {e}"))
                 })?;
         }
         Ok(())
@@ -100,7 +100,7 @@ impl CacheManager {
 
         // ファイルをキャッシュに保存
         std::fs::write(&cache_path, &data)
-            .map_err(|e| CacheError::WriteFailed(format!("ファイル書き込み失敗: {}", e)))?;
+            .map_err(|e| CacheError::WriteFailed(format!("ファイル書き込み失敗: {e}")))?;
 
         // データベースにキャッシュ情報を保存
         let local_path_str = cache_path
@@ -113,7 +113,7 @@ impl CacheManager {
             local_path_str,
             data.len() as i64,
         )
-        .map_err(|e| CacheError::DatabaseError(format!("データベース保存失敗: {}", e)))?;
+        .map_err(|e| CacheError::DatabaseError(format!("データベース保存失敗: {e}")))?;
 
         Ok(cache_path)
     }
@@ -143,7 +143,7 @@ impl CacheManager {
         // ファイルをキャッシュに保存
         async_fs::write(&cache_path, &data)
             .await
-            .map_err(|e| CacheError::WriteFailed(format!("ファイル書き込み失敗: {}", e)))?;
+            .map_err(|e| CacheError::WriteFailed(format!("ファイル書き込み失敗: {e}")))?;
 
         // データベースにキャッシュ情報を保存
         let local_path_str = cache_path
@@ -156,7 +156,7 @@ impl CacheManager {
             local_path_str,
             data.len() as i64,
         )
-        .map_err(|e| CacheError::DatabaseError(format!("データベース保存失敗: {}", e)))?;
+        .map_err(|e| CacheError::DatabaseError(format!("データベース保存失敗: {e}")))?;
 
         Ok(cache_path)
     }
@@ -176,7 +176,7 @@ impl CacheManager {
     ) -> Result<Option<Vec<u8>>, CacheError> {
         // データベースからキャッシュ情報を取得
         let cache_info = crate::db::expense_operations::get_receipt_cache(conn, receipt_url)
-            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {e}")))?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -186,18 +186,18 @@ impl CacheManager {
                 // アクセス時刻を更新
                 crate::db::expense_operations::update_cache_access_time(conn, receipt_url)
                     .map_err(|e| {
-                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {}", e))
+                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {e}"))
                     })?;
 
                 // ファイルを読み込み
                 let data = std::fs::read(cache_path)
-                    .map_err(|e| CacheError::ReadFailed(format!("ファイル読み込み失敗: {}", e)))?;
+                    .map_err(|e| CacheError::ReadFailed(format!("ファイル読み込み失敗: {e}")))?;
 
                 return Ok(Some(data));
             } else {
                 // ファイルが存在しない場合はキャッシュ情報を削除
                 crate::db::expense_operations::delete_receipt_cache(conn, receipt_url)
-                    .map_err(|e| CacheError::DatabaseError(format!("キャッシュ削除失敗: {}", e)))?;
+                    .map_err(|e| CacheError::DatabaseError(format!("キャッシュ削除失敗: {e}")))?;
             }
         }
 
@@ -219,7 +219,7 @@ impl CacheManager {
     ) -> Result<Option<Vec<u8>>, CacheError> {
         // データベースからキャッシュ情報を取得
         let cache_info = crate::db::expense_operations::get_receipt_cache(conn, receipt_url)
-            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {e}")))?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -229,19 +229,19 @@ impl CacheManager {
                 // アクセス時刻を更新
                 crate::db::expense_operations::update_cache_access_time(conn, receipt_url)
                     .map_err(|e| {
-                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {}", e))
+                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {e}"))
                     })?;
 
                 // ファイルを読み込み
                 let data = async_fs::read(cache_path)
                     .await
-                    .map_err(|e| CacheError::ReadFailed(format!("ファイル読み込み失敗: {}", e)))?;
+                    .map_err(|e| CacheError::ReadFailed(format!("ファイル読み込み失敗: {e}")))?;
 
                 return Ok(Some(data));
             } else {
                 // ファイルが存在しない場合はキャッシュ情報を削除
                 crate::db::expense_operations::delete_receipt_cache(conn, receipt_url)
-                    .map_err(|e| CacheError::DatabaseError(format!("キャッシュ削除失敗: {}", e)))?;
+                    .map_err(|e| CacheError::DatabaseError(format!("キャッシュ削除失敗: {e}")))?;
             }
         }
 
@@ -276,7 +276,7 @@ impl CacheManager {
         // データベースから古いキャッシュ情報を削除
         let db_deleted_count =
             crate::db::expense_operations::cleanup_old_cache(conn, max_age_days as i64)
-                .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {}", e)))?;
+                .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {e}")))?;
 
         Ok(db_deleted_count)
     }
@@ -309,7 +309,7 @@ impl CacheManager {
         // データベースから古いキャッシュ情報を削除
         let db_deleted_count =
             crate::db::expense_operations::cleanup_old_cache(conn, max_age_days as i64)
-                .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {}", e)))?;
+                .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {e}")))?;
 
         Ok(db_deleted_count)
     }
@@ -390,7 +390,7 @@ impl CacheManager {
             "bin"
         };
 
-        format!("receipt_{:x}.{}", hash, extension)
+        format!("receipt_{hash:x}.{extension}")
     }
 
     /// 現在のキャッシュサイズを計算（同期版）
@@ -405,20 +405,20 @@ impl CacheManager {
         }
 
         let entries = std::fs::read_dir(&self.cache_dir)
-            .map_err(|e| CacheError::ReadFailed(format!("ディレクトリ読み込み失敗: {}", e)))?;
+            .map_err(|e| CacheError::ReadFailed(format!("ディレクトリ読み込み失敗: {e}")))?;
 
         for entry in entries {
             let entry = entry
-                .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {}", e)))?;
+                .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {e}")))?;
 
             if entry
                 .file_type()
-                .map_err(|e| CacheError::ReadFailed(format!("ファイルタイプ取得失敗: {}", e)))?
+                .map_err(|e| CacheError::ReadFailed(format!("ファイルタイプ取得失敗: {e}")))?
                 .is_file()
             {
                 let metadata = entry
                     .metadata()
-                    .map_err(|e| CacheError::ReadFailed(format!("メタデータ取得失敗: {}", e)))?;
+                    .map_err(|e| CacheError::ReadFailed(format!("メタデータ取得失敗: {e}")))?;
                 total_size += metadata.len();
             }
         }
@@ -439,23 +439,23 @@ impl CacheManager {
 
         let mut entries = async_fs::read_dir(&self.cache_dir)
             .await
-            .map_err(|e| CacheError::ReadFailed(format!("ディレクトリ読み込み失敗: {}", e)))?;
+            .map_err(|e| CacheError::ReadFailed(format!("ディレクトリ読み込み失敗: {e}")))?;
 
         while let Some(entry) = entries
             .next_entry()
             .await
-            .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {}", e)))?
+            .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {e}")))?
         {
             if entry
                 .file_type()
                 .await
-                .map_err(|e| CacheError::ReadFailed(format!("ファイルタイプ取得失敗: {}", e)))?
+                .map_err(|e| CacheError::ReadFailed(format!("ファイルタイプ取得失敗: {e}")))?
                 .is_file()
             {
                 let metadata = entry
                     .metadata()
                     .await
-                    .map_err(|e| CacheError::ReadFailed(format!("メタデータ取得失敗: {}", e)))?;
+                    .map_err(|e| CacheError::ReadFailed(format!("メタデータ取得失敗: {e}")))?;
                 total_size += metadata.len();
             }
         }
@@ -544,7 +544,7 @@ impl CacheManager {
     ) -> Result<(), CacheError> {
         // データベースからキャッシュ情報を取得
         let cache_info = crate::db::expense_operations::get_receipt_cache(conn, receipt_url)
-            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {e}")))?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -552,12 +552,12 @@ impl CacheManager {
             // ファイルが存在する場合は削除
             if cache_path.exists() {
                 std::fs::remove_file(cache_path)
-                    .map_err(|e| CacheError::WriteFailed(format!("ファイル削除失敗: {}", e)))?;
+                    .map_err(|e| CacheError::WriteFailed(format!("ファイル削除失敗: {e}")))?;
             }
 
             // データベースからキャッシュ情報を削除
             crate::db::expense_operations::delete_receipt_cache(conn, receipt_url)
-                .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報削除失敗: {}", e)))?;
+                .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報削除失敗: {e}")))?;
         }
 
         Ok(())
@@ -578,7 +578,7 @@ impl CacheManager {
     ) -> Result<(), CacheError> {
         // データベースからキャッシュ情報を取得
         let cache_info = crate::db::expense_operations::get_receipt_cache(conn, receipt_url)
-            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {e}")))?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -587,12 +587,12 @@ impl CacheManager {
             if cache_path.exists() {
                 async_fs::remove_file(cache_path)
                     .await
-                    .map_err(|e| CacheError::WriteFailed(format!("ファイル削除失敗: {}", e)))?;
+                    .map_err(|e| CacheError::WriteFailed(format!("ファイル削除失敗: {e}")))?;
             }
 
             // データベースからキャッシュ情報を削除
             crate::db::expense_operations::delete_receipt_cache(conn, receipt_url)
-                .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報削除失敗: {}", e)))?;
+                .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報削除失敗: {e}")))?;
         }
 
         Ok(())
@@ -613,7 +613,7 @@ impl CacheManager {
     ) -> Result<Option<Vec<u8>>, CacheError> {
         // オフライン時はアクセス時刻を更新せずにキャッシュを取得
         let cache_info = crate::db::expense_operations::get_receipt_cache(conn, receipt_url)
-            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {e}")))?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -622,7 +622,7 @@ impl CacheManager {
             if cache_path.exists() {
                 // ファイルを読み込み（アクセス時刻は更新しない）
                 let data = std::fs::read(cache_path)
-                    .map_err(|e| CacheError::ReadFailed(format!("ファイル読み込み失敗: {}", e)))?;
+                    .map_err(|e| CacheError::ReadFailed(format!("ファイル読み込み失敗: {e}")))?;
 
                 return Ok(Some(data));
             }
@@ -646,8 +646,7 @@ impl CacheManager {
         self.manage_cache_size_async(conn).await?;
 
         println!(
-            "キャッシュ同期完了: {}個のファイルをクリーンアップしました",
-            cleaned_count
+            "キャッシュ同期完了: {cleaned_count}個のファイルをクリーンアップしました"
         );
 
         Ok(cleaned_count)
@@ -676,7 +675,7 @@ impl CacheManager {
 
         let mut stmt = conn
             .prepare("SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache WHERE last_accessed < ?1")
-            .map_err(|e| CacheError::DatabaseError(format!("SQL準備失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("SQL準備失敗: {e}")))?;
 
         let cache_iter = stmt
             .query_map([cutoff_str], |row| {
@@ -689,13 +688,13 @@ impl CacheManager {
                     last_accessed: row.get(5)?,
                 })
             })
-            .map_err(|e| CacheError::DatabaseError(format!("クエリ実行失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("クエリ実行失敗: {e}")))?;
 
         let mut caches = Vec::new();
         for cache_result in cache_iter {
             caches.push(
                 cache_result
-                    .map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {}", e)))?,
+                    .map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {e}")))?,
             );
         }
 
@@ -717,7 +716,7 @@ impl CacheManager {
     ) -> Result<Vec<crate::models::expense::ReceiptCache>, CacheError> {
         let mut stmt = conn
             .prepare("SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache ORDER BY last_accessed ASC LIMIT ?1")
-            .map_err(|e| CacheError::DatabaseError(format!("SQL準備失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("SQL準備失敗: {e}")))?;
 
         let cache_iter = stmt
             .query_map([limit], |row| {
@@ -730,13 +729,13 @@ impl CacheManager {
                     last_accessed: row.get(5)?,
                 })
             })
-            .map_err(|e| CacheError::DatabaseError(format!("クエリ実行失敗: {}", e)))?;
+            .map_err(|e| CacheError::DatabaseError(format!("クエリ実行失敗: {e}")))?;
 
         let mut caches = Vec::new();
         for cache_result in cache_iter {
             caches.push(
                 cache_result
-                    .map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {}", e)))?,
+                    .map_err(|e| CacheError::DatabaseError(format!("行読み込み失敗: {e}")))?,
             );
         }
 

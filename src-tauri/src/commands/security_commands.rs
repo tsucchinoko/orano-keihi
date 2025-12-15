@@ -13,7 +13,7 @@ pub async fn get_system_diagnostic_info() -> Result<HashMap<String, String>, Str
     let security_manager = SecurityManager::new();
     let diagnostic_info = security_manager.get_diagnostic_info();
 
-    debug!("診断情報を返却します: {:?}", diagnostic_info);
+    debug!("診断情報を返却します: {diagnostic_info:?}");
     Ok(diagnostic_info)
 }
 
@@ -30,7 +30,7 @@ pub async fn validate_security_configuration() -> Result<bool, String> {
             Ok(true)
         }
         Err(e) => {
-            warn!("セキュリティ設定の検証に失敗しました: {}", e);
+            warn!("セキュリティ設定の検証に失敗しました: {e}");
             Err(e)
         }
     }
@@ -49,7 +49,7 @@ pub async fn test_r2_connection_secure() -> Result<bool, String> {
 
     // R2設定を取得
     let config = crate::services::config::R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {:?}", e);
+        let error_msg = format!("R2設定の読み込みに失敗しました: {e:?}");
         security_manager.log_security_event("r2_config_load_failed", &error_msg);
         error_msg
     })?;
@@ -58,7 +58,7 @@ pub async fn test_r2_connection_secure() -> Result<bool, String> {
     let client = crate::services::r2_client::R2Client::new(config)
         .await
         .map_err(|e| {
-            let error_msg = format!("R2クライアントの作成に失敗しました: {}", e);
+            let error_msg = format!("R2クライアントの作成に失敗しました: {e}");
             security_manager.log_security_event("r2_client_creation_failed", &error_msg);
             error_msg
         })?;
@@ -71,8 +71,8 @@ pub async fn test_r2_connection_secure() -> Result<bool, String> {
             Ok(true)
         }
         Err(e) => {
-            let error_msg = format!("R2接続テストに失敗しました: {}", e);
-            warn!("{}", error_msg);
+            let error_msg = format!("R2接続テストに失敗しました: {e}");
+            warn!("{error_msg}");
             security_manager.log_security_event("r2_connection_test_failed", &error_msg);
             Err(error_msg)
         }
@@ -100,7 +100,7 @@ pub async fn get_environment_info() -> Result<HashMap<String, String>, String> {
         env_config.is_development().to_string(),
     );
 
-    debug!("環境情報を返却します: {:?}", info);
+    debug!("環境情報を返却します: {info:?}");
     Ok(info)
 }
 
@@ -108,8 +108,7 @@ pub async fn get_environment_info() -> Result<HashMap<String, String>, String> {
 #[tauri::command]
 pub async fn log_security_event(event_type: String, details: String) -> Result<(), String> {
     info!(
-        "セキュリティイベントのログ記録要求: type={}, details={}",
-        event_type, details
+        "セキュリティイベントのログ記録要求: type={event_type}, details={details}"
     );
 
     let security_manager = SecurityManager::new();
@@ -128,7 +127,7 @@ pub async fn get_r2_diagnostic_info() -> Result<HashMap<String, String>, String>
 
     // R2設定を取得
     let config = crate::services::config::R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {:?}", e);
+        let error_msg = format!("R2設定の読み込みに失敗しました: {e:?}");
         security_manager.log_security_event("r2_config_load_failed", &error_msg);
         error_msg
     })?;
@@ -137,14 +136,14 @@ pub async fn get_r2_diagnostic_info() -> Result<HashMap<String, String>, String>
     let client = crate::services::r2_client::R2Client::new(config)
         .await
         .map_err(|e| {
-            let error_msg = format!("R2クライアントの作成に失敗しました: {}", e);
+            let error_msg = format!("R2クライアントの作成に失敗しました: {e}");
             security_manager.log_security_event("r2_client_creation_failed", &error_msg);
             error_msg
         })?;
 
     let diagnostic_info = client.get_diagnostic_info();
 
-    debug!("R2診断情報を返却します: {:?}", diagnostic_info);
+    debug!("R2診断情報を返却します: {diagnostic_info:?}");
     Ok(diagnostic_info)
 }
 

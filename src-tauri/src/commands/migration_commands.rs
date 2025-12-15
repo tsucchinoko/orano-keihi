@@ -19,10 +19,10 @@ use tauri::{AppHandle, Manager};
 #[tauri::command]
 pub async fn check_migration_status(app_handle: AppHandle) -> Result<bool, String> {
     let conn =
-        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {}", e))?;
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
 
     is_receipt_url_migration_complete(&conn)
-        .map_err(|e| format!("マイグレーション状態確認エラー: {}", e))
+        .map_err(|e| format!("マイグレーション状態確認エラー: {e}"))
 }
 
 /// receipt_pathからreceipt_urlへのマイグレーションを実行する
@@ -37,19 +37,19 @@ pub async fn execute_receipt_url_migration(
     app_handle: AppHandle,
 ) -> Result<MigrationResult, String> {
     let conn =
-        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {}", e))?;
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
 
     // バックアップファイルパスを生成（JST使用）
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリ取得エラー: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリ取得エラー: {e}"))?;
 
     let now_jst = Utc::now().with_timezone(&Tokyo);
     let backup_path = app_data_dir.join(format!("database_backup_{}.db", now_jst.timestamp()));
 
     migrate_receipt_path_to_url(&conn, backup_path.to_str().unwrap())
-        .map_err(|e| format!("マイグレーション実行エラー: {}", e))
+        .map_err(|e| format!("マイグレーション実行エラー: {e}"))
 }
 
 /// バックアップからデータベースを復元する
@@ -66,10 +66,10 @@ pub async fn restore_database_from_backup(
     backup_path: String,
 ) -> Result<String, String> {
     let mut conn =
-        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {}", e))?;
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
 
     restore_from_backup(&mut conn, &backup_path)
-        .map_err(|e| format!("データベース復元エラー: {}", e))?;
+        .map_err(|e| format!("データベース復元エラー: {e}"))?;
 
     Ok("データベースの復元が完了しました".to_string())
 }
@@ -86,7 +86,7 @@ pub async fn list_backup_files(app_handle: AppHandle) -> Result<Vec<String>, Str
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|e| format!("アプリデータディレクトリ取得エラー: {}", e))?;
+        .map_err(|e| format!("アプリデータディレクトリ取得エラー: {e}"))?;
 
     let mut backup_files = Vec::new();
 
