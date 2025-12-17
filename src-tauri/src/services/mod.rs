@@ -149,24 +149,7 @@ impl AppError {
         }
     }
 
-    /// リトライ可能かどうかを取得
-    pub fn is_retry_possible(&self) -> bool {
-        match self {
-            AppError::R2ConnectionFailed { retry_possible, .. } => *retry_possible,
-            AppError::UploadFailed { retry_possible, .. } => *retry_possible,
-            AppError::DownloadFailed { retry_possible, .. } => *retry_possible,
-            AppError::FileNotFound { retry_possible, .. } => *retry_possible,
-            AppError::InvalidCredentials { retry_possible, .. } => *retry_possible,
-            AppError::NetworkError { retry_possible, .. } => *retry_possible,
-            AppError::FileOperationError { retry_possible, .. } => *retry_possible,
-            AppError::InvalidFileFormat { retry_possible, .. } => *retry_possible,
-            AppError::FileSizeError { retry_possible, .. } => *retry_possible,
-            AppError::DatabaseError { retry_possible, .. } => *retry_possible,
-            AppError::ConfigError { retry_possible, .. } => *retry_possible,
-            AppError::CacheError { retry_possible, .. } => *retry_possible,
-            AppError::InternalError { retry_possible, .. } => *retry_possible,
-        }
-    }
+
 
     /// エラーの重要度を取得
     pub fn severity(&self) -> ErrorSeverity {
@@ -206,12 +189,6 @@ pub enum R2Error {
     #[error("アップロードに失敗しました: {0}")]
     UploadFailed(String),
 
-    #[error("ダウンロードに失敗しました: {0}")]
-    DownloadFailed(String),
-
-    #[error("ファイルが見つかりません: {0}")]
-    FileNotFound(String),
-
     #[error("認証情報が無効です")]
     InvalidCredentials,
 
@@ -235,20 +212,6 @@ impl From<R2Error> for AppError {
                     "ファイルのアップロードに失敗しました。しばらく時間をおいて再試行してください。"
                         .to_string(),
                 retry_possible: true,
-            },
-            R2Error::DownloadFailed(details) => AppError::DownloadFailed {
-                details: details.clone(),
-                user_message:
-                    "ファイルのダウンロードに失敗しました。しばらく時間をおいて再試行してください。"
-                        .to_string(),
-                retry_possible: true,
-            },
-            R2Error::FileNotFound(details) => AppError::FileNotFound {
-                details: details.clone(),
-                user_message:
-                    "指定されたファイルが見つかりません。ファイルが削除されている可能性があります。"
-                        .to_string(),
-                retry_possible: false,
             },
             R2Error::InvalidCredentials => AppError::InvalidCredentials {
                 details: "R2認証情報が無効です".to_string(),
@@ -402,9 +365,7 @@ impl ErrorHandler {
     /// ファイルサイズエラーを作成
     pub fn file_size_error(size: u64, max_size: u64) -> AppError {
         AppError::FileSizeError {
-            details: format!(
-                "ファイルサイズ超過: {size}bytes (最大: {max_size}bytes)"
-            ),
+            details: format!("ファイルサイズ超過: {size}bytes (最大: {max_size}bytes)"),
             user_message: format!(
                 "ファイルサイズが制限を超えています。最大サイズ: {}MB",
                 max_size / (1024 * 1024)

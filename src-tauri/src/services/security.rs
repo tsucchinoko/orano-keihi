@@ -107,11 +107,32 @@ pub struct EnvironmentConfig {
 impl EnvironmentConfig {
     /// 環境変数から設定を読み込み
     pub fn from_env() -> Self {
-        let environment = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
-        let debug_mode = env::var("DEBUG")
-            .unwrap_or_else(|_| "false".to_string())
-            .parse()
-            .unwrap_or(false);
+        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
+        let environment = option_env!("EMBEDDED_ENVIRONMENT")
+            .map(|s| {
+                info!("コンパイル時埋め込み環境設定を使用: {}", s);
+                s.to_string()
+            })
+            .or_else(|| {
+                env::var("ENVIRONMENT").ok().map(|s| {
+                    info!("実行時環境変数を使用: ENVIRONMENT={}", s);
+                    s
+                })
+            })
+            .unwrap_or_else(|| {
+                info!("デフォルト環境設定を使用: development");
+                "development".to_string()
+            });
+        
+        let debug_mode = if environment == "production" {
+            // 本番環境では強制的にデバッグモードを無効化
+            false
+        } else {
+            env::var("DEBUG")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse()
+                .unwrap_or(false)
+        };
         let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| {
             if environment == "production" {
                 "info".to_string()
@@ -169,16 +190,41 @@ impl SecurityManager {
         let env_config = EnvironmentConfig::from_env();
 
         // 環境変数から認証情報を読み込み
-        if let Ok(account_id) = env::var("R2_ACCOUNT_ID") {
+        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
+        
+        // R2_ACCOUNT_ID
+        let account_id = option_env!("EMBEDDED_R2_ACCOUNT_ID")
+            .map(|s| s.to_string())
+            .or_else(|| env::var("R2_ACCOUNT_ID").ok())
+            .unwrap_or_default();
+        if !account_id.is_empty() {
             credentials.add_credential("R2_ACCOUNT_ID", &account_id);
         }
-        if let Ok(access_key) = env::var("R2_ACCESS_KEY") {
+
+        // R2_ACCESS_KEY
+        let access_key = option_env!("EMBEDDED_R2_ACCESS_KEY")
+            .map(|s| s.to_string())
+            .or_else(|| env::var("R2_ACCESS_KEY").ok())
+            .unwrap_or_default();
+        if !access_key.is_empty() {
             credentials.add_credential("R2_ACCESS_KEY", &access_key);
         }
-        if let Ok(secret_key) = env::var("R2_SECRET_KEY") {
+
+        // R2_SECRET_KEY
+        let secret_key = option_env!("EMBEDDED_R2_SECRET_KEY")
+            .map(|s| s.to_string())
+            .or_else(|| env::var("R2_SECRET_KEY").ok())
+            .unwrap_or_default();
+        if !secret_key.is_empty() {
             credentials.add_credential("R2_SECRET_KEY", &secret_key);
         }
-        if let Ok(bucket_name) = env::var("R2_BUCKET_NAME") {
+
+        // R2_BUCKET_NAME
+        let bucket_name = option_env!("EMBEDDED_R2_BUCKET_NAME")
+            .map(|s| s.to_string())
+            .or_else(|| env::var("R2_BUCKET_NAME").ok())
+            .unwrap_or_default();
+        if !bucket_name.is_empty() {
             credentials.add_credential("R2_BUCKET_NAME", &bucket_name);
         }
 
@@ -271,37 +317,7 @@ impl SecurityManager {
     }
 }
 
-/// ログフィルター - 認証情報を自動的にマスク
-pub struct LogFilter;
 
-impl LogFilter {
-    /// ログメッセージから認証情報をマスク
-    pub fn mask_sensitive_data(message: &str) -> String {
-        let mut masked = message.to_string();
-
-        // よくある認証情報のパターンをマスク
-        let patterns = [
-            (
-                r"(?i)(access[_-]?key[_-]?id?)\s*[:=]\s*([a-zA-Z0-9+/]{16,})",
-                "$1: ****",
-            ),
-            (
-                r"(?i)(secret[_-]?key)\s*[:=]\s*([a-zA-Z0-9+/]{16,})",
-                "$1: ****",
-            ),
-            (r"(?i)(password)\s*[:=]\s*([^\s,}]+)", "$1: ****"),
-            (r"(?i)(token)\s*[:=]\s*([a-zA-Z0-9+/]{16,})", "$1: ****"),
-        ];
-
-        for (pattern, replacement) in &patterns {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                masked = re.replace_all(&masked, *replacement).to_string();
-            }
-        }
-
-        masked
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -356,22 +372,5 @@ mod tests {
         assert!(!config.environment.is_empty());
     }
 
-    #[test]
-    fn test_log_filter_masking() {
-        let message =
-            "access_key=AKIAIOSFODNN7EXAMPLE secret_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-        let masked = LogFilter::mask_sensitive_data(message);
 
-        println!("Original: {message}");
-        println!("Masked: {masked}");
-
-        // secret_keyは正しくマスクされることを確認
-        assert!(masked.contains("secret_key: ****"));
-
-        // 少なくとも一部の認証情報がマスクされていることを確認
-        assert!(!masked.contains("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"));
-
-        // マスク機能が動作していることを確認（完全でなくても部分的にマスクされていればOK）
-        assert!(masked.len() < message.len() || masked.contains("****"));
-    }
 }

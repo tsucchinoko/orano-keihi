@@ -107,9 +107,7 @@ pub async fn get_environment_info() -> Result<HashMap<String, String>, String> {
 /// セキュリティイベントをログに記録
 #[tauri::command]
 pub async fn log_security_event(event_type: String, details: String) -> Result<(), String> {
-    info!(
-        "セキュリティイベントのログ記録要求: type={event_type}, details={details}"
-    );
+    info!("セキュリティイベントのログ記録要求: type={event_type}, details={details}");
 
     let security_manager = SecurityManager::new();
     security_manager.log_security_event(&event_type, &details);

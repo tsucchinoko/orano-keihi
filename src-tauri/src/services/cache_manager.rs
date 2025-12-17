@@ -3,7 +3,6 @@
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio::fs as async_fs;
 
 /// キャッシュエラー型
 #[derive(Debug, thiserror::Error)]
@@ -13,9 +12,6 @@ pub enum CacheError {
 
     #[error("キャッシュ読み込みエラー: {0}")]
     ReadFailed(String),
-
-    #[error("キャッシュクリーンアップエラー: {0}")]
-    CleanupFailed(String),
 
     #[error("ディレクトリ作成エラー: {0}")]
     DirectoryCreationFailed(String),
@@ -61,20 +57,7 @@ impl CacheManager {
         Ok(())
     }
 
-    /// キャッシュディレクトリを初期化（非同期版）
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はCacheError
-    pub async fn initialize(&self) -> Result<(), CacheError> {
-        if !self.cache_dir.exists() {
-            async_fs::create_dir_all(&self.cache_dir)
-                .await
-                .map_err(|e| {
-                    CacheError::DirectoryCreationFailed(format!("ディレクトリ作成失敗: {e}"))
-                })?;
-        }
-        Ok(())
-    }
+
 
     /// ファイルをキャッシュに保存（同期版）
     ///
@@ -118,48 +101,7 @@ impl CacheManager {
         Ok(cache_path)
     }
 
-    /// ファイルをキャッシュに保存（非同期版）
-    ///
-    /// # 引数
-    /// * `receipt_url` - 領収書URL
-    /// * `data` - ファイルデータ
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// キャッシュファイルのパス、または失敗時はCacheError
-    pub async fn cache_file_async(
-        &self,
-        receipt_url: &str,
-        data: Vec<u8>,
-        conn: &Connection,
-    ) -> Result<PathBuf, CacheError> {
-        // キャッシュディレクトリを確認・作成
-        self.initialize().await?;
 
-        // ファイル名を生成（URLからハッシュを作成）
-        let filename = self.generate_cache_filename(receipt_url);
-        let cache_path = self.cache_dir.join(&filename);
-
-        // ファイルをキャッシュに保存
-        async_fs::write(&cache_path, &data)
-            .await
-            .map_err(|e| CacheError::WriteFailed(format!("ファイル書き込み失敗: {e}")))?;
-
-        // データベースにキャッシュ情報を保存
-        let local_path_str = cache_path
-            .to_str()
-            .ok_or_else(|| CacheError::WriteFailed("パス変換失敗".to_string()))?;
-
-        crate::db::expense_operations::save_receipt_cache(
-            conn,
-            receipt_url,
-            local_path_str,
-            data.len() as i64,
-        )
-        .map_err(|e| CacheError::DatabaseError(format!("データベース保存失敗: {e}")))?;
-
-        Ok(cache_path)
-    }
 
     /// キャッシュからファイルを取得（同期版）
     ///
@@ -185,9 +127,7 @@ impl CacheManager {
             if cache_path.exists() {
                 // アクセス時刻を更新
                 crate::db::expense_operations::update_cache_access_time(conn, receipt_url)
-                    .map_err(|e| {
-                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {e}"))
-                    })?;
+                    .map_err(|e| CacheError::DatabaseError(format!("アクセス時刻更新失敗: {e}")))?;
 
                 // ファイルを読み込み
                 let data = std::fs::read(cache_path)
@@ -204,49 +144,7 @@ impl CacheManager {
         Ok(None)
     }
 
-    /// キャッシュからファイルを取得（非同期版）
-    ///
-    /// # 引数
-    /// * `receipt_url` - 領収書URL
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// ファイルデータ（存在する場合）、または失敗時はCacheError
-    pub async fn get_cached_file_async(
-        &self,
-        receipt_url: &str,
-        conn: &Connection,
-    ) -> Result<Option<Vec<u8>>, CacheError> {
-        // データベースからキャッシュ情報を取得
-        let cache_info = crate::db::expense_operations::get_receipt_cache(conn, receipt_url)
-            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {e}")))?;
 
-        if let Some(cache) = cache_info {
-            let cache_path = Path::new(&cache.local_path);
-
-            // ファイルが存在するかチェック
-            if cache_path.exists() {
-                // アクセス時刻を更新
-                crate::db::expense_operations::update_cache_access_time(conn, receipt_url)
-                    .map_err(|e| {
-                        CacheError::DatabaseError(format!("アクセス時刻更新失敗: {e}"))
-                    })?;
-
-                // ファイルを読み込み
-                let data = async_fs::read(cache_path)
-                    .await
-                    .map_err(|e| CacheError::ReadFailed(format!("ファイル読み込み失敗: {e}")))?;
-
-                return Ok(Some(data));
-            } else {
-                // ファイルが存在しない場合はキャッシュ情報を削除
-                crate::db::expense_operations::delete_receipt_cache(conn, receipt_url)
-                    .map_err(|e| CacheError::DatabaseError(format!("キャッシュ削除失敗: {e}")))?;
-            }
-        }
-
-        Ok(None)
-    }
 
     /// 古いキャッシュを削除（同期版）
     ///
@@ -281,38 +179,7 @@ impl CacheManager {
         Ok(db_deleted_count)
     }
 
-    /// 古いキャッシュを削除（非同期版）
-    ///
-    /// # 引数
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// 削除されたファイル数、または失敗時はCacheError
-    pub async fn cleanup_old_cache_async(&self, conn: &Connection) -> Result<usize, CacheError> {
-        let max_age_days = self.max_age.as_secs() / (24 * 3600);
 
-        // データベースから古いキャッシュ情報を取得して物理ファイルも削除
-        let old_caches = self.get_old_cache_entries(conn, max_age_days as i64)?;
-
-        let mut _deleted_count = 0;
-        for cache in &old_caches {
-            let cache_path = Path::new(&cache.local_path);
-            if cache_path.exists() {
-                if let Err(e) = async_fs::remove_file(cache_path).await {
-                    eprintln!("キャッシュファイル削除エラー: {} ({})", cache.local_path, e);
-                } else {
-                    _deleted_count += 1;
-                }
-            }
-        }
-
-        // データベースから古いキャッシュ情報を削除
-        let db_deleted_count =
-            crate::db::expense_operations::cleanup_old_cache(conn, max_age_days as i64)
-                .map_err(|e| CacheError::DatabaseError(format!("古いキャッシュ削除失敗: {e}")))?;
-
-        Ok(db_deleted_count)
-    }
 
     /// キャッシュサイズを管理（同期版）
     ///
@@ -339,30 +206,7 @@ impl CacheManager {
         Ok(())
     }
 
-    /// キャッシュサイズを管理（非同期版）
-    ///
-    /// # 引数
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はCacheError
-    pub async fn manage_cache_size_async(&self, conn: &Connection) -> Result<(), CacheError> {
-        // 現在のキャッシュサイズを計算
-        let current_size = self.calculate_cache_size_async().await?;
 
-        if current_size > self.max_cache_size {
-            // サイズ超過時は古いファイルから削除
-            self.cleanup_old_cache_async(conn).await?;
-
-            // まだサイズが超過している場合は、LRU方式で削除
-            let remaining_size = self.calculate_cache_size_async().await?;
-            if remaining_size > self.max_cache_size {
-                self.cleanup_lru_cache_async(conn).await?;
-            }
-        }
-
-        Ok(())
-    }
 
     /// キャッシュファイル名を生成
     ///
@@ -408,8 +252,8 @@ impl CacheManager {
             .map_err(|e| CacheError::ReadFailed(format!("ディレクトリ読み込み失敗: {e}")))?;
 
         for entry in entries {
-            let entry = entry
-                .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {e}")))?;
+            let entry =
+                entry.map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {e}")))?;
 
             if entry
                 .file_type()
@@ -426,42 +270,7 @@ impl CacheManager {
         Ok(total_size)
     }
 
-    /// 現在のキャッシュサイズを計算（非同期版）
-    ///
-    /// # 戻り値
-    /// キャッシュサイズ（バイト）、または失敗時はCacheError
-    pub async fn calculate_cache_size_async(&self) -> Result<u64, CacheError> {
-        let mut total_size = 0u64;
 
-        if !self.cache_dir.exists() {
-            return Ok(0);
-        }
-
-        let mut entries = async_fs::read_dir(&self.cache_dir)
-            .await
-            .map_err(|e| CacheError::ReadFailed(format!("ディレクトリ読み込み失敗: {e}")))?;
-
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| CacheError::ReadFailed(format!("エントリ読み込み失敗: {e}")))?
-        {
-            if entry
-                .file_type()
-                .await
-                .map_err(|e| CacheError::ReadFailed(format!("ファイルタイプ取得失敗: {e}")))?
-                .is_file()
-            {
-                let metadata = entry
-                    .metadata()
-                    .await
-                    .map_err(|e| CacheError::ReadFailed(format!("メタデータ取得失敗: {e}")))?;
-                total_size += metadata.len();
-            }
-        }
-
-        Ok(total_size)
-    }
 
     /// LRU方式でキャッシュを削除（同期版）
     ///
@@ -496,38 +305,7 @@ impl CacheManager {
         Ok(())
     }
 
-    /// LRU方式でキャッシュを削除（非同期版）
-    ///
-    /// # 引数
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はCacheError
-    async fn cleanup_lru_cache_async(&self, conn: &Connection) -> Result<(), CacheError> {
-        // 最も古くアクセスされたファイルを取得して削除
-        let lru_caches = self.get_lru_cache_entries(conn, 10)?; // 最大10個削除
 
-        for cache in &lru_caches {
-            let cache_path = Path::new(&cache.local_path);
-            if cache_path.exists() {
-                if let Err(e) = async_fs::remove_file(cache_path).await {
-                    eprintln!(
-                        "LRUキャッシュファイル削除エラー: {} ({})",
-                        cache.local_path, e
-                    );
-                }
-            }
-
-            // データベースからも削除
-            if let Err(e) =
-                crate::db::expense_operations::delete_receipt_cache(conn, &cache.receipt_url)
-            {
-                eprintln!("LRUキャッシュDB削除エラー: {} ({})", cache.receipt_url, e);
-            }
-        }
-
-        Ok(())
-    }
 
     /// 特定のキャッシュファイルを削除（同期版）
     ///
@@ -563,40 +341,7 @@ impl CacheManager {
         Ok(())
     }
 
-    /// 特定のキャッシュファイルを削除（非同期版）
-    ///
-    /// # 引数
-    /// * `receipt_url` - 領収書URL
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はCacheError
-    pub async fn delete_cache_file_async(
-        &self,
-        receipt_url: &str,
-        conn: &Connection,
-    ) -> Result<(), CacheError> {
-        // データベースからキャッシュ情報を取得
-        let cache_info = crate::db::expense_operations::get_receipt_cache(conn, receipt_url)
-            .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報取得失敗: {e}")))?;
 
-        if let Some(cache) = cache_info {
-            let cache_path = Path::new(&cache.local_path);
-
-            // ファイルが存在する場合は削除
-            if cache_path.exists() {
-                async_fs::remove_file(cache_path)
-                    .await
-                    .map_err(|e| CacheError::WriteFailed(format!("ファイル削除失敗: {e}")))?;
-            }
-
-            // データベースからキャッシュ情報を削除
-            crate::db::expense_operations::delete_receipt_cache(conn, receipt_url)
-                .map_err(|e| CacheError::DatabaseError(format!("キャッシュ情報削除失敗: {e}")))?;
-        }
-
-        Ok(())
-    }
 
     /// オフライン時のキャッシュ表示機能
     ///
@@ -631,26 +376,7 @@ impl CacheManager {
         Ok(None)
     }
 
-    /// キャッシュ同期機能（オンライン復帰時）
-    ///
-    /// # 引数
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// 同期されたキャッシュ数、または失敗時はCacheError
-    pub async fn sync_cache_on_online(&self, conn: &Connection) -> Result<usize, CacheError> {
-        // 古いキャッシュをクリーンアップ
-        let cleaned_count = self.cleanup_old_cache_async(conn).await?;
 
-        // キャッシュサイズを管理
-        self.manage_cache_size_async(conn).await?;
-
-        println!(
-            "キャッシュ同期完了: {cleaned_count}個のファイルをクリーンアップしました"
-        );
-
-        Ok(cleaned_count)
-    }
 
     /// 古いキャッシュエントリを取得するヘルパー関数
     ///

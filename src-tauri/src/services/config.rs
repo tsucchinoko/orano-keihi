@@ -17,7 +17,25 @@ pub struct R2Config {
 impl R2Config {
     /// 環境変数から設定を読み込み（セキュリティマネージャー使用）
     pub fn from_env() -> Result<Self, ConfigError> {
-        info!("R2設定を環境変数から読み込み中...");
+        let environment = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+        info!("R2設定を環境変数から読み込み中... (環境: {})", environment);
+
+        // 環境変数の存在確認（デバッグ用）
+        let env_vars = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET_NAME", "R2_REGION"];
+        for var in &env_vars {
+            match env::var(var) {
+                Ok(value) => {
+                    if var.contains("KEY") {
+                        debug!("環境変数 {} = [マスク済み] (長さ: {})", var, value.len());
+                    } else {
+                        debug!("環境変数 {} = {}", var, value);
+                    }
+                }
+                Err(_) => {
+                    warn!("環境変数 {} が設定されていません", var);
+                }
+            }
+        }
 
         // セキュリティマネージャーを使用して安全に認証情報を取得
         let security_manager = SecurityManager::new();
@@ -71,25 +89,7 @@ impl R2Config {
         Ok(config)
     }
 
-    /// 環境変数から設定を読み込み（従来版、後方互換性のため）
-    pub fn from_env_legacy() -> Result<Self, ConfigError> {
-        warn!("従来の設定読み込み方法を使用しています。セキュリティ機能が制限されます。");
 
-        // 環境変数から設定を読み込み
-        let account_id = env::var("R2_ACCOUNT_ID").map_err(|_| ConfigError::MissingAccountId)?;
-        let access_key = env::var("R2_ACCESS_KEY").map_err(|_| ConfigError::MissingAccessKey)?;
-        let secret_key = env::var("R2_SECRET_KEY").map_err(|_| ConfigError::MissingSecretKey)?;
-        let bucket_name = env::var("R2_BUCKET_NAME").map_err(|_| ConfigError::MissingBucketName)?;
-        let region = env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string());
-
-        Ok(Self {
-            account_id,
-            access_key,
-            secret_key,
-            bucket_name,
-            region,
-        })
-    }
 
     /// 設定の検証（セキュリティ強化版）
     pub fn validate(&self) -> Result<(), ConfigError> {

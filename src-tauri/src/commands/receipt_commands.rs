@@ -90,7 +90,7 @@ pub async fn save_receipt(
         .lock()
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-    expense_operations::set_receipt_path(&db, expense_id, receipt_path_str.clone())
+    expense_operations::set_receipt_url(&db, expense_id, receipt_path_str.clone())
         .map_err(|e| format!("データベースへの保存に失敗しました: {e}"))?;
 
     Ok(receipt_path_str)
@@ -193,8 +193,8 @@ pub async fn delete_receipt(expense_id: i64, state: State<'_, AppState>) -> Resu
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 現在の領収書パスを取得
-    let current_receipt_path = expense_operations::get_receipt_path(&db, expense_id)
-        .map_err(|e| format!("領収書パスの取得に失敗しました: {e}"))?;
+    let current_receipt_path = expense_operations::get_receipt_url(&db, expense_id)
+        .map_err(|e| format!("領収書URLの取得に失敗しました: {e}"))?;
 
     if let Some(receipt_path) = current_receipt_path {
         // ファイルが存在する場合は削除
@@ -206,8 +206,8 @@ pub async fn delete_receipt(expense_id: i64, state: State<'_, AppState>) -> Resu
     }
 
     // データベースから領収書パスを削除（空文字に設定）
-    expense_operations::set_receipt_path(&db, expense_id, "".to_string())
-        .map_err(|e| format!("データベースからの領収書パス削除に失敗しました: {e}"))?;
+    expense_operations::set_receipt_url(&db, expense_id, "".to_string())
+        .map_err(|e| format!("データベースからの領収書URL削除に失敗しました: {e}"))?;
 
     Ok(true)
 }
@@ -264,9 +264,7 @@ pub async fn upload_receipt_to_r2(
     file_path: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    info!(
-        "R2への領収書アップロードを開始します: expense_id={expense_id}, file_path={file_path}"
-    );
+    info!("R2への領収書アップロードを開始します: expense_id={expense_id}, file_path={file_path}");
 
     let security_manager = SecurityManager::new();
     security_manager.log_security_event(
@@ -279,9 +277,7 @@ pub async fn upload_receipt_to_r2(
 
     match result {
         Ok(url) => {
-            info!(
-                "領収書アップロード成功: expense_id={expense_id}, url={url}"
-            );
+            info!("領収書アップロード成功: expense_id={expense_id}, url={url}");
             security_manager.log_security_event(
                 "receipt_upload_success",
                 &format!("expense_id={expense_id}, url={url}"),
@@ -406,9 +402,7 @@ async fn upload_receipt_internal(
             );
 
             if let Err(delete_error) = client.delete_file(&file_key).await {
-                error!(
-                    "ロールバック中のR2ファイル削除に失敗しました: {delete_error}"
-                );
+                error!("ロールバック中のR2ファイル削除に失敗しました: {delete_error}");
             }
 
             // 元のreceipt_urlを復元（もしあれば）
@@ -446,9 +440,7 @@ pub async fn get_receipt_from_r2(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    info!(
-        "R2からの領収書取得を開始します: receipt_url={receipt_url}"
-    );
+    info!("R2からの領収書取得を開始します: receipt_url={receipt_url}");
 
     let security_manager = SecurityManager::new();
     security_manager.log_security_event(
@@ -525,9 +517,7 @@ async fn get_receipt_internal(
         }
         Ok(None) => {
             // キャッシュミス - R2から取得
-            debug!(
-                "キャッシュミス、R2から取得します: receipt_url={receipt_url}"
-            );
+            debug!("キャッシュミス、R2から取得します: receipt_url={receipt_url}");
         }
         Err(e) => {
             // キャッシュエラーはログに記録するが、R2からの取得を続行
@@ -666,83 +656,7 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
     }
 }
 
-/// R2からファイルをダウンロードする内部関数
-///
-/// # 引数
-/// * `receipt_url` - 領収書のHTTPS URL
-///
-/// # 戻り値
-/// ファイルデータ、または失敗時はエラーメッセージ
-async fn download_from_r2(receipt_url: &str) -> Result<Vec<u8>, String> {
-    // URLからファイルキーを抽出
-    let url_parts: Vec<&str> = receipt_url.split('/').collect();
-    if url_parts.len() < 4 {
-        return Err("無効なreceipt_URLです".to_string());
-    }
 
-    // R2設定を読み込み
-    let config =
-        R2Config::from_env().map_err(|e| format!("R2設定の読み込みに失敗しました: {e}"))?;
-
-    // R2クライアントを初期化
-    let client = R2Client::new(config)
-        .await
-        .map_err(|e| format!("R2クライアントの初期化に失敗しました: {e}"))?;
-
-    // ファイルキーを抽出（receipts/expense_id/filename形式を想定）
-    let file_key = if url_parts.len() >= 6 {
-        // https://account_id.r2.cloudflarestorage.com/bucket_name/receipts/expense_id/filename
-        url_parts[url_parts.len() - 3..].join("/")
-    } else {
-        return Err("URLからファイルキーを抽出できません".to_string());
-    };
-
-    // Presigned URLを生成（1時間有効）
-    let presigned_url = client
-        .generate_presigned_url(&file_key, Duration::from_secs(3600))
-        .await
-        .map_err(|e| format!("Presigned URL生成に失敗しました: {e}"))?;
-
-    // リトライ機能付きでHTTPクライアントでファイルをダウンロード
-    let mut attempts = 0;
-    const MAX_RETRIES: u32 = 3;
-
-    loop {
-        match reqwest::get(&presigned_url).await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    match response.bytes().await {
-                        Ok(file_data) => return Ok(file_data.to_vec()),
-                        Err(e) => {
-                            if attempts < MAX_RETRIES {
-                                attempts += 1;
-                                let delay = Duration::from_secs(2_u64.pow(attempts));
-                                tokio::time::sleep(delay).await;
-                                continue;
-                            } else {
-                                return Err(format!("ファイルデータの取得に失敗しました: {e}"));
-                            }
-                        }
-                    }
-                } else if response.status().as_u16() == 404 {
-                    return Err("領収書ファイルが見つかりません".to_string());
-                } else {
-                    return Err(format!("ファイルダウンロードエラー: {}", response.status()));
-                }
-            }
-            Err(e) => {
-                if attempts < MAX_RETRIES {
-                    attempts += 1;
-                    let delay = Duration::from_secs(2_u64.pow(attempts));
-                    tokio::time::sleep(delay).await;
-                    continue;
-                } else {
-                    return Err(format!("ファイルダウンロードに失敗しました: {e}"));
-                }
-            }
-        }
-    }
-}
 
 /// R2から領収書を削除する（統一エラーハンドリング版）
 ///
@@ -858,15 +772,11 @@ async fn delete_receipt_internal(
         let security_manager = SecurityManager::new();
         security_manager.log_security_event(
             "receipt_delete_completed",
-            &format!(
-                "expense_id={expense_id}, receipt_url={receipt_url}, timestamp={now}"
-            ),
+            &format!("expense_id={expense_id}, receipt_url={receipt_url}, timestamp={now}"),
         );
     } else {
         // receipt_urlが存在しない場合は何もしない
-        info!(
-            "削除対象の領収書URLが存在しません: expense_id={expense_id}"
-        );
+        info!("削除対象の領収書URLが存在しません: expense_id={expense_id}");
     }
 
     Ok(true)
@@ -909,9 +819,7 @@ async fn delete_from_r2_with_retry_internal(receipt_url: &str) -> Result<(), App
         match client.delete_file(&file_key).await {
             Ok(_) => {
                 if attempts > 0 {
-                    info!(
-                        "リトライ後にR2削除成功: file_key={file_key}, attempts={attempts}"
-                    );
+                    info!("リトライ後にR2削除成功: file_key={file_key}, attempts={attempts}");
                 }
                 return Ok(());
             }
@@ -1125,9 +1033,7 @@ pub async fn sync_cache_on_online(
             .manage_cache_size(&db)
             .map_err(|e| format!("キャッシュサイズ管理エラー: {e}"))?;
 
-        println!(
-            "キャッシュ同期完了: {cleaned_count}個のファイルをクリーンアップしました"
-        );
+        println!("キャッシュ同期完了: {cleaned_count}個のファイルをクリーンアップしました");
 
         Ok(cleaned_count)
     };
@@ -1328,7 +1234,6 @@ pub async fn upload_multiple_receipts_to_r2(
             file_data,
             content_type,
             expense_id: file_input.expense_id,
-            filename: filename.to_string(),
         });
     }
 
@@ -1519,8 +1424,7 @@ pub async fn get_r2_performance_stats(
         .map_err(|e| {
             let error_msg = format!("パフォーマンス統計の取得に失敗しました: {e}");
             error!("{error_msg}");
-            security_manager
-                .log_security_event("performance_stats_failed", &format!("error={e}"));
+            security_manager.log_security_event("performance_stats_failed", &format!("error={e}"));
             error_msg
         })?;
 

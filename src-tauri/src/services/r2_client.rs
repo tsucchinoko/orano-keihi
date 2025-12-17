@@ -20,7 +20,6 @@ pub struct MultipleFileUpload {
     pub file_data: Vec<u8>,
     pub content_type: String,
     pub expense_id: i64,
-    pub filename: String,
 }
 
 /// アップロード結果の構造体
@@ -58,10 +57,8 @@ pub struct UploadProgress {
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum UploadStatus {
     Started,
-    InProgress,
     Completed,
     Failed,
-    Cancelled,
 }
 
 /// パフォーマンス統計の構造体
@@ -119,9 +116,7 @@ impl R2Client {
         // 環境別バケット名を使用
         let bucket_name = config.get_environment_bucket_name();
 
-        info!(
-            "R2クライアントの初期化が完了しました。バケット: {bucket_name}"
-        );
+        info!("R2クライアントの初期化が完了しました。バケット: {bucket_name}");
         security_manager.log_security_event(
             "r2_client_init_success",
             &format!("バケット: {bucket_name}"),
@@ -170,10 +165,8 @@ impl R2Client {
 
                 // セキュリティログ記録
                 let security_manager = SecurityManager::new();
-                security_manager.log_security_event(
-                    "upload_failed",
-                    &format!("key={key}, error={error_msg}"),
-                );
+                security_manager
+                    .log_security_event("upload_failed", &format!("key={key}, error={error_msg}"));
 
                 R2Error::UploadFailed(error_msg)
             })?;
@@ -188,9 +181,7 @@ impl R2Client {
             key
         );
 
-        info!(
-            "ファイルアップロード成功: key={key}, url={url}, duration={duration:?}"
-        );
+        info!("ファイルアップロード成功: key={key}, url={url}, duration={duration:?}");
 
         // セキュリティログ記録
         let security_manager = SecurityManager::new();
@@ -211,17 +202,13 @@ impl R2Client {
         max_retries: u32,
     ) -> Result<String, R2Error> {
         let mut attempts = 0;
-        info!(
-            "リトライ機能付きアップロード開始: key={key}, max_retries={max_retries}"
-        );
+        info!("リトライ機能付きアップロード開始: key={key}, max_retries={max_retries}");
 
         loop {
             match self.upload_file(key, file_data.clone(), content_type).await {
                 Ok(url) => {
                     if attempts > 0 {
-                        info!(
-                            "リトライ後にアップロード成功: key={key}, attempts={attempts}"
-                        );
+                        info!("リトライ後にアップロード成功: key={key}, attempts={attempts}");
                     }
                     return Ok(url);
                 }
@@ -358,9 +345,7 @@ impl R2Client {
     pub fn generate_file_key(expense_id: i64, filename: &str) -> String {
         let timestamp = chrono::Utc::now().timestamp();
         let uuid = uuid::Uuid::new_v4();
-        format!(
-            "receipts/{expense_id}/{timestamp}-{uuid}-{filename}"
-        )
+        format!("receipts/{expense_id}/{timestamp}-{uuid}-{filename}")
     }
 
     /// ファイル形式を検証
@@ -562,12 +547,10 @@ impl R2Client {
                     upload_results.push(upload_result);
                 }
                 Ok(Err(e)) => {
-                    failed_uploads += 1;
                     error!("アップロードタスクエラー: {e}");
                     return Err(e);
                 }
                 Err(e) => {
-                    failed_uploads += 1;
                     error!("タスク実行エラー: {e}");
                     return Err(R2Error::UploadFailed(format!("タスク実行エラー: {e}")));
                 }
@@ -698,27 +681,7 @@ impl R2Client {
         })
     }
 
-    /// アップロード統計を記録する
-    pub fn record_upload_stats(&self, file_size: u64, duration: Duration, success: bool) {
-        let speed_bps = if duration.as_secs() > 0 {
-            file_size / duration.as_secs()
-        } else {
-            0
-        };
 
-        info!(
-            "アップロード統計: サイズ={file_size}bytes, 時間={duration:?}, 速度={speed_bps}bps, 成功={success}"
-        );
-
-        // セキュリティログ記録
-        let security_manager = SecurityManager::new();
-        security_manager.log_security_event(
-            "upload_stats",
-            &format!(
-                "size={file_size}, duration={duration:?}, speed={speed_bps}bps, success={success}"
-            ),
-        );
-    }
 }
 
 #[cfg(test)]

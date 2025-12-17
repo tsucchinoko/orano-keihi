@@ -181,6 +181,15 @@ pub fn run() {
 
 /// 環境に応じた.envファイルを読み込み
 fn load_environment_variables() {
+    // コンパイル時に埋め込まれた環境設定があるかチェック
+    let embedded_env = option_env!("EMBEDDED_ENVIRONMENT");
+    
+    if let Some(env) = embedded_env {
+        info!("コンパイル時埋め込み環境設定を使用: {}", env);
+        // コンパイル時に埋め込まれた環境変数がある場合は、実行時読み込みをスキップ
+        return;
+    }
+    
     // まず、ENVIRONMENTが設定されているかチェック
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
     
@@ -206,11 +215,11 @@ fn load_environment_variables() {
                         warn!("{}が見つからないため、デフォルトの.envファイルを読み込みました", env_file);
                     }
                     Err(_) => {
-                        warn!("環境変数ファイルが見つかりません。環境変数が直接設定されていることを確認してください。");
+                        warn!("環境変数ファイルが見つかりません。コンパイル時埋め込み値または直接設定された環境変数を使用します。");
                     }
                 }
             } else {
-                warn!(".envファイルが見つかりません。環境変数が直接設定されていることを確認してください。");
+                warn!(".envファイルが見つかりません。コンパイル時埋め込み値または直接設定された環境変数を使用します。");
             }
         }
     }

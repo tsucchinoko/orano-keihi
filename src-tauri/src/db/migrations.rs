@@ -482,11 +482,9 @@ fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -
                 Ok(col_name)
             }) {
                 Ok(rows) => {
-                    for row_result in rows {
-                        if let Ok(col_name) = row_result {
-                            if col_name == column_name {
-                                return true;
-                            }
+                    for col_name in rows.flatten() {
+                        if col_name == column_name {
+                            return true;
                         }
                     }
                     false
