@@ -110,12 +110,12 @@ impl EnvironmentConfig {
         // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
         let environment = option_env!("EMBEDDED_ENVIRONMENT")
             .map(|s| {
-                info!("コンパイル時埋め込み環境設定を使用: {}", s);
+                info!("コンパイル時埋め込み環境設定を使用: {s}");
                 s.to_string()
             })
             .or_else(|| {
                 env::var("ENVIRONMENT").ok().map(|s| {
-                    info!("実行時環境変数を使用: ENVIRONMENT={}", s);
+                    info!("実行時環境変数を使用: ENVIRONMENT={s}");
                     s
                 })
             })
@@ -123,7 +123,7 @@ impl EnvironmentConfig {
                 info!("デフォルト環境設定を使用: development");
                 "development".to_string()
             });
-        
+
         let debug_mode = if environment == "production" {
             // 本番環境では強制的にデバッグモードを無効化
             false
@@ -191,7 +191,7 @@ impl SecurityManager {
 
         // 環境変数から認証情報を読み込み
         // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
-        
+
         // R2_ACCOUNT_ID
         let account_id = option_env!("EMBEDDED_R2_ACCOUNT_ID")
             .map(|s| s.to_string())
@@ -317,8 +317,6 @@ impl SecurityManager {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,6 +369,4 @@ mod tests {
         let config = EnvironmentConfig::from_env();
         assert!(!config.environment.is_empty());
     }
-
-
 }

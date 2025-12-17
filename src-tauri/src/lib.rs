@@ -92,7 +92,7 @@ pub fn run() {
                 if env_config.is_production() {
                     return Err(Box::new(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        format!("本番環境でのセキュリティ設定エラー: {e}")
+                        format!("本番環境でのセキュリティ設定エラー: {e}"),
                     )));
                 } else {
                     warn!("開発環境のため、セキュリティ設定エラーを無視して続行します");
@@ -105,12 +105,11 @@ pub fn run() {
 
             // アプリ起動時にデータベースを初期化
             info!("データベースを初期化しています...");
-            let db_conn = db::initialize_database(app.handle())
-                .map_err(|e| {
-                    error!("データベースの初期化に失敗しました: {e}");
-                    security_manager.log_security_event("database_init_failed", &e.to_string());
-                    e
-                })?;
+            let db_conn = db::initialize_database(app.handle()).map_err(|e| {
+                error!("データベースの初期化に失敗しました: {e}");
+                security_manager.log_security_event("database_init_failed", &e.to_string());
+                e
+            })?;
 
             info!("データベースの初期化が完了しました");
             security_manager.log_security_event("database_init_success", "データベース初期化完了");
@@ -124,7 +123,8 @@ pub fn run() {
             });
 
             info!("アプリケーション初期化が完了しました");
-            security_manager_clone.log_security_event("app_init_success", "アプリケーション初期化完了");
+            security_manager_clone
+                .log_security_event("app_init_success", "アプリケーション初期化完了");
 
             Ok(())
         })
@@ -183,36 +183,36 @@ pub fn run() {
 fn load_environment_variables() {
     // コンパイル時に埋め込まれた環境設定があるかチェック
     let embedded_env = option_env!("EMBEDDED_ENVIRONMENT");
-    
+
     if let Some(env) = embedded_env {
-        info!("コンパイル時埋め込み環境設定を使用: {}", env);
+        info!("コンパイル時埋め込み環境設定を使用: {env}");
         // コンパイル時に埋め込まれた環境変数がある場合は、実行時読み込みをスキップ
         return;
     }
-    
+
     // まず、ENVIRONMENTが設定されているかチェック
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
-    
+
     // 環境に応じた.envファイルのパスを決定
     let env_file = match environment.as_str() {
         "production" => ".env.production",
         "development" => ".env",
         _ => ".env", // デフォルトは開発環境
     };
-    
-    info!("環境: {}, 読み込み対象: {}", environment, env_file);
-    
+
+    info!("環境: {environment}, 読み込み対象: {env_file}");
+
     // 指定された.envファイルを読み込み
     match dotenv::from_filename(env_file) {
         Ok(_) => {
-            info!("{}ファイルを読み込みました", env_file);
+            info!("{env_file}ファイルを読み込みました");
         }
         Err(_) => {
             // 環境固有のファイルがない場合は、デフォルトの.envを試行
             if env_file != ".env" {
                 match dotenv::dotenv() {
                     Ok(_) => {
-                        warn!("{}が見つからないため、デフォルトの.envファイルを読み込みました", env_file);
+                        warn!("{env_file}が見つからないため、デフォルトの.envファイルを読み込みました");
                     }
                     Err(_) => {
                         warn!("環境変数ファイルが見つかりません。コンパイル時埋め込み値または直接設定された環境変数を使用します。");

@@ -183,13 +183,14 @@ async function handleSubmit(event: Event) {
 		// 領収書がある場合はR2にアップロード
 		if (receiptFile) {
 			let targetExpenseId: number;
-			
+
 			if (expense) {
 				// 更新の場合は既存の経費ID
 				targetExpenseId = expense.id;
 			} else {
 				// 新規作成の場合は最後に追加された経費のIDを取得
-				const lastExpense = expenseStore.expenses[expenseStore.expenses.length - 1];
+				const lastExpense =
+					expenseStore.expenses[expenseStore.expenses.length - 1];
 				if (!lastExpense) {
 					throw new Error("経費の作成に失敗しました");
 				}

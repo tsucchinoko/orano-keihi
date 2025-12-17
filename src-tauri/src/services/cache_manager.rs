@@ -57,8 +57,6 @@ impl CacheManager {
         Ok(())
     }
 
-
-
     /// ファイルをキャッシュに保存（同期版）
     ///
     /// # 引数
@@ -101,8 +99,6 @@ impl CacheManager {
         Ok(cache_path)
     }
 
-
-
     /// キャッシュからファイルを取得（同期版）
     ///
     /// # 引数
@@ -144,8 +140,6 @@ impl CacheManager {
         Ok(None)
     }
 
-
-
     /// 古いキャッシュを削除（同期版）
     ///
     /// # 引数
@@ -179,8 +173,6 @@ impl CacheManager {
         Ok(db_deleted_count)
     }
 
-
-
     /// キャッシュサイズを管理（同期版）
     ///
     /// # 引数
@@ -205,8 +197,6 @@ impl CacheManager {
 
         Ok(())
     }
-
-
 
     /// キャッシュファイル名を生成
     ///
@@ -270,8 +260,6 @@ impl CacheManager {
         Ok(total_size)
     }
 
-
-
     /// LRU方式でキャッシュを削除（同期版）
     ///
     /// # 引数
@@ -304,8 +292,6 @@ impl CacheManager {
 
         Ok(())
     }
-
-
 
     /// 特定のキャッシュファイルを削除（同期版）
     ///
@@ -341,8 +327,6 @@ impl CacheManager {
         Ok(())
     }
 
-
-
     /// オフライン時のキャッシュ表示機能
     ///
     /// # 引数
@@ -375,8 +359,6 @@ impl CacheManager {
 
         Ok(None)
     }
-
-
 
     /// 古いキャッシュエントリを取得するヘルパー関数
     ///

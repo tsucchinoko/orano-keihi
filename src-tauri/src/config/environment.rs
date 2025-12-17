@@ -27,7 +27,7 @@ pub fn get_environment() -> Environment {
         println!("環境判定: コンパイル時埋め込み値を使用 -> {embedded_env} -> {env:?}");
         return env;
     }
-    
+
     // 実行時環境変数を確認
     if let Ok(env_var) = std::env::var("ENVIRONMENT") {
         let env = match env_var.as_str() {
@@ -37,14 +37,17 @@ pub fn get_environment() -> Environment {
         println!("環境判定: 実行時環境変数を使用 -> {env_var} -> {env:?}");
         return env;
     }
-    
+
     // フォールバック: ビルド設定に基づく判定
     let env = if cfg!(debug_assertions) {
         Environment::Development
     } else {
         Environment::Production
     };
-    println!("環境判定: ビルド設定を使用 -> debug_assertions={} -> {env:?}", cfg!(debug_assertions));
+    println!(
+        "環境判定: ビルド設定を使用 -> debug_assertions={} -> {env:?}",
+        cfg!(debug_assertions)
+    );
     env
 }
 

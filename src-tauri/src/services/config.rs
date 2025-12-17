@@ -18,21 +18,27 @@ impl R2Config {
     /// 環境変数から設定を読み込み（セキュリティマネージャー使用）
     pub fn from_env() -> Result<Self, ConfigError> {
         let environment = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
-        info!("R2設定を環境変数から読み込み中... (環境: {})", environment);
+        info!("R2設定を環境変数から読み込み中... (環境: {environment})");
 
         // 環境変数の存在確認（デバッグ用）
-        let env_vars = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_BUCKET_NAME", "R2_REGION"];
+        let env_vars = [
+            "R2_ACCOUNT_ID",
+            "R2_ACCESS_KEY",
+            "R2_SECRET_KEY",
+            "R2_BUCKET_NAME",
+            "R2_REGION",
+        ];
         for var in &env_vars {
             match env::var(var) {
                 Ok(value) => {
                     if var.contains("KEY") {
                         debug!("環境変数 {} = [マスク済み] (長さ: {})", var, value.len());
                     } else {
-                        debug!("環境変数 {} = {}", var, value);
+                        debug!("環境変数 {var} = {value}");
                     }
                 }
                 Err(_) => {
-                    warn!("環境変数 {} が設定されていません", var);
+                    warn!("環境変数 {var} が設定されていません");
                 }
             }
         }
@@ -88,8 +94,6 @@ impl R2Config {
 
         Ok(config)
     }
-
-
 
     /// 設定の検証（セキュリティ強化版）
     pub fn validate(&self) -> Result<(), ConfigError> {

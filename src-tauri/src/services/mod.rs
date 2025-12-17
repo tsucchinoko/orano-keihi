@@ -149,8 +149,6 @@ impl AppError {
         }
     }
 
-
-
     /// エラーの重要度を取得
     pub fn severity(&self) -> ErrorSeverity {
         match self {

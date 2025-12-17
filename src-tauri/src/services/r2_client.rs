@@ -680,8 +680,6 @@ impl R2Client {
             last_measured: chrono::Utc::now().to_rfc3339(),
         })
     }
-
-
 }
 
 #[cfg(test)]

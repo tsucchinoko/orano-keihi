@@ -656,8 +656,6 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
     }
 }
 
-
-
 /// R2から領収書を削除する（統一エラーハンドリング版）
 ///
 /// # 引数

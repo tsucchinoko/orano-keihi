@@ -62,6 +62,20 @@ pub fn get_user(user_id: i64) -> Option<User> {
 - Rust/Tauri関連のコマンドは通常通り`cargo`を使用すること
 - 例：`cargo build`, `cargo tauri dev`
 
+### Rustバージョン情報
+- **使用中のRustバージョン**: rustc 1.88.0 (6b00bc388 2025-06-23)
+- **使用中のCargoバージョン**: cargo 1.88.0 (873a06493 2025-05-10)
+- **使用中のRustupバージョン**: rustup 1.28.2 (e4f3ad6f8 2025-04-28)
+
+### Rustコーディング規則
+- **最新のRust 1.88.0の機能と構文を使用すること**
+- **clippy lintルールに準拠すること**：
+  - `println!`、`info!`、`warn!`、`debug!`マクロでは変数を直接埋め込む形式を使用
+  - 例：`println!("値: {value}")` （`println!("値: {}", value)`ではなく）
+  - 冗長なパターンマッチングを避ける：`if result.is_ok()`（`if let Ok(_) = result`ではなく）
+- **エラーハンドリングは`Result`型と`?`演算子を積極的に使用すること**
+- **所有権とライフタイムを適切に管理すること**
+
 ### Tauriアプリケーション開発
 - **Tauriアプリケーションの開発・テストには`pnpm tauri dev`を使用すること**
 - フロントエンドのみのテストには`pnpm dev`を使用
