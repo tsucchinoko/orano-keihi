@@ -2,7 +2,7 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { uploadReceiptToR2 } from "$lib/utils/tauri";
+import { uploadReceiptToR2, getReceiptFromR2 } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -21,6 +21,7 @@ let category = $state("");
 let description = $state("");
 let receiptFile = $state<string | undefined>(undefined);
 let receiptPreview = $state<string | undefined>(undefined);
+let isLoadingPreview = $state(false);
 
 // フォームの初期化
 $effect(() => {
@@ -32,7 +33,7 @@ $effect(() => {
 
 		// 既存の領収書を表示
 		if (expense.receipt_url) {
-			receiptPreview = expense.receipt_url;
+			loadReceiptPreview(expense.receipt_url);
 		} else if (expense.receipt_path) {
 			// 後方互換性：ローカルパスの場合は変換
 			import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
@@ -58,6 +59,36 @@ let errors = $state<Record<string, string>>({});
 // 送信中フラグ
 let isSubmitting = $state(false);
 let isUploading = $state(false);
+
+// 領収書プレビューを読み込む関数
+async function loadReceiptPreview(receiptUrl: string) {
+	if (!receiptUrl) return;
+
+	// HTTPS URLの場合はR2から取得
+	if (receiptUrl.startsWith("https://")) {
+		isLoadingPreview = true;
+		try {
+			const result = await getReceiptFromR2(receiptUrl);
+			if (result.data && !result.error) {
+				// Base64データをdata URLに変換
+				receiptPreview = `data:image/jpeg;base64,${result.data}`;
+			} else {
+				console.error("領収書の取得に失敗しました:", result.error);
+				toastStore.error("領収書の読み込みに失敗しました");
+				receiptPreview = undefined;
+			}
+		} catch (error) {
+			console.error("領収書プレビューの読み込みエラー:", error);
+			toastStore.error("領収書の読み込み中にエラーが発生しました");
+			receiptPreview = undefined;
+		} finally {
+			isLoadingPreview = false;
+		}
+	} else {
+		// ローカルファイルパスの場合はそのまま設定
+		receiptPreview = receiptUrl;
+	}
+}
 
 // カテゴリ一覧
 const categories = [
@@ -357,13 +388,27 @@ async function handleSubmit(event: Event) {
 			</div>
 
 			<!-- プレビュー表示 -->
-			{#if receiptPreview}
+			{#if isLoadingPreview}
+				<div class="mt-3">
+					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>
+					<div class="flex items-center justify-center h-48 bg-gray-100 rounded-lg border-2 border-gray-200">
+						<div class="flex flex-col items-center gap-2">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+							<p class="text-sm text-gray-500">領収書を読み込み中...</p>
+						</div>
+					</div>
+				</div>
+			{:else if receiptPreview}
 				<div class="mt-3">
 					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>
 					<img
 						src={receiptPreview}
 						alt="領収書プレビュー"
 						class="max-w-full h-auto max-h-48 rounded-lg border-2 border-gray-200"
+						onerror={() => {
+							console.error('画像の読み込みに失敗しました');
+							toastStore.error('画像の表示に失敗しました');
+						}}
 					/>
 				</div>
 			{:else if receiptFile}
