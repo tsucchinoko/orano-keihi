@@ -3,7 +3,7 @@ use crate::models::{CreateExpenseDto, Expense, UpdateExpenseDto};
 use crate::AppState;
 use chrono::NaiveDate;
 use chrono_tz::Asia::Tokyo;
-use tauri::State;
+use tauri::{Manager, State};
 
 /// 経費を作成する
 ///
@@ -141,23 +141,80 @@ pub async fn update_expense(
         .map_err(|e| format!("経費の更新に失敗しました: {e}"))
 }
 
-/// 経費を削除する
+/// 経費を削除する（R2対応）
 ///
 /// # 引数
 /// * `id` - 経費ID
+/// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
 ///
 /// # 戻り値
 /// 成功時は空、失敗時はエラーメッセージ
 #[tauri::command]
-pub async fn delete_expense(id: i64, state: State<'_, AppState>) -> Result<(), String> {
-    // データベース接続を取得
+pub async fn delete_expense(
+    id: i64,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use chrono::Utc;
+    use chrono_tz::Asia::Tokyo;
+
+    // 現在のreceipt_urlを取得
+    let current_receipt_url = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+        expense_operations::get_receipt_url(&db, id)
+            .map_err(|e| format!("receipt_urlの取得に失敗しました: {e}"))?
+    };
+
+    // 領収書がR2に存在する場合は削除
+    if let Some(receipt_url) = current_receipt_url {
+        // R2からファイルを削除（トランザクション的な削除処理：R2→DB順）
+        let deletion_result =
+            crate::commands::receipt_commands::delete_from_r2_with_retry(&receipt_url).await;
+
+        match deletion_result {
+            Ok(_) => {
+                // R2削除成功 - キャッシュからも削除
+                if let Ok(app_data_dir) = app.path().app_data_dir() {
+                    let cache_dir = app_data_dir.join("receipt_cache");
+                    let cache_manager =
+                        crate::services::cache_manager::CacheManager::new(cache_dir, 100);
+
+                    let db = state
+                        .db
+                        .lock()
+                        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
+                        eprintln!("キャッシュ削除エラー: {e}");
+                    }
+                }
+
+                // 削除操作のログ記録
+                let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
+                println!(
+                    "経費削除時の領収書削除完了: expense_id={id}, receipt_url={receipt_url}, timestamp={now}"
+                );
+            }
+            Err(e) => {
+                // R2削除失敗 - データベースの状態は変更しない
+                return Err(format!(
+                    "R2からのファイル削除に失敗しました。経費の削除を中止します: {e}"
+                ));
+            }
+        }
+    }
+
+    // データベースから経費を削除
     let db = state
         .db
         .lock()
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-    // 経費を削除
     expense_operations::delete_expense(&db, id)
         .map_err(|e| format!("経費の削除に失敗しました: {e}"))
 }

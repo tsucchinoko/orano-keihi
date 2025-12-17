@@ -7,7 +7,7 @@ import ExpenseItem from "./ExpenseItem.svelte";
 // Props
 interface Props {
 	onEdit: (expense: Expense) => void;
-	onViewReceipt?: (receiptPath: string) => void;
+	onViewReceipt?: (receiptUrl?: string, receiptPath?: string) => void;
 }
 
 let { onEdit, onViewReceipt }: Props = $props();
@@ -16,9 +16,11 @@ let { onEdit, onViewReceipt }: Props = $props();
 const expenses = $derived(expenseStore.filteredExpenses);
 const selectedMonth = $derived(expenseStore.selectedMonth);
 
-// コンポーネントマウント時に経費を読み込む
+// 初回マウント時のみ経費を読み込む
 $effect(() => {
-	expenseStore.loadExpenses();
+	if (expenses.length === 0) {
+		expenseStore.loadExpenses();
+	}
 });
 
 // 日付でグループ化された経費

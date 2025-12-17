@@ -69,6 +69,36 @@ pnpm dev
 
 - **フロントエンド**: SvelteKit + TypeScript + Vite
 - **バックエンド**: Tauri (Rust)
+- **ストレージ**: Cloudflare R2 (領収書保存)
+- **データベース**: SQLite
 - **パッケージマネージャー**: pnpm
 - **コード品質**: Biome (フォーマット・リンティング)
 - **CI/CD**: GitHub Actions
+
+## Cloudflare R2 設定
+
+このアプリケーションは領収書の保存にCloudflare R2を使用します。R2機能を使用するには、以下のドキュメントを参照して設定を行ってください：
+
+1. **[R2設定ガイド](./docs/R2_SETUP.md)** - Cloudflare R2の初期設定
+2. **[環境変数設定ガイド](./docs/ENVIRONMENT_SETUP.md)** - 必要な環境変数の設定方法
+3. **[トラブルシューティングガイド](./docs/TROUBLESHOOTING.md)** - よくある問題と解決方法
+
+### クイックスタート
+
+R2機能を使用するための最小限の設定：
+
+```bash
+# 1. src-tauri/.envファイルを作成
+cp src-tauri/.env.example src-tauri/.env
+
+# 2. .envファイルにR2認証情報を設定
+# R2_ACCOUNT_ID=your_account_id
+# R2_ACCESS_KEY=your_access_key  
+# R2_SECRET_KEY=your_secret_key
+# R2_BUCKET_NAME=expense-receipts-dev
+
+# 3. アプリケーションを起動
+pnpm tauri dev
+```
+
+詳細な設定手順については、上記のドキュメントを参照してください。

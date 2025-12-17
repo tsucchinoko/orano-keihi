@@ -2,7 +2,7 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { saveReceipt, deleteReceipt } from "$lib/utils/tauri";
+import { uploadReceiptToR2 } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -15,26 +15,49 @@ interface Props {
 let { expense, onSuccess, onCancel }: Props = $props();
 
 // フォームの状態
-let date = $state(
-	expense?.date.split("T")[0] || new Date().toISOString().split("T")[0],
-);
-let amount = $state(expense?.amount.toString() || "");
-let category = $state(expense?.category || "");
-let description = $state(expense?.description || "");
+let date = $state("");
+let amount = $state("");
+let category = $state("");
+let description = $state("");
 let receiptFile = $state<string | undefined>(undefined);
 let receiptPreview = $state<string | undefined>(undefined);
 
-// 既存の領収書パスを変換してプレビュー表示
+// フォームの初期化
 $effect(() => {
-	if (expense?.receipt_path) {
-		import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
-			receiptPreview = convertFileSrc(expense.receipt_path!);
-		});
+	if (expense) {
+		date = expense.date.split("T")[0] || new Date().toISOString().split("T")[0];
+		amount = expense.amount.toString() || "";
+		category = expense.category || "";
+		description = expense.description || "";
+
+		// 既存の領収書を表示
+		if (expense.receipt_url) {
+			receiptPreview = expense.receipt_url;
+		} else if (expense.receipt_path) {
+			// 後方互換性：ローカルパスの場合は変換
+			import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+				if (expense?.receipt_path) {
+					receiptPreview = convertFileSrc(expense.receipt_path);
+				}
+			});
+		}
+	} else {
+		// 新規作成時の初期値
+		date = new Date().toISOString().split("T")[0];
+		amount = "";
+		category = "";
+		description = "";
+		receiptFile = undefined;
+		receiptPreview = undefined;
 	}
 });
 
 // バリデーションエラー
 let errors = $state<Record<string, string>>({});
+
+// 送信中フラグ
+let isSubmitting = $state(false);
+let isUploading = $state(false);
 
 // カテゴリ一覧
 const categories = [
@@ -100,6 +123,7 @@ async function selectReceipt() {
 
 		if (selected && typeof selected === "string") {
 			receiptFile = selected;
+
 			// 画像プレビュー用（PDFの場合はプレビューなし）
 			if (selected.match(/\.(png|jpg|jpeg)$/i)) {
 				// Tauriのファイルパスを変換してプレビュー表示
@@ -108,6 +132,8 @@ async function selectReceipt() {
 			} else {
 				receiptPreview = undefined;
 			}
+
+			toastStore.success("領収書ファイルを選択しました");
 		}
 	} catch (error) {
 		console.error("領収書ファイルの選択に失敗しました:", error);
@@ -116,32 +142,11 @@ async function selectReceipt() {
 }
 
 // 領収書削除
-async function deleteReceiptFile() {
-	if (!expense?.id) {
-		toastStore.error("経費IDが見つかりません");
-		return;
-	}
-
-	try {
-		const result = await deleteReceipt(expense.id);
-		if (result.error) {
-			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
-			return;
-		}
-
-		// プレビューとファイル選択をクリア
-		receiptPreview = undefined;
-		receiptFile = undefined;
-
-		toastStore.success("領収書を削除しました");
-	} catch (error) {
-		console.error("領収書削除エラー:", error);
-		toastStore.error("領収書の削除に失敗しました");
-	}
+function removeReceipt() {
+	receiptFile = undefined;
+	receiptPreview = undefined;
+	toastStore.success("領収書を削除しました");
 }
-
-// 送信中フラグ
-let isSubmitting = $state(false);
 
 // フォーム送信
 async function handleSubmit(event: Event) {
@@ -172,36 +177,64 @@ async function handleSubmit(event: Event) {
 		}
 
 		if (!success) {
-			toastStore.error(expenseStore.error || "経費の保存に失敗しました");
-			return;
+			throw new Error(expenseStore.error || "経費の保存に失敗しました");
 		}
 
-		// 領収書がある場合は保存
-		if (receiptFile && !expense) {
-			// 新規作成の場合のみ領収書を保存
-			// 最後に追加された経費のIDを取得
-			const lastExpense =
-				expenseStore.expenses[expenseStore.expenses.length - 1];
-			if (lastExpense) {
-				const result = await saveReceipt(lastExpense.id, receiptFile);
-				if (result.error) {
-					toastStore.error(`領収書の保存に失敗しました: ${result.error}`);
-				} else {
-					// 領収書パスを更新
-					await expenseStore.modifyExpense(lastExpense.id, {
-						receipt_path: result.data,
-					});
+		// 領収書がある場合はR2にアップロード
+		if (receiptFile) {
+			let targetExpenseId: number;
+
+			if (expense) {
+				// 更新の場合は既存の経費ID
+				targetExpenseId = expense.id;
+			} else {
+				// 新規作成の場合は最後に追加された経費のIDを取得
+				const lastExpense =
+					expenseStore.expenses[expenseStore.expenses.length - 1];
+				if (!lastExpense) {
+					throw new Error("経費の作成に失敗しました");
 				}
+				targetExpenseId = lastExpense.id;
 			}
-		}
 
-		// 成功メッセージ
-		toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");
+			isUploading = true;
+			try {
+				const uploadResult = await uploadReceiptToR2(
+					targetExpenseId,
+					receiptFile,
+				);
+				if (uploadResult.error) {
+					console.warn("領収書アップロードエラー:", uploadResult.error);
+					toastStore.warning(
+						"経費は保存されましたが、領収書のアップロードに失敗しました",
+					);
+				} else {
+					// 経費データを更新してreceipt_urlを設定
+					await expenseStore.modifyExpense(targetExpenseId, {
+						receipt_url: uploadResult.data,
+					});
+					toastStore.success("経費と領収書を保存しました");
+				}
+			} catch (uploadError) {
+				console.warn("領収書アップロードエラー:", uploadError);
+				toastStore.warning(
+					"経費は保存されましたが、領収書のアップロードに失敗しました",
+				);
+			} finally {
+				isUploading = false;
+			}
+		} else {
+			// 成功メッセージ
+			toastStore.success(expense ? "経費を更新しました" : "経費を追加しました");
+		}
 
 		// 成功コールバック
 		onSuccess();
 	} catch (error) {
-		toastStore.error(`エラーが発生しました: ${error}`);
+		console.error("経費保存エラー:", error);
+		toastStore.error(
+			error instanceof Error ? error.message : "経費の保存に失敗しました",
+		);
 	} finally {
 		isSubmitting = false;
 	}
@@ -299,26 +332,31 @@ async function handleSubmit(event: Event) {
 			<label for="receipt-upload" class="block text-sm font-semibold mb-2">
 				領収書（オプション）
 			</label>
-			<div class="flex gap-2">
+			
+			<div class="flex gap-2 mb-3">
 				<button
 					id="receipt-upload"
 					type="button"
 					onclick={selectReceipt}
 					class="btn btn-info flex-1"
+					disabled={isSubmitting || isUploading}
 				>
 					📎 領収書を選択
 				</button>
-				{#if (receiptPreview || receiptFile) && expense}
+				{#if receiptFile || receiptPreview}
 					<button
 						type="button"
-						onclick={deleteReceiptFile}
+						onclick={removeReceipt}
 						class="btn bg-red-500 text-white px-4"
 						title="領収書を削除"
+						disabled={isSubmitting || isUploading}
 					>
 						🗑️
 					</button>
 				{/if}
 			</div>
+
+			<!-- プレビュー表示 -->
 			{#if receiptPreview}
 				<div class="mt-3">
 					<p class="text-sm text-gray-600 mb-2">プレビュー:</p>
@@ -342,19 +380,47 @@ async function handleSubmit(event: Event) {
 			<button
 				type="submit"
 				class="btn btn-primary flex-1"
-				disabled={isSubmitting}
+				disabled={isSubmitting || isUploading}
 			>
-				{isSubmitting ? '保存中...' : '💾 保存'}
+				{#if isSubmitting}
+					<span class="flex items-center gap-2">
+						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+						保存中...
+					</span>
+				{:else if isUploading}
+					<span class="flex items-center gap-2">
+						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+						アップロード中...
+					</span>
+				{:else}
+					💾 保存
+				{/if}
 			</button>
 			<button
 				type="button"
 				onclick={onCancel}
 				class="btn bg-gray-300 text-gray-700 flex-1"
-				disabled={isSubmitting}
+				disabled={isSubmitting || isUploading}
 			>
 				キャンセル
 			</button>
 		</div>
+
+		<!-- 操作中の注意事項 -->
+		{#if isSubmitting || isUploading}
+			<div class="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+				<div class="flex items-center gap-2">
+					<span class="text-yellow-600">⚠️</span>
+					<p class="text-sm text-yellow-700">
+						{#if isUploading}
+							領収書をアップロード中です。ページを閉じたり、ブラウザを更新しないでください。
+						{:else}
+							経費を保存中です。ページを閉じたり、ブラウザを更新しないでください。
+						{/if}
+					</p>
+				</div>
+			</div>
+		{/if}
 	</form>
 </div>
 

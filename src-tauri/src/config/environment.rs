@@ -13,14 +13,42 @@ pub enum Environment {
 /// 現在の実行環境（Development または Production）
 ///
 /// # 判定ロジック
-/// - デバッグビルドの場合は Development
-/// - リリースビルドの場合は Production
+/// 1. コンパイル時埋め込み環境変数を最優先
+/// 2. 実行時環境変数 ENVIRONMENT を確認
+/// 3. デバッグビルドの場合は Development
+/// 4. リリースビルドの場合は Production
 pub fn get_environment() -> Environment {
-    if cfg!(debug_assertions) {
+    // コンパイル時埋め込み環境変数を最優先
+    if let Some(embedded_env) = option_env!("EMBEDDED_ENVIRONMENT") {
+        let env = match embedded_env {
+            "production" => Environment::Production,
+            _ => Environment::Development,
+        };
+        println!("環境判定: コンパイル時埋め込み値を使用 -> {embedded_env} -> {env:?}");
+        return env;
+    }
+
+    // 実行時環境変数を確認
+    if let Ok(env_var) = std::env::var("ENVIRONMENT") {
+        let env = match env_var.as_str() {
+            "production" => Environment::Production,
+            _ => Environment::Development,
+        };
+        println!("環境判定: 実行時環境変数を使用 -> {env_var} -> {env:?}");
+        return env;
+    }
+
+    // フォールバック: ビルド設定に基づく判定
+    let env = if cfg!(debug_assertions) {
         Environment::Development
     } else {
         Environment::Production
-    }
+    };
+    println!(
+        "環境判定: ビルド設定を使用 -> debug_assertions={} -> {env:?}",
+        cfg!(debug_assertions)
+    );
+    env
 }
 
 /// 環境に応じたデータベースファイル名を取得する

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import { goto } from "$app/navigation";
 import { SubscriptionForm, SubscriptionList } from "$features/subscriptions";
 import { ExpenseForm } from "$features/expenses";
 import type { Expense, Subscription } from "$lib/types";
@@ -172,16 +173,24 @@ function getCategoryColor(category: string): string {
 				<h3 class="action-title">経費を追加</h3>
 				<p class="action-description">新しい経費を記録する</p>
 			</button>
-			<a href="/expenses" class="action-card gradient-info">
+			<button 
+				type="button"
+				class="action-card gradient-info" 
+				onclick={() => goto('/expenses')}
+			>
 				<div class="action-icon">📊</div>
 				<h3 class="action-title">経費一覧</h3>
 				<p class="action-description">経費を確認・編集する</p>
-			</a>
-			<a href="/subscriptions" class="action-card gradient-warning">
+			</button>
+			<button 
+				type="button"
+				class="action-card gradient-warning" 
+				onclick={() => goto('/subscriptions')}
+			>
 				<div class="action-icon">💳</div>
 				<h3 class="action-title">サブスクリプション</h3>
 				<p class="action-description">定期支払いを管理する</p>
-			</a>
+			</button>
 		</div>
 
 		<!-- 今月の経費サマリー -->

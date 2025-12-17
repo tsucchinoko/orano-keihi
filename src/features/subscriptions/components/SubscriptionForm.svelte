@@ -18,25 +18,42 @@ interface Props {
 let { subscription, onSuccess, onCancel }: Props = $props();
 
 // フォームの状態
-let name = $state(subscription?.name || "");
-let amount = $state(subscription?.amount.toString() || "");
-let billingCycle = $state<"monthly" | "annual">(
-	subscription?.billing_cycle || "monthly",
-);
-let startDate = $state(
-	subscription?.start_date.split("T")[0] ||
-		new Date().toISOString().split("T")[0],
-);
-let category = $state(subscription?.category || "");
+let name = $state("");
+let amount = $state("");
+let billingCycle = $state<"monthly" | "annual">("monthly");
+let startDate = $state("");
+let category = $state("");
 let receiptFile = $state<string | undefined>(undefined);
 let receiptPreview = $state<string | undefined>(undefined);
 
-// 既存の領収書パスを変換してプレビュー表示
+// フォームの初期化と既存の領収書パス変換
 $effect(() => {
-	if (subscription?.receipt_path) {
-		import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
-			receiptPreview = convertFileSrc(subscription.receipt_path!);
-		});
+	// フォームフィールドの初期化
+	if (subscription) {
+		name = subscription.name || "";
+		amount = subscription.amount.toString() || "";
+		billingCycle = subscription.billing_cycle || "monthly";
+		startDate =
+			subscription.start_date.split("T")[0] ||
+			new Date().toISOString().split("T")[0];
+		category = subscription.category || "";
+
+		// 既存の領収書パスを変換してプレビュー表示
+		if (subscription.receipt_path) {
+			import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+				if (subscription?.receipt_path) {
+					receiptPreview = convertFileSrc(subscription.receipt_path);
+				}
+			});
+		}
+	} else {
+		// 新規作成時の初期値
+		name = "";
+		amount = "";
+		billingCycle = "monthly";
+		startDate = new Date().toISOString().split("T")[0];
+		category = "";
+		receiptPreview = undefined;
 	}
 });
 

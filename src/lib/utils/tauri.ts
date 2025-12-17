@@ -244,3 +244,193 @@ export async function deleteSubscriptionReceipt(
 		invoke<boolean>("delete_subscription_receipt", { subscriptionId }),
 	);
 }
+
+// ========================================
+// R2領収書関連のコマンド
+// ========================================
+
+/**
+ * 領収書ファイルをR2にアップロードする
+ *
+ * @param expenseId - 経費ID
+ * @param filePath - アップロードするファイルのパス
+ * @returns アップロードされたHTTPS URLまたはエラー
+ */
+export async function uploadReceiptToR2(
+	expenseId: number,
+	filePath: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("upload_receipt_to_r2", { expenseId, filePath }),
+	);
+}
+
+/**
+ * R2から領収書を取得する
+ *
+ * @param receiptUrl - 領収書のHTTPS URL
+ * @returns Base64エンコードされたファイルデータまたはエラー
+ */
+export async function getReceiptFromR2(
+	receiptUrl: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("get_receipt_from_r2", { receiptUrl }),
+	);
+}
+
+/**
+ * R2から領収書を削除する
+ *
+ * @param expenseId - 経費ID
+ * @returns 成功またはエラー
+ */
+export async function deleteReceiptFromR2(
+	expenseId: number,
+): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(
+		invoke<boolean>("delete_receipt_from_r2", { expenseId }),
+	);
+}
+
+/**
+ * R2接続をテストする
+ *
+ * @returns 接続成功またはエラー
+ */
+export async function testR2Connection(): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(invoke<boolean>("test_r2_connection"));
+}
+
+// ========================================
+// キャッシュ関連のコマンド
+// ========================================
+
+/**
+ * オフライン時に領収書をキャッシュから取得する
+ *
+ * @param receiptUrl - 領収書のHTTPS URL
+ * @returns Base64エンコードされたキャッシュファイルデータまたはエラー
+ */
+export async function getReceiptOffline(
+	receiptUrl: string,
+): Promise<TauriResult<string>> {
+	return handleTauriCommand(
+		invoke<string>("get_receipt_offline", { receiptUrl }),
+	);
+}
+
+/**
+ * オンライン復帰時にキャッシュを同期する
+ *
+ * @returns 同期されたキャッシュ数またはエラー
+ */
+export async function syncCacheOnOnline(): Promise<TauriResult<number>> {
+	return handleTauriCommand(invoke<number>("sync_cache_on_online"));
+}
+
+/**
+ * キャッシュ統計情報を取得する
+ *
+ * @returns キャッシュ統計情報またはエラー
+ */
+export async function getCacheStats(): Promise<
+	TauriResult<import("../types").CacheStats>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").CacheStats>("get_cache_stats"),
+	);
+}
+
+// ========================================
+// 並列処理とパフォーマンス関連のコマンド
+// ========================================
+
+/**
+ * 複数ファイルを並列でR2にアップロードする
+ *
+ * @param files - アップロードするファイルのリスト
+ * @param maxConcurrent - 最大同時実行数（オプション、デフォルト: 3）
+ * @returns アップロード結果またはエラー
+ */
+export async function uploadMultipleReceiptsToR2(
+	files: import("../types").MultipleFileUploadInput[],
+	maxConcurrent?: number,
+): Promise<TauriResult<import("../types").MultipleUploadResult>> {
+	return handleTauriCommand(
+		invoke<import("../types").MultipleUploadResult>(
+			"upload_multiple_receipts_to_r2",
+			{ files, maxConcurrent },
+		),
+	);
+}
+
+/**
+ * アップロードをキャンセルする
+ *
+ * @param uploadId - アップロードID
+ * @returns キャンセル成功またはエラー
+ */
+export async function cancelUpload(
+	uploadId: string,
+): Promise<TauriResult<boolean>> {
+	return handleTauriCommand(invoke<boolean>("cancel_upload", { uploadId }));
+}
+
+/**
+ * R2パフォーマンス統計を取得する
+ *
+ * @returns パフォーマンス統計またはエラー
+ */
+export async function getR2PerformanceStats(): Promise<
+	TauriResult<import("../types").PerformanceStats>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").PerformanceStats>("get_r2_performance_stats"),
+	);
+}
+
+// ========================================
+// 統合テストとデバッグ機能
+// ========================================
+
+/**
+ * R2接続の詳細テストを実行する
+ *
+ * @returns 詳細なテスト結果またはエラー
+ */
+export async function testR2ConnectionDetailed(): Promise<
+	TauriResult<import("../types").R2ConnectionTestResult>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").R2ConnectionTestResult>(
+			"test_r2_connection_detailed",
+		),
+	);
+}
+
+/**
+ * R2使用量監視情報を取得する
+ *
+ * @returns 使用量監視情報またはエラー
+ */
+export async function getR2UsageMonitoring(): Promise<
+	TauriResult<import("../types").R2UsageInfo>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").R2UsageInfo>("get_r2_usage_monitoring"),
+	);
+}
+
+/**
+ * 開発者向けR2デバッグ情報を取得する
+ *
+ * @returns デバッグ情報またはエラー
+ */
+export async function getR2DebugInfo(): Promise<
+	TauriResult<import("../types").R2DebugInfo>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").R2DebugInfo>("get_r2_debug_info"),
+	);
+}

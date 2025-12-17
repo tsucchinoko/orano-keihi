@@ -1,11 +1,8 @@
 <script lang="ts">
-// Props
-interface Props {
-	selectedMonth: string; // YYYY-MM形式
-	onMonthChange: (month: string) => void;
-}
+import { expenseStore } from "$lib/stores/expenses.svelte";
 
-let { selectedMonth, onMonthChange }: Props = $props();
+// ストアから選択された月を取得
+const selectedMonth = $derived(expenseStore.selectedMonth);
 
 // 現在の年月
 const currentYear = new Date().getFullYear();
@@ -33,28 +30,36 @@ const months = [
 	{ value: 12, label: "12月" },
 ];
 
-// 選択中の年と月を分解
-const [selectedYear, selectedMonthNum] = selectedMonth.split("-").map(Number);
+// 選択中の年と月を分解（リアクティブに）
+const selectedYear = $derived(() => {
+	const [year] = selectedMonth.split("-").map(Number);
+	return year;
+});
+
+const selectedMonthNum = $derived(() => {
+	const [, month] = selectedMonth.split("-").map(Number);
+	return month;
+});
 
 // 年の変更
 function handleYearChange(event: Event) {
 	const target = event.target as HTMLSelectElement;
 	const newYear = target.value;
-	const newMonth = String(selectedMonthNum).padStart(2, "0");
-	onMonthChange(`${newYear}-${newMonth}`);
+	const newMonth = String(selectedMonthNum()).padStart(2, "0");
+	expenseStore.setSelectedMonth(`${newYear}-${newMonth}`);
 }
 
 // 月の変更
 function handleMonthChange(event: Event) {
 	const target = event.target as HTMLSelectElement;
 	const newMonth = String(target.value).padStart(2, "0");
-	onMonthChange(`${selectedYear}-${newMonth}`);
+	expenseStore.setSelectedMonth(`${selectedYear()}-${newMonth}`);
 }
 
 // 前月へ
 function previousMonth() {
-	let year = selectedYear;
-	let month = selectedMonthNum - 1;
+	let year = selectedYear();
+	let month = selectedMonthNum() - 1;
 
 	if (month < 1) {
 		month = 12;
@@ -62,13 +67,13 @@ function previousMonth() {
 	}
 
 	const newMonth = String(month).padStart(2, "0");
-	onMonthChange(`${year}-${newMonth}`);
+	expenseStore.setSelectedMonth(`${year}-${newMonth}`);
 }
 
 // 次月へ
 function nextMonth() {
-	let year = selectedYear;
-	let month = selectedMonthNum + 1;
+	let year = selectedYear();
+	let month = selectedMonthNum() + 1;
 
 	if (month > 12) {
 		month = 1;
@@ -76,7 +81,7 @@ function nextMonth() {
 	}
 
 	const newMonth = String(month).padStart(2, "0");
-	onMonthChange(`${year}-${newMonth}`);
+	expenseStore.setSelectedMonth(`${year}-${newMonth}`);
 }
 
 // 今月へ
@@ -84,17 +89,17 @@ function goToCurrentMonth() {
 	const now = new Date();
 	const year = now.getFullYear();
 	const month = String(now.getMonth() + 1).padStart(2, "0");
-	onMonthChange(`${year}-${month}`);
+	expenseStore.setSelectedMonth(`${year}-${month}`);
 }
 
 // 次月ボタンの無効化判定（未来の月は選択不可）
 const isNextDisabled = $derived(() => {
-	return selectedYear === currentYear && selectedMonthNum >= currentMonth;
+	return selectedYear() === currentYear && selectedMonthNum() >= currentMonth;
 });
 
 // 今月かどうか
 const isCurrentMonth = $derived(() => {
-	return selectedYear === currentYear && selectedMonthNum === currentMonth;
+	return selectedYear() === currentYear && selectedMonthNum() === currentMonth;
 });
 </script>
 
@@ -113,7 +118,7 @@ const isCurrentMonth = $derived(() => {
 		<!-- 年月選択 -->
 		<div class="flex-1 flex items-center gap-2">
 			<select
-				value={selectedYear}
+				value={selectedYear()}
 				onchange={handleYearChange}
 				class="input flex-1"
 			>
@@ -123,7 +128,7 @@ const isCurrentMonth = $derived(() => {
 			</select>
 
 			<select
-				value={selectedMonthNum}
+				value={selectedMonthNum()}
 				onchange={handleMonthChange}
 				class="input flex-1"
 			>
@@ -161,7 +166,7 @@ const isCurrentMonth = $derived(() => {
 	<!-- 選択中の月を大きく表示 -->
 	<div class="mt-4 text-center">
 		<p class="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-			{selectedYear}年 {selectedMonthNum}月
+			{selectedYear()}年 {selectedMonthNum()}月
 		</p>
 	</div>
 </div>

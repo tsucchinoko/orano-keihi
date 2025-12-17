@@ -6,7 +6,7 @@
 
 interface Props {
 	message: string;
-	type?: "success" | "error" | "info";
+	type?: "success" | "error" | "info" | "warning";
 	duration?: number;
 	onClose: () => void;
 }
@@ -27,6 +27,7 @@ const typeStyles = {
 	success: "bg-gradient-to-r from-green-500 to-emerald-500",
 	error: "bg-gradient-to-r from-red-500 to-pink-500",
 	info: "bg-gradient-to-r from-blue-500 to-cyan-500",
+	warning: "bg-gradient-to-r from-yellow-500 to-orange-500",
 };
 
 // タイプ別のアイコン
@@ -34,6 +35,7 @@ const typeIcons = {
 	success: "✓",
 	error: "✕",
 	info: "ℹ",
+	warning: "⚠",
 };
 </script>
 

@@ -1,9 +1,18 @@
-pre-push:
+pre-commit:
   jobs:
     - name: format frontend
       tags:
         - frontend
       run: pnpm run fmt
+      stage_fixed: true
+    - name: format backend
+      tags:
+        - backend
+      run: cargo fmt --manifest-path src-tauri/Cargo.toml --all-targets --all-features
+      stage_fixed: true
+
+pre-push:
+  jobs:
     - name: lint frontend
       tags:
         - frontend
@@ -16,10 +25,6 @@ pre-push:
       tags:
         - frontend
       run: pnpm run build
-    - name: format backend
-      tags:
-        - backend
-      run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --
     - name: lint backend
       tags:
         - backend
