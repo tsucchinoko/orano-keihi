@@ -101,11 +101,14 @@
 
 /* ベーススタイル */
 @layer base {
+	html,
 	body {
 		font-family:
 			"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-		background: var(--bg-gradient-light);
+		background: transparent;
 		min-height: 100vh;
+		margin: 0;
+		padding: 0;
 	}
 }
 

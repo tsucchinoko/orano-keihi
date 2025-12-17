@@ -89,8 +89,10 @@ function isActive(path: string): boolean {
 	/* アプリケーション全体のコンテナ */
 	.app-container {
 		min-height: 100vh;
-		background: var(--bg-gradient-light);
+		background: #f9fafb;
 		font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		position: relative;
+		overflow-x: hidden;
 	}
 
 	/* ヘッダースタイル */

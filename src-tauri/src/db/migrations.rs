@@ -66,10 +66,22 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             let _ = conn.execute("ALTER TABLE expenses ADD COLUMN receipt_url TEXT", []);
         }
 
-        // receipt_pathカラムが存在する場合は警告を出力（削除はしない）
+        // receipt_pathカラムが存在する場合は削除する
         let has_receipt_path = check_column_exists(conn, "expenses", "receipt_path");
         if has_receipt_path {
-            println!("注意: 古いreceipt_pathカラムが検出されました。新しいreceipt_urlカラムを使用してください。");
+            println!("古いreceipt_pathカラムを削除します...");
+            match drop_receipt_path_column(conn) {
+                Ok(result) => {
+                    if result.success {
+                        println!("{}", result.message);
+                    } else {
+                        eprintln!("警告: {}", result.message);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("警告: receipt_pathカラムの削除でエラーが発生しました: {e}");
+                }
+            }
         }
     }
 
@@ -463,6 +475,145 @@ pub fn is_receipt_url_migration_complete(conn: &Connection) -> Result<bool> {
     }
 }
 
+/// receipt_pathカラムを削除するマイグレーションを実行する
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+pub fn drop_receipt_path_column(conn: &Connection) -> Result<MigrationResult, MigrationError> {
+    // receipt_pathカラムが存在するかチェック
+    if !check_column_exists(conn, "expenses", "receipt_path") {
+        return Ok(MigrationResult {
+            success: true,
+            message: "receipt_pathカラムは既に存在しません".to_string(),
+            backup_path: None,
+        });
+    }
+
+    println!("receipt_pathカラムを削除します...");
+
+    // トランザクション内でマイグレーションを実行
+    let tx = conn.unchecked_transaction()?;
+
+    match execute_drop_receipt_path(&tx) {
+        Ok(_) => {
+            // コミット
+            tx.commit()?;
+
+            Ok(MigrationResult {
+                success: true,
+                message: "receipt_pathカラムの削除が完了しました".to_string(),
+                backup_path: None,
+            })
+        }
+        Err(e) => {
+            // エラー時はロールバック
+            tx.rollback()?;
+            Ok(MigrationResult {
+                success: false,
+                message: format!("receipt_pathカラムの削除に失敗しました: {e}"),
+                backup_path: None,
+            })
+        }
+    }
+}
+
+/// receipt_pathカラムの削除を実行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_drop_receipt_path(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    // 既存のテーブル構造を確認
+    let table_info: Vec<(String, String)> = tx
+        .prepare("PRAGMA table_info(expenses)")?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let has_receipt_url = table_info.iter().any(|(name, _)| name == "receipt_url");
+    let has_receipt_path = table_info.iter().any(|(name, _)| name == "receipt_path");
+
+    // receipt_pathカラムが存在しない場合は何もしない
+    if !has_receipt_path {
+        return Ok(());
+    }
+
+    // 1. 新しいテーブル構造を作成（receipt_pathカラムなし）
+    let create_table_sql = if has_receipt_url {
+        // receipt_urlカラムが既に存在する場合
+        "CREATE TABLE expenses_temp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL,
+            category TEXT NOT NULL,
+            description TEXT,
+            receipt_url TEXT CHECK(receipt_url IS NULL OR receipt_url LIKE 'https://%'),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )"
+    } else {
+        // receipt_urlカラムが存在しない場合（古いスキーマ）
+        "CREATE TABLE expenses_temp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL,
+            category TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )"
+    };
+
+    tx.execute(create_table_sql, [])?;
+
+    // 2. 既存データを移行（receipt_pathカラムを除く）
+    let insert_sql = if has_receipt_url {
+        // receipt_urlカラムが存在する場合
+        "INSERT INTO expenses_temp (id, date, amount, category, description, receipt_url, created_at, updated_at)
+         SELECT id, date, amount, category, description, receipt_url, created_at, updated_at
+         FROM expenses"
+    } else {
+        // receipt_urlカラムが存在しない場合
+        "INSERT INTO expenses_temp (id, date, amount, category, description, created_at, updated_at)
+         SELECT id, date, amount, category, description, created_at, updated_at
+         FROM expenses"
+    };
+
+    tx.execute(insert_sql, [])?;
+
+    // 3. 古いテーブルを削除
+    tx.execute("DROP TABLE expenses", [])?;
+
+    // 4. 新しいテーブルをリネーム
+    tx.execute("ALTER TABLE expenses_temp RENAME TO expenses", [])?;
+
+    // 5. インデックスを再作成
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
+        [],
+    )?;
+
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
+        [],
+    )?;
+
+    if has_receipt_url {
+        tx.execute(
+            "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
 /// テーブルに指定されたカラムが存在するかチェックする
 ///
 /// # 引数
@@ -668,5 +819,55 @@ mod tests {
             [],
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_drop_receipt_path_column() {
+        let conn = create_test_db();
+
+        // receipt_pathカラムが存在することを確認
+        assert!(check_column_exists(&conn, "expenses", "receipt_path"));
+
+        // receipt_pathカラムを削除
+        let result = drop_receipt_path_column(&conn).unwrap();
+
+        // エラーメッセージを出力
+        if !result.success {
+            println!("マイグレーション失敗: {}", result.message);
+        }
+        assert!(result.success, "マイグレーション失敗: {}", result.message);
+
+        // receipt_pathカラムが削除されたことを確認
+        assert!(!check_column_exists(&conn, "expenses", "receipt_path"));
+
+        // データが保持されていることを確認
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // 既に削除されている場合のテスト
+        let result2 = drop_receipt_path_column(&conn).unwrap();
+        assert!(result2.success);
+        assert!(result2.message.contains("既に存在しません"));
+    }
+
+    #[test]
+    fn test_check_column_exists() {
+        let conn = create_test_db();
+
+        // 存在するカラムのテスト
+        assert!(check_column_exists(&conn, "expenses", "id"));
+        assert!(check_column_exists(&conn, "expenses", "receipt_path"));
+
+        // 存在しないカラムのテスト
+        assert!(!check_column_exists(
+            &conn,
+            "expenses",
+            "nonexistent_column"
+        ));
+
+        // 存在しないテーブルのテスト
+        assert!(!check_column_exists(&conn, "nonexistent_table", "id"));
     }
 }
