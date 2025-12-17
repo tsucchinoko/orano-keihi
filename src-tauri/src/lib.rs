@@ -78,13 +78,8 @@ pub fn run() {
 
             info!("アプリケーション初期化を開始します...");
 
-            // 環境変数を読み込み（.envファイルがある場合）
-            if dotenv::dotenv().is_err() {
-                // .envファイルがない場合は無視（本番環境では環境変数が直接設定される）
-                warn!(".envファイルが見つかりません。環境変数が直接設定されていることを確認してください。");
-            } else {
-                info!(".envファイルを読み込みました");
-            }
+            // 環境に応じた.envファイルを読み込み
+            load_environment_variables();
 
             // セキュリティマネージャーを初期化（.envファイル読み込み後）
             let security_manager = SecurityManager::new();
@@ -182,6 +177,43 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");
+}
+
+/// 環境に応じた.envファイルを読み込み
+fn load_environment_variables() {
+    // まず、ENVIRONMENTが設定されているかチェック
+    let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+    
+    // 環境に応じた.envファイルのパスを決定
+    let env_file = match environment.as_str() {
+        "production" => ".env.production",
+        "development" => ".env",
+        _ => ".env", // デフォルトは開発環境
+    };
+    
+    info!("環境: {}, 読み込み対象: {}", environment, env_file);
+    
+    // 指定された.envファイルを読み込み
+    match dotenv::from_filename(env_file) {
+        Ok(_) => {
+            info!("{}ファイルを読み込みました", env_file);
+        }
+        Err(_) => {
+            // 環境固有のファイルがない場合は、デフォルトの.envを試行
+            if env_file != ".env" {
+                match dotenv::dotenv() {
+                    Ok(_) => {
+                        warn!("{}が見つからないため、デフォルトの.envファイルを読み込みました", env_file);
+                    }
+                    Err(_) => {
+                        warn!("環境変数ファイルが見つかりません。環境変数が直接設定されていることを確認してください。");
+                    }
+                }
+            } else {
+                warn!(".envファイルが見つかりません。環境変数が直接設定されていることを確認してください。");
+            }
+        }
+    }
 }
 
 /// ログシステムを初期化
