@@ -54,14 +54,16 @@ function isActive(path: string): boolean {
 						>
 							サブスクリプション
 						</button>
-						<button 
-							type="button"
-							class:active={isActive('/debug')}
-							class="nav-link nav-button debug-link" 
-							onclick={() => navigateTo('/debug')}
-						>
-							デバッグ
-						</button>
+						{#if import.meta.env.DEV}
+							<button 
+								type="button"
+								class:active={isActive('/debug')}
+								class="nav-link nav-button debug-link" 
+								onclick={() => navigateTo('/debug')}
+							>
+								デバッグ
+							</button>
+						{/if}
 					</div>
 				</nav>
 			</header>
