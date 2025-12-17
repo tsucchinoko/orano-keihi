@@ -167,6 +167,7 @@ pub fn run() {
             migration_commands::execute_receipt_url_migration,
             migration_commands::restore_database_from_backup,
             migration_commands::list_backup_files,
+            migration_commands::drop_receipt_path_column_command,
             // セキュリティコマンド
             security_commands::get_system_diagnostic_info,
             security_commands::validate_security_configuration,

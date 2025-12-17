@@ -1,8 +1,8 @@
 use crate::db::{
     connection::initialize_database,
     migrations::{
-        is_receipt_url_migration_complete, migrate_receipt_path_to_url, restore_from_backup,
-        MigrationResult,
+        drop_receipt_path_column, is_receipt_url_migration_complete, migrate_receipt_path_to_url,
+        restore_from_backup, MigrationResult,
     },
 };
 use chrono::Utc;
@@ -72,6 +72,23 @@ pub async fn restore_database_from_backup(
         .map_err(|e| format!("データベース復元エラー: {e}"))?;
 
     Ok("データベースの復元が完了しました".to_string())
+}
+
+/// receipt_pathカラムを削除する
+///
+/// # 引数
+/// * `app_handle` - Tauriアプリケーションハンドル
+///
+/// # 戻り値
+/// マイグレーション結果
+#[tauri::command]
+pub async fn drop_receipt_path_column_command(
+    app_handle: AppHandle,
+) -> Result<MigrationResult, String> {
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
+
+    drop_receipt_path_column(&conn).map_err(|e| format!("カラム削除エラー: {e}"))
 }
 
 /// 利用可能なバックアップファイル一覧を取得する
