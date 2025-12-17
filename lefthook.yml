@@ -8,7 +8,7 @@ pre-commit:
     - name: format backend
       tags:
         - backend
-      run: cargo fmt --manifest-path src-tauri/Cargo.toml --all-targets --all-features
+      run: cargo fmt --manifest-path src-tauri/Cargo.toml
       stage_fixed: true
 
 pre-push:
