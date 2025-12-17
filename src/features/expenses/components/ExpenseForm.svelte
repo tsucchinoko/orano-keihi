@@ -181,38 +181,46 @@ async function handleSubmit(event: Event) {
 		}
 
 		// 領収書がある場合はR2にアップロード
-		if (receiptFile && !expense) {
-			// 新規作成の場合のみ領収書をアップロード
-			// 最後に追加された経費のIDを取得
-			const lastExpense =
-				expenseStore.expenses[expenseStore.expenses.length - 1];
-			if (lastExpense) {
-				isUploading = true;
-				try {
-					const uploadResult = await uploadReceiptToR2(
-						lastExpense.id,
-						receiptFile,
-					);
-					if (uploadResult.error) {
-						console.warn("領収書アップロードエラー:", uploadResult.error);
-						toastStore.warning(
-							"経費は保存されましたが、領収書のアップロードに失敗しました",
-						);
-					} else {
-						// 経費データを更新してreceipt_urlを設定
-						await expenseStore.modifyExpense(lastExpense.id, {
-							receipt_url: uploadResult.data,
-						});
-						toastStore.success("経費と領収書を保存しました");
-					}
-				} catch (uploadError) {
-					console.warn("領収書アップロードエラー:", uploadError);
+		if (receiptFile) {
+			let targetExpenseId: number;
+			
+			if (expense) {
+				// 更新の場合は既存の経費ID
+				targetExpenseId = expense.id;
+			} else {
+				// 新規作成の場合は最後に追加された経費のIDを取得
+				const lastExpense = expenseStore.expenses[expenseStore.expenses.length - 1];
+				if (!lastExpense) {
+					throw new Error("経費の作成に失敗しました");
+				}
+				targetExpenseId = lastExpense.id;
+			}
+
+			isUploading = true;
+			try {
+				const uploadResult = await uploadReceiptToR2(
+					targetExpenseId,
+					receiptFile,
+				);
+				if (uploadResult.error) {
+					console.warn("領収書アップロードエラー:", uploadResult.error);
 					toastStore.warning(
 						"経費は保存されましたが、領収書のアップロードに失敗しました",
 					);
-				} finally {
-					isUploading = false;
+				} else {
+					// 経費データを更新してreceipt_urlを設定
+					await expenseStore.modifyExpense(targetExpenseId, {
+						receipt_url: uploadResult.data,
+					});
+					toastStore.success("経費と領収書を保存しました");
 				}
+			} catch (uploadError) {
+				console.warn("領収書アップロードエラー:", uploadError);
+				toastStore.warning(
+					"経費は保存されましたが、領収書のアップロードに失敗しました",
+				);
+			} finally {
+				isUploading = false;
 			}
 		} else {
 			// 成功メッセージ
