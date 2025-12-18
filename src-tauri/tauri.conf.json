@@ -29,7 +29,7 @@
 			}
 		],
 		"security": {
-			"csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:",
+			"csp": "default-src 'self' tauri: asset: https: data:; img-src 'self' tauri: asset: https: data: blob:; style-src 'self' 'unsafe-inline' tauri: asset:; font-src 'self' data: tauri: asset:; script-src 'self' 'unsafe-inline' tauri: asset:; connect-src 'self' https: tauri: asset:;",
 			"assetProtocol": {
 				"enable": true,
 				"scope": ["$APPDATA/**", "$RESOURCE/**"]
