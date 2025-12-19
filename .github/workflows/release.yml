@@ -554,6 +554,41 @@ jobs:
           echo "  - $file ($(du -h "$file" | cut -f1))"
         done
         
+    - name: バージョンタグの自動生成と検証
+      id: version-tag
+      run: |
+        echo "🏷️ バージョンタグを自動生成中..."
+        
+        # package.jsonからバージョンを取得
+        VERSION=$(node -p "require('./package.json').version")
+        RELEASE_TAG="v${VERSION}"
+        COMMIT_SHORT="${{ github.sha }}"
+        COMMIT_SHORT="${COMMIT_SHORT:0:7}"
+        
+        # タイムスタンプ付きのユニークなタグを生成（必要に応じて）
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        
+        echo "📋 バージョン情報:"
+        echo "  - パッケージバージョン: ${VERSION}"
+        echo "  - リリースタグ: ${RELEASE_TAG}"
+        echo "  - コミット: ${COMMIT_SHORT}"
+        echo "  - タイムスタンプ: ${TIMESTAMP}"
+        
+        # 環境変数として設定
+        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+        echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+        echo "COMMIT_SHORT=${COMMIT_SHORT}" >> $GITHUB_OUTPUT
+        echo "TIMESTAMP=${TIMESTAMP}" >> $GITHUB_OUTPUT
+        
+        # バージョンの妥当性チェック
+        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ 無効なバージョン形式: $VERSION"
+          echo "::error title=バージョンエラー::package.jsonのバージョンがセマンティックバージョニング形式ではありません"
+          exit 1
+        fi
+        
+        echo "✅ バージョンタグの生成が完了しました: ${RELEASE_TAG}"
+        
     - name: クロスプラットフォームGitHubリリースの作成
       uses: actions/github-script@v7
       with:
@@ -561,20 +596,50 @@ jobs:
         script: |
           const fs = require('fs');
           const path = require('path');
+          const { execSync } = require('child_process');
           
-          // package.jsonからバージョンを取得
-          const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const version = packageJson.version;
-          const releaseTag = `v${version}`;
+          // バージョン情報の取得
+          const version = '${{ steps.version-tag.outputs.VERSION }}';
+          const releaseTag = '${{ steps.version-tag.outputs.RELEASE_TAG }}';
+          const commitShort = '${{ steps.version-tag.outputs.COMMIT_SHORT }}';
+          const timestamp = '${{ steps.version-tag.outputs.TIMESTAMP }}';
           const releaseName = `オラの経費だゾ ${releaseTag}`;
           
-          // 成果物ファイルの検索
-          const { execSync } = require('child_process');
-          const dmgFiles = execSync('find ./artifacts/macos -name "*.dmg" -type f').toString().trim().split('\n').filter(f => f);
-          const msiFiles = execSync('find ./artifacts/windows -name "*.msi" -type f').toString().trim().split('\n').filter(f => f);
+          console.log(`🚀 クロスプラットフォームリリース作成開始: ${releaseTag}`);
           
-          if (dmgFiles.length === 0 || msiFiles.length === 0) {
-            throw new Error('必要な成果物が見つかりません');
+          // 成果物ファイルの詳細検索と検証
+          console.log('📦 成果物ファイルを検索中...');
+          
+          let dmgFiles, msiFiles;
+          try {
+            dmgFiles = execSync('find ./artifacts/macos -name "*.dmg" -type f').toString().trim().split('\n').filter(f => f);
+            msiFiles = execSync('find ./artifacts/windows -name "*.msi" -type f').toString().trim().split('\n').filter(f => f);
+          } catch (error) {
+            console.error('成果物ファイルの検索に失敗しました:', error);
+            throw new Error('成果物ファイルの検索に失敗しました');
+          }
+          
+          // 成果物の存在確認
+          if (dmgFiles.length === 0) {
+            console.error('❌ dmgファイルが見つかりません');
+            console.error('MacOS成果物ディレクトリ内容:');
+            try {
+              execSync('ls -la ./artifacts/macos/');
+            } catch (e) {
+              console.error('MacOS成果物ディレクトリが存在しません');
+            }
+            throw new Error('dmgファイルが見つかりません');
+          }
+          
+          if (msiFiles.length === 0) {
+            console.error('❌ msiファイルが見つかりません');
+            console.error('Windows成果物ディレクトリ内容:');
+            try {
+              execSync('ls -la ./artifacts/windows/');
+            } catch (e) {
+              console.error('Windows成果物ディレクトリが存在しません');
+            }
+            throw new Error('msiファイルが見つかりません');
           }
           
           const dmgPath = dmgFiles[0];
@@ -582,50 +647,244 @@ jobs:
           const dmgName = path.basename(dmgPath);
           const msiName = path.basename(msiPath);
           
-          // 既存リリースの確認
+          // ファイルサイズの確認
+          const dmgStats = fs.statSync(dmgPath);
+          const msiStats = fs.statSync(msiPath);
+          const dmgSizeMB = (dmgStats.size / 1024 / 1024).toFixed(2);
+          const msiSizeMB = (msiStats.size / 1024 / 1024).toFixed(2);
+          
+          console.log('✅ 成果物ファイルが確認されました:');
+          console.log(`  - MacOS dmg: ${dmgName} (${dmgSizeMB} MB)`);
+          console.log(`  - Windows msi: ${msiName} (${msiSizeMB} MB)`);
+          
+          // 既存リリースの確認と処理
+          let existingRelease = null;
           try {
-            const existingRelease = await github.rest.repos.getReleaseByTag({
+            existingRelease = await github.rest.repos.getReleaseByTag({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag: releaseTag
             });
-            console.log(`既存のリリース ${releaseTag} が見つかりました`);
-            return;
+            console.log(`⚠️ 既存のリリース ${releaseTag} が見つかりました`);
+            
+            // 既存リリースを削除して新しいリリースを作成
+            console.log('🗑️ 既存リリースを削除して新しいリリースを作成します...');
+            await github.rest.repos.deleteRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: existingRelease.data.id
+            });
+            
+            // タグも削除
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${releaseTag}`
+              });
+            } catch (tagError) {
+              console.log('タグの削除をスキップしました（存在しない可能性があります）');
+            }
+            
           } catch (error) {
-            console.log(`新しいクロスプラットフォームリリース ${releaseTag} を作成します`);
+            console.log(`✨ 新しいクロスプラットフォームリリース ${releaseTag} を作成します`);
           }
           
-          // リリースノートの生成
+          // 前回のリリースからの変更履歴を取得してリリースノートを自動生成
+          console.log('📝 リリースノートを自動生成中...');
+          
+          let changelogSection = '';
+          let commitInfo = '';
+          
+          try {
+            // 最新のコミット情報を取得
+            const commit = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha
+            });
+            commitInfo = commit.data.commit.message.split('\n')[0]; // 最初の行のみ
+            
+            // 前回のリリースタグを取得
+            let previousTag = null;
+            try {
+              const releases = await github.rest.repos.listReleases({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 10
+              });
+              
+              // 現在のタグ以外の最新リリースを探す
+              const previousRelease = releases.data.find(r => r.tag_name !== releaseTag);
+              if (previousRelease) {
+                previousTag = previousRelease.tag_name;
+                console.log(`📋 前回のリリース: ${previousTag}`);
+              }
+            } catch (error) {
+              console.log('前回のリリース情報の取得をスキップしました');
+            }
+            
+            // 前回のリリースからの変更履歴を取得
+            if (previousTag) {
+              try {
+                const comparison = await github.rest.repos.compareCommits({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  base: previousTag,
+                  head: context.sha
+                });
+                
+                const commits = comparison.data.commits;
+                console.log(`📊 ${previousTag}からの変更: ${commits.length}件のコミット`);
+                
+                if (commits.length > 0) {
+                  // コミットメッセージを分類
+                  const features = [];
+                  const fixes = [];
+                  const improvements = [];
+                  const others = [];
+                  
+                  commits.forEach(commit => {
+                    const message = commit.commit.message.split('\n')[0];
+                    const lowerMessage = message.toLowerCase();
+                    
+                    if (lowerMessage.includes('feat') || lowerMessage.includes('feature') || lowerMessage.includes('新機能') || lowerMessage.includes('追加')) {
+                      features.push(`- ${message} (${commit.sha.substring(0, 7)})`);
+                    } else if (lowerMessage.includes('fix') || lowerMessage.includes('bug') || lowerMessage.includes('修正') || lowerMessage.includes('バグ')) {
+                      fixes.push(`- ${message} (${commit.sha.substring(0, 7)})`);
+                    } else if (lowerMessage.includes('improve') || lowerMessage.includes('update') || lowerMessage.includes('改善') || lowerMessage.includes('更新')) {
+                      improvements.push(`- ${message} (${commit.sha.substring(0, 7)})`);
+                    } else {
+                      others.push(`- ${message} (${commit.sha.substring(0, 7)})`);
+                    }
+                  });
+                  
+                  // 変更履歴セクションを構築
+                  changelogSection = '\n### 📝 変更履歴\n\n';
+                  
+                  if (features.length > 0) {
+                    changelogSection += '#### 🆕 新機能\n' + features.join('\n') + '\n\n';
+                  }
+                  
+                  if (improvements.length > 0) {
+                    changelogSection += '#### ⚡ 改善・更新\n' + improvements.join('\n') + '\n\n';
+                  }
+                  
+                  if (fixes.length > 0) {
+                    changelogSection += '#### 🐛 バグ修正\n' + fixes.join('\n') + '\n\n';
+                  }
+                  
+                  if (others.length > 0) {
+                    changelogSection += '#### 🔧 その他の変更\n' + others.join('\n') + '\n\n';
+                  }
+                  
+                  // 統計情報を追加
+                  changelogSection += `#### 📊 変更統計\n`;
+                  changelogSection += `- **総コミット数**: ${commits.length}\n`;
+                  changelogSection += `- **新機能**: ${features.length}\n`;
+                  changelogSection += `- **改善・更新**: ${improvements.length}\n`;
+                  changelogSection += `- **バグ修正**: ${fixes.length}\n`;
+                  changelogSection += `- **その他**: ${others.length}\n`;
+                  
+                  // ファイル変更統計
+                  if (comparison.data.files && comparison.data.files.length > 0) {
+                    const totalAdditions = comparison.data.files.reduce((sum, file) => sum + file.additions, 0);
+                    const totalDeletions = comparison.data.files.reduce((sum, file) => sum + file.deletions, 0);
+                    const changedFiles = comparison.data.files.length;
+                    
+                    changelogSection += `- **変更ファイル数**: ${changedFiles}\n`;
+                    changelogSection += `- **追加行数**: +${totalAdditions}\n`;
+                    changelogSection += `- **削除行数**: -${totalDeletions}\n`;
+                  }
+                  
+                } else {
+                  changelogSection = '\n### 📝 変更履歴\n\n初回リリースまたは変更なし\n';
+                }
+                
+              } catch (comparisonError) {
+                console.log('変更履歴の取得に失敗しました:', comparisonError.message);
+                changelogSection = '\n### 📝 変更履歴\n\n変更履歴の自動生成に失敗しました\n';
+              }
+            } else {
+              changelogSection = '\n### 📝 変更履歴\n\n初回リリース\n';
+            }
+            
+          } catch (error) {
+            console.log('コミット情報の取得に失敗しました:', error.message);
+            commitInfo = 'コミット情報の取得に失敗しました';
+            changelogSection = '\n### 📝 変更履歴\n\nリリースノートの自動生成に失敗しました\n';
+          }
+          
+          // クロスプラットフォーム対応の詳細なリリースノートの生成
           const releaseNotes = `## 🎉 新しいクロスプラットフォームリリース: ${releaseTag}
 
-          ### 📦 ダウンロード
-          - **MacOS**: ${dmgName}
-          - **Windows**: ${msiName}
+### 📦 ダウンロード
+| プラットフォーム | ファイル | サイズ | 対応OS |
+|---|---|---|---|
+| **MacOS** | ${dmgName} | ${dmgSizeMB} MB | macOS 10.15+ |
+| **Windows** | ${msiName} | ${msiSizeMB} MB | Windows 10+ |
 
-          ### 📋 ビルド情報
-          - **コミット**: ${context.sha}
-          - **ビルド日時**: ${new Date().toISOString()}
-          - **ビルド者**: ${context.actor}
+### 📋 ビルド情報
+- **バージョン**: ${version}
+- **リリースタグ**: ${releaseTag}
+- **コミット**: ${context.sha} (${commitShort})
+- **コミットメッセージ**: ${commitInfo}
+- **ビルド日時**: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)
+- **ビルド者**: ${context.actor}
+- **ブランチ**: ${context.ref_name || 'main'}
+- **ワークフロー**: [GitHub Actions #${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+${changelogSection}
+### 🔧 インストール方法
 
-          ### 🔧 インストール方法
+#### MacOS
+1. **${dmgName}** をダウンロード
+2. dmgファイルをダブルクリックしてマウント
+3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ
+4. Launchpadまたは「アプリケーション」フォルダからアプリケーションを起動
 
-          #### MacOS
-          1. ${dmgName}をダウンロード
-          2. dmgファイルをダブルクリックしてマウント
-          3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ
-          4. アプリケーションを起動
+#### Windows
+1. **${msiName}** をダウンロード
+2. msiファイルを右クリックして「管理者として実行」を選択
+3. インストールウィザードに従ってインストール
+4. スタートメニューまたはデスクトップショートカットからアプリケーションを起動
 
-          #### Windows
-          1. ${msiName}をダウンロード
-          2. msiファイルをダブルクリックして実行
-          3. インストールウィザードに従ってインストール
-          4. スタートメニューからアプリケーションを起動
+### ⚠️ 重要な注意事項
 
-          ### ⚠️ 注意事項
-          - **MacOS**: 初回起動時にセキュリティ警告が表示される場合があります。システム環境設定 > セキュリティとプライバシーから許可してください
-          - **Windows**: SmartScreenの警告が表示される場合があります。「詳細情報」をクリックして「実行」を選択してください`;
+#### セキュリティ警告について
+- **MacOS**: 初回起動時に「開発元が未確認のため開けません」という警告が表示される場合があります
+  - 対処法: システム環境設定 > セキュリティとプライバシー > 一般 > 「このまま開く」をクリック
+- **Windows**: SmartScreenの警告「WindowsによってPCが保護されました」が表示される場合があります
+  - 対処法: 「詳細情報」をクリック → 「実行」を選択
+
+#### データベースとデータ管理
+- **プロダクション環境**: 開発環境とは別のデータベースファイル（expenses.db）が使用されます
+- **データ移行**: 開発版から本リリース版への移行時は、データのエクスポート/インポートが必要な場合があります
+- **バックアップ**: 重要なデータは定期的にバックアップを取ることを推奨します
+
+#### システム要件
+- **MacOS**: macOS 10.15 (Catalina) 以降
+- **Windows**: Windows 10 バージョン 1903 以降
+- **メモリ**: 最低 4GB RAM 推奨
+- **ストレージ**: 最低 100MB の空き容量
+
+### 🛠️ 技術情報
+- **フレームワーク**: Tauri v1.x + SvelteKit
+- **言語**: Rust (バックエンド) + TypeScript (フロントエンド)
+- **ビルド環境**: GitHub Actions (MacOS runner + Windows runner)
+- **パッケージマネージャー**: pnpm
+- **データベース**: SQLite (環境別ファイル分離)
+- **UI フレームワーク**: Svelte 5 + TypeScript
+
+### 🐛 問題報告・フィードバック
+問題が発生した場合や機能要望がある場合は、[Issues](https://github.com/${context.repo.owner}/${context.repo.repo}/issues) からご報告ください。
+
+### 📚 ドキュメント
+- [環境設定ガイド](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/ENVIRONMENT_SETUP.md)
+- [トラブルシューティング](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/TROUBLESHOOTING.md)
+- [R2設定ガイド](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/R2_SETUP.md)`;
           
           // リリースの作成
+          console.log('📝 GitHubリリースを作成中...');
           const release = await github.rest.repos.createRelease({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -633,31 +892,116 @@ jobs:
             name: releaseName,
             body: releaseNotes,
             draft: false,
-            prerelease: false
+            prerelease: false,
+            generate_release_notes: false // 手動でリリースノートを生成するため
           });
+          
+          console.log(`✅ リリースが作成されました: ${release.data.html_url}`);
           
           // dmgファイルのアップロード
-          const dmgContent = fs.readFileSync(dmgPath);
-          await github.rest.repos.uploadReleaseAsset({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.data.id,
-            name: dmgName,
-            data: dmgContent
-          });
+          console.log('📤 MacOS dmgファイルをアップロード中...');
+          try {
+            const dmgContent = fs.readFileSync(dmgPath);
+            const dmgUpload = await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: dmgName,
+              data: dmgContent,
+              headers: {
+                'content-type': 'application/octet-stream',
+                'content-length': dmgStats.size
+              }
+            });
+            console.log(`✅ dmgファイルのアップロードが完了しました: ${dmgUpload.data.browser_download_url}`);
+          } catch (error) {
+            console.error('❌ dmgファイルのアップロードに失敗しました:', error);
+            throw new Error(`dmgファイルのアップロードに失敗: ${error.message}`);
+          }
           
           // msiファイルのアップロード
-          const msiContent = fs.readFileSync(msiPath);
-          await github.rest.repos.uploadReleaseAsset({
+          console.log('📤 Windows msiファイルをアップロード中...');
+          try {
+            const msiContent = fs.readFileSync(msiPath);
+            const msiUpload = await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: msiName,
+              data: msiContent,
+              headers: {
+                'content-type': 'application/octet-stream',
+                'content-length': msiStats.size
+              }
+            });
+            console.log(`✅ msiファイルのアップロードが完了しました: ${msiUpload.data.browser_download_url}`);
+          } catch (error) {
+            console.error('❌ msiファイルのアップロードに失敗しました:', error);
+            throw new Error(`msiファイルのアップロードに失敗: ${error.message}`);
+          }
+          
+          // リリース作成の最終確認
+          const finalRelease = await github.rest.repos.getRelease({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            release_id: release.data.id,
-            name: msiName,
-            data: msiContent
+            release_id: release.data.id
           });
           
-          console.log(`クロスプラットフォームリリース ${releaseTag} が正常に作成されました`);
-          console.log(`URL: ${release.data.html_url}`);
+          const assetCount = finalRelease.data.assets.length;
+          console.log(`🎯 リリース作成が完了しました:`);
+          console.log(`   - リリースURL: ${finalRelease.data.html_url}`);
+          console.log(`   - タグ: ${finalRelease.data.tag_name}`);
+          console.log(`   - アセット数: ${assetCount}/2`);
+          
+          if (assetCount !== 2) {
+            throw new Error(`期待されるアセット数(2)と実際のアセット数(${assetCount})が一致しません`);
+          }
+          
+          console.log('🎉 クロスプラットフォームリリースが正常に作成されました！');
+          
+          // リリース完了通知の送信
+          console.log('📢 リリース完了通知を送信中...');
+          
+          // リリース完了のIssueまたはDiscussionを作成
+          try {
+            const notificationTitle = `🎉 リリース完了通知: ${releaseTag}`;
+            const notificationBody = `## ✅ クロスプラットフォームリリースが完了しました
+
+**🎯 リリース情報**
+- **バージョン**: ${releaseTag}
+- **リリースURL**: ${finalRelease.data.html_url}
+- **完了時刻**: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)
+
+**📦 成果物**
+- MacOS dmg: ${dmgName} (${dmgSizeMB} MB)
+- Windows msi: ${msiName} (${msiSizeMB} MB)
+
+**👥 関係者への通知**
+@${context.actor} リリース作成者
+${context.payload.pusher ? `@${context.payload.pusher.name} プッシュ実行者` : ''}
+
+**📋 次のステップ**
+- [ ] リリースの動作確認
+- [ ] ユーザーへのアナウンス
+- [ ] ドキュメントの更新（必要に応じて）
+
+このリリースに関する質問や問題がある場合は、このIssueにコメントしてください。`;
+
+            // 通知用のIssueを作成
+            const notificationIssue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: notificationTitle,
+              body: notificationBody,
+              labels: ['release-notification', 'completed', 'cross-platform'],
+              assignees: [context.actor] // リリース作成者をアサイン
+            });
+            
+            console.log(`✅ リリース完了通知が作成されました: ${notificationIssue.data.html_url}`);
+            
+          } catch (notificationError) {
+            console.error('⚠️ リリース完了通知の作成に失敗しましたが、リリース自体は成功しています:', notificationError.message);
+          }
           
     - name: リリース作成失敗時の通知
       if: failure()
