@@ -40,42 +40,124 @@ jobs:
           ${{ runner.os }}-deps-
         
     - name: 依存関係のインストール
-      run: pnpm install --frozen-lockfile
+      run: |
+        echo "📦 MacOS用依存関係をインストール中..."
+        if ! pnpm install --frozen-lockfile; then
+          echo "❌ MacOS依存関係のインストールに失敗しました"
+          echo "::error title=MacOS依存関係エラー::pnpmによる依存関係のインストールが失敗しました"
+          echo "--- pnpm環境情報 ---"
+          pnpm --version || echo "pnpmバージョン取得失敗"
+          node --version || echo "Nodeバージョン取得失敗"
+          echo "--- package.jsonの確認 ---"
+          cat package.json | head -20 || echo "package.json読み取り失敗"
+          echo "--- pnpm-lock.yamlの確認 ---"
+          ls -la pnpm-lock.yaml || echo "pnpm-lock.yaml確認失敗"
+          exit 1
+        fi
+        echo "✅ MacOS依存関係のインストールが完了しました"
         
     - name: Rustツールチェーンのセットアップ
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      run: |
+        echo "🦀 MacOS用Rustツールチェーンをセットアップ中..."
+        if ! rustup show; then
+          echo "❌ Rustツールチェーンの確認に失敗しました"
+          echo "::error title=MacOS Rustエラー::Rustツールチェーンのセットアップが失敗しました"
+          echo "--- Rust環境情報 ---"
+          rustup --version || echo "rustupバージョン取得失敗"
+          rustc --version || echo "rustcバージョン取得失敗"
+          cargo --version || echo "cargoバージョン取得失敗"
+          exit 1
+        fi
+        echo "✅ MacOS Rustツールチェーンのセットアップが完了しました"
         
     - name: フロントエンドビルド
       run: |
-        echo "MacOS用フロントエンドをビルド中..."
-        pnpm build
-        echo "フロントエンドビルドが完了しました"
-        ls -la build/
+        echo "🏗️ MacOS用フロントエンドをビルド中..."
+        if ! pnpm build; then
+          echo "❌ MacOSフロントエンドビルドが失敗しました"
+          echo "::error title=MacOSフロントエンドエラー::SvelteKitビルドプロセスが失敗しました"
+          echo "--- ビルド環境情報 ---"
+          echo "Node.js: $(node --version)"
+          echo "pnpm: $(pnpm --version)"
+          echo "--- package.jsonスクリプト確認 ---"
+          cat package.json | grep -A 10 '"scripts"' || echo "スクリプト確認失敗"
+          echo "--- ビルドディレクトリ確認 ---"
+          ls -la . || echo "ディレクトリ確認失敗"
+          echo "--- vite設定確認 ---"
+          cat vite.config.js || echo "vite設定確認失敗"
+          exit 1
+        fi
+        echo "✅ MacOSフロントエンドビルドが完了しました"
+        echo "--- ビルド成果物確認 ---"
+        ls -la build/ || echo "ビルドディレクトリ確認失敗"
         
     - name: Tauriアプリケーションのビルド
       run: |
-        echo "MacOS用Tauriアプリケーションをビルド中..."
-        # プロダクション環境でのビルド
+        echo "🚀 MacOS用Tauriアプリケーションをビルド中..."
         export TAURI_ENV=production
-        if ! pnpm tauri build --bundles dmg --verbose; then
-          echo "❌ MacOSビルドが失敗しました"
-          echo "ビルドログを確認してください"
+        echo "環境変数設定: TAURI_ENV=$TAURI_ENV"
+        
+        # ビルド前の環境確認
+        echo "--- ビルド前環境確認 ---"
+        echo "Rust: $(rustc --version)"
+        echo "Cargo: $(cargo --version)"
+        echo "Tauri CLI: $(pnpm tauri --version || echo 'Tauri CLI確認失敗')"
+        
+        # Tauriビルドの実行
+        if ! pnpm tauri build --bundles dmg --verbose 2>&1 | tee /tmp/tauri-build.log; then
+          echo "❌ MacOS Tauriビルドが失敗しました"
+          echo "::error title=MacOS Tauriビルドエラー::Tauriアプリケーションのビルドプロセスが失敗しました"
+          
+          echo "--- 詳細エラーログ ---"
+          cat /tmp/tauri-build.log | tail -50 || echo "ログファイル読み取り失敗"
+          
+          echo "--- Tauri設定確認 ---"
+          cat src-tauri/tauri.conf.json | head -30 || echo "Tauri設定確認失敗"
+          
+          echo "--- Cargo.toml確認 ---"
+          cat src-tauri/Cargo.toml || echo "Cargo.toml確認失敗"
+          
+          echo "--- ターゲットディレクトリ確認 ---"
+          ls -la src-tauri/target/ || echo "ターゲットディレクトリ確認失敗"
+          
+          echo "--- システム情報 ---"
+          uname -a || echo "システム情報取得失敗"
+          xcode-select --version || echo "Xcode情報取得失敗"
+          
           exit 1
         fi
-        echo "✅ MacOSビルドが正常に完了しました"
+        echo "✅ MacOS Tauriビルドが正常に完了しました"
         
     - name: ビルド成果物の確認
       run: |
-        echo "MacOSビルド成果物を確認中..."
+        echo "📋 MacOSビルド成果物を確認中..."
+        
+        # バンドルディレクトリの確認
+        if [ ! -d "src-tauri/target/release/bundle" ]; then
+          echo "❌ バンドルディレクトリが存在しません"
+          echo "::error title=MacOS成果物エラー::バンドルディレクトリが見つかりません"
+          echo "--- ターゲットディレクトリ構造 ---"
+          find src-tauri/target -type d -name "*bundle*" || echo "バンドルディレクトリ検索失敗"
+          ls -la src-tauri/target/release/ || echo "リリースディレクトリ確認失敗"
+          exit 1
+        fi
+        
+        # dmgファイルの検索
         DMG_FILES=$(find src-tauri/target/release/bundle -name "*.dmg" -type f)
         if [ -z "$DMG_FILES" ]; then
           echo "❌ dmgファイルが見つかりません"
+          echo "::error title=MacOS dmgエラー::生成されたdmgファイルが見つかりません"
+          echo "--- バンドルディレクトリ内容 ---"
+          find src-tauri/target/release/bundle -type f || echo "バンドル内容確認失敗"
+          echo "--- dmgディレクトリ確認 ---"
+          ls -la src-tauri/target/release/bundle/dmg/ || echo "dmgディレクトリ確認失敗"
           exit 1
         fi
+        
         echo "✅ 見つかったdmgファイル:"
-        echo "$DMG_FILES"
+        for dmg in $DMG_FILES; do
+          echo "  - $dmg ($(du -h "$dmg" | cut -f1))"
+        done
 
         
     - name: dmgファイルのアップロード
@@ -85,6 +167,84 @@ jobs:
         path: src-tauri/target/release/bundle/dmg/*.dmg
         if-no-files-found: error
         retention-days: 30
+        
+    - name: MacOSビルド失敗時の通知
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { context } = require('@actions/github');
+          
+          // ビルド失敗の詳細情報を収集
+          const failureInfo = {
+            platform: 'MacOS',
+            commit: context.sha,
+            actor: context.actor,
+            runId: context.runId,
+            timestamp: new Date().toISOString(),
+            branch: context.ref_name || 'unknown'
+          };
+          
+          // Issue作成またはコメント追加でエラー報告
+          const issueTitle = `🚨 MacOSビルド失敗 - ${failureInfo.commit.substring(0, 7)}`;
+          const issueBody = `## MacOSビルドエラー報告
+          
+          **📋 ビルド情報**
+          - **プラットフォーム**: ${failureInfo.platform}
+          - **コミット**: ${failureInfo.commit}
+          - **ブランチ**: ${failureInfo.branch}
+          - **実行者**: ${failureInfo.actor}
+          - **失敗時刻**: ${failureInfo.timestamp}
+          - **ワークフロー実行**: [#${failureInfo.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${failureInfo.runId})
+          
+          **🔍 確認事項**
+          - [ ] 依存関係のインストールエラー
+          - [ ] フロントエンドビルドエラー
+          - [ ] Tauriビルドエラー
+          - [ ] dmgファイル生成エラー
+          - [ ] 環境設定エラー
+          
+          **📝 対応方法**
+          1. 上記のワークフロー実行リンクから詳細ログを確認
+          2. エラーの原因を特定
+          3. 必要に応じてコードまたは設定を修正
+          4. 修正後に再度ビルドを実行
+          
+          **⚠️ 注意**: このIssueは自動生成されました。解決後はクローズしてください。`;
+          
+          try {
+            // 既存の同様のIssueを検索
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'build-failure,macos'
+            });
+            
+            if (existingIssues.data.length === 0) {
+              // 新しいIssueを作成
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: issueBody,
+                labels: ['build-failure', 'macos', 'ci-cd']
+              });
+              console.log('MacOSビルド失敗のIssueを作成しました');
+            } else {
+              // 既存のIssueにコメント追加
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssues.data[0].number,
+                body: `## 新しいMacOSビルド失敗\n\n${issueBody}`
+              });
+              console.log('既存のMacOSビルド失敗Issueにコメントを追加しました');
+            }
+          } catch (error) {
+            console.error('MacOSビルド失敗通知の作成に失敗しました:', error);
+          }
 
   build-windows:
     runs-on: windows-latest
@@ -116,44 +276,135 @@ jobs:
           ${{ runner.os }}-deps-
         
     - name: 依存関係のインストール
-      run: pnpm install --frozen-lockfile
+      run: |
+        Write-Host "📦 Windows用依存関係をインストール中..." -ForegroundColor Green
+        try {
+          pnpm install --frozen-lockfile
+          Write-Host "✅ Windows依存関係のインストールが完了しました" -ForegroundColor Green
+        } catch {
+          Write-Host "❌ Windows依存関係のインストールに失敗しました" -ForegroundColor Red
+          Write-Host "::error title=Windows依存関係エラー::pnpmによる依存関係のインストールが失敗しました"
+          Write-Host "--- pnpm環境情報 ---" -ForegroundColor Yellow
+          try { pnpm --version } catch { Write-Host "pnpmバージョン取得失敗" }
+          try { node --version } catch { Write-Host "Nodeバージョン取得失敗" }
+          Write-Host "--- package.jsonの確認 ---" -ForegroundColor Yellow
+          try { Get-Content package.json | Select-Object -First 20 } catch { Write-Host "package.json読み取り失敗" }
+          Write-Host "--- pnpm-lock.yamlの確認 ---" -ForegroundColor Yellow
+          try { Get-Item pnpm-lock.yaml } catch { Write-Host "pnpm-lock.yaml確認失敗" }
+          exit 1
+        }
         
     - name: Rustツールチェーンのセットアップ
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
+      run: |
+        Write-Host "🦀 Windows用Rustツールチェーンをセットアップ中..." -ForegroundColor Green
+        try {
+          rustup show
+          Write-Host "✅ Windows Rustツールチェーンのセットアップが完了しました" -ForegroundColor Green
+        } catch {
+          Write-Host "❌ Rustツールチェーンの確認に失敗しました" -ForegroundColor Red
+          Write-Host "::error title=Windows Rustエラー::Rustツールチェーンのセットアップが失敗しました"
+          Write-Host "--- Rust環境情報 ---" -ForegroundColor Yellow
+          try { rustup --version } catch { Write-Host "rustupバージョン取得失敗" }
+          try { rustc --version } catch { Write-Host "rustcバージョン取得失敗" }
+          try { cargo --version } catch { Write-Host "cargoバージョン取得失敗" }
+          exit 1
+        }
         
     - name: フロントエンドビルド
       run: |
-        echo "Windows用フロントエンドをビルド中..."
-        pnpm build
-        echo "フロントエンドビルドが完了しました"
-        Get-ChildItem -Path "build" -Recurse
+        Write-Host "🏗️ Windows用フロントエンドをビルド中..." -ForegroundColor Green
+        try {
+          pnpm build
+          Write-Host "✅ Windowsフロントエンドビルドが完了しました" -ForegroundColor Green
+          Write-Host "--- ビルド成果物確認 ---" -ForegroundColor Yellow
+          Get-ChildItem -Path "build" -Recurse -ErrorAction SilentlyContinue
+        } catch {
+          Write-Host "❌ Windowsフロントエンドビルドが失敗しました" -ForegroundColor Red
+          Write-Host "::error title=Windowsフロントエンドエラー::SvelteKitビルドプロセスが失敗しました"
+          Write-Host "--- ビルド環境情報 ---" -ForegroundColor Yellow
+          Write-Host "Node.js: $(node --version)"
+          Write-Host "pnpm: $(pnpm --version)"
+          Write-Host "--- package.jsonスクリプト確認 ---" -ForegroundColor Yellow
+          try { Get-Content package.json | Select-String '"scripts"' -Context 0,10 } catch { Write-Host "スクリプト確認失敗" }
+          Write-Host "--- ビルドディレクトリ確認 ---" -ForegroundColor Yellow
+          try { Get-ChildItem -Path . } catch { Write-Host "ディレクトリ確認失敗" }
+          Write-Host "--- vite設定確認 ---" -ForegroundColor Yellow
+          try { Get-Content vite.config.js } catch { Write-Host "vite設定確認失敗" }
+          exit 1
+        }
         
     - name: Tauriアプリケーションのビルド
       run: |
-        echo "Windows用Tauriアプリケーションをビルド中..."
-        # プロダクション環境でのビルド
+        Write-Host "🚀 Windows用Tauriアプリケーションをビルド中..." -ForegroundColor Green
         $env:TAURI_ENV = "production"
+        Write-Host "環境変数設定: TAURI_ENV=$env:TAURI_ENV" -ForegroundColor Cyan
+        
+        # ビルド前の環境確認
+        Write-Host "--- ビルド前環境確認 ---" -ForegroundColor Yellow
+        Write-Host "Rust: $(rustc --version)"
+        Write-Host "Cargo: $(cargo --version)"
+        try { Write-Host "Tauri CLI: $(pnpm tauri --version)" } catch { Write-Host "Tauri CLI確認失敗" }
+        
+        # Tauriビルドの実行
         try {
-          pnpm tauri build --bundles msi --verbose
-          echo "✅ Windowsビルドが正常に完了しました"
+          # PowerShellでのログ出力とエラーキャッチ
+          $buildOutput = pnpm tauri build --bundles msi --verbose 2>&1
+          $buildOutput | Out-File -FilePath "$env:TEMP\tauri-build.log" -Encoding UTF8
+          Write-Host $buildOutput
+          Write-Host "✅ Windows Tauriビルドが正常に完了しました" -ForegroundColor Green
         } catch {
-          echo "❌ Windowsビルドが失敗しました"
-          echo "ビルドログを確認してください"
+          Write-Host "❌ Windows Tauriビルドが失敗しました" -ForegroundColor Red
+          Write-Host "::error title=Windows Tauriビルドエラー::Tauriアプリケーションのビルドプロセスが失敗しました"
+          
+          Write-Host "--- 詳細エラーログ ---" -ForegroundColor Yellow
+          try { Get-Content "$env:TEMP\tauri-build.log" | Select-Object -Last 50 } catch { Write-Host "ログファイル読み取り失敗" }
+          
+          Write-Host "--- Tauri設定確認 ---" -ForegroundColor Yellow
+          try { Get-Content src-tauri/tauri.conf.json | Select-Object -First 30 } catch { Write-Host "Tauri設定確認失敗" }
+          
+          Write-Host "--- Cargo.toml確認 ---" -ForegroundColor Yellow
+          try { Get-Content src-tauri/Cargo.toml } catch { Write-Host "Cargo.toml確認失敗" }
+          
+          Write-Host "--- ターゲットディレクトリ確認 ---" -ForegroundColor Yellow
+          try { Get-ChildItem src-tauri/target/ } catch { Write-Host "ターゲットディレクトリ確認失敗" }
+          
+          Write-Host "--- システム情報 ---" -ForegroundColor Yellow
+          try { Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion } catch { Write-Host "システム情報取得失敗" }
+          
           exit 1
         }
         
     - name: ビルド成果物の確認
       run: |
-        echo "Windowsビルド成果物を確認中..."
-        $msiFiles = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.msi"
-        if ($msiFiles.Count -eq 0) {
-          echo "❌ msiファイルが見つかりません"
+        Write-Host "📋 Windowsビルド成果物を確認中..." -ForegroundColor Green
+        
+        # バンドルディレクトリの確認
+        if (-not (Test-Path "src-tauri/target/release/bundle")) {
+          Write-Host "❌ バンドルディレクトリが存在しません" -ForegroundColor Red
+          Write-Host "::error title=Windows成果物エラー::バンドルディレクトリが見つかりません"
+          Write-Host "--- ターゲットディレクトリ構造 ---" -ForegroundColor Yellow
+          try { Get-ChildItem src-tauri/target -Recurse -Directory | Where-Object { $_.Name -like "*bundle*" } } catch { Write-Host "バンドルディレクトリ検索失敗" }
+          try { Get-ChildItem src-tauri/target/release/ } catch { Write-Host "リリースディレクトリ確認失敗" }
           exit 1
         }
-        echo "✅ 見つかったmsiファイル:"
-        $msiFiles | ForEach-Object { echo $_.FullName }
+        
+        # msiファイルの検索
+        $msiFiles = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue
+        if ($msiFiles.Count -eq 0) {
+          Write-Host "❌ msiファイルが見つかりません" -ForegroundColor Red
+          Write-Host "::error title=Windows msiエラー::生成されたmsiファイルが見つかりません"
+          Write-Host "--- バンドルディレクトリ内容 ---" -ForegroundColor Yellow
+          try { Get-ChildItem src-tauri/target/release/bundle -Recurse } catch { Write-Host "バンドル内容確認失敗" }
+          Write-Host "--- msiディレクトリ確認 ---" -ForegroundColor Yellow
+          try { Get-ChildItem src-tauri/target/release/bundle/msi/ } catch { Write-Host "msiディレクトリ確認失敗" }
+          exit 1
+        }
+        
+        Write-Host "✅ 見つかったmsiファイル:" -ForegroundColor Green
+        $msiFiles | ForEach-Object { 
+          $size = [math]::Round((Get-Item $_.FullName).Length / 1MB, 2)
+          Write-Host "  - $($_.FullName) ($size MB)" -ForegroundColor Cyan
+        }
 
         
     - name: msiファイルのアップロード
@@ -163,6 +414,84 @@ jobs:
         path: src-tauri/target/release/bundle/msi/*.msi
         if-no-files-found: error
         retention-days: 30
+        
+    - name: Windowsビルド失敗時の通知
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { context } = require('@actions/github');
+          
+          // ビルド失敗の詳細情報を収集
+          const failureInfo = {
+            platform: 'Windows',
+            commit: context.sha,
+            actor: context.actor,
+            runId: context.runId,
+            timestamp: new Date().toISOString(),
+            branch: context.ref_name || 'unknown'
+          };
+          
+          // Issue作成またはコメント追加でエラー報告
+          const issueTitle = `🚨 Windowsビルド失敗 - ${failureInfo.commit.substring(0, 7)}`;
+          const issueBody = `## Windowsビルドエラー報告
+          
+          **📋 ビルド情報**
+          - **プラットフォーム**: ${failureInfo.platform}
+          - **コミット**: ${failureInfo.commit}
+          - **ブランチ**: ${failureInfo.branch}
+          - **実行者**: ${failureInfo.actor}
+          - **失敗時刻**: ${failureInfo.timestamp}
+          - **ワークフロー実行**: [#${failureInfo.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${failureInfo.runId})
+          
+          **🔍 確認事項**
+          - [ ] 依存関係のインストールエラー
+          - [ ] フロントエンドビルドエラー
+          - [ ] Tauriビルドエラー
+          - [ ] msiファイル生成エラー
+          - [ ] 環境設定エラー
+          
+          **📝 対応方法**
+          1. 上記のワークフロー実行リンクから詳細ログを確認
+          2. エラーの原因を特定
+          3. 必要に応じてコードまたは設定を修正
+          4. 修正後に再度ビルドを実行
+          
+          **⚠️ 注意**: このIssueは自動生成されました。解決後はクローズしてください。`;
+          
+          try {
+            // 既存の同様のIssueを検索
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'build-failure,windows'
+            });
+            
+            if (existingIssues.data.length === 0) {
+              // 新しいIssueを作成
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: issueBody,
+                labels: ['build-failure', 'windows', 'ci-cd']
+              });
+              console.log('Windowsビルド失敗のIssueを作成しました');
+            } else {
+              // 既存のIssueにコメント追加
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssues.data[0].number,
+                body: `## 新しいWindowsビルド失敗\n\n${issueBody}`
+              });
+              console.log('既存のWindowsビルド失敗Issueにコメントを追加しました');
+            }
+          } catch (error) {
+            console.error('Windowsビルド失敗通知の作成に失敗しました:', error);
+          }
 
   create-release:
     needs: [build-macos, build-windows]
@@ -187,8 +516,43 @@ jobs:
         
     - name: 成果物の確認
       run: |
-        echo "ダウンロードした成果物を確認中..."
-        find ./artifacts -type f -name "*.dmg" -o -name "*.msi"
+        echo "📋 ダウンロードした成果物を確認中..."
+        
+        # 成果物ディレクトリの存在確認
+        if [ ! -d "./artifacts" ]; then
+          echo "❌ 成果物ディレクトリが存在しません"
+          echo "::error title=リリース成果物エラー::成果物ディレクトリが見つかりません"
+          exit 1
+        fi
+        
+        # dmgファイルの確認
+        DMG_COUNT=$(find ./artifacts -type f -name "*.dmg" | wc -l)
+        MSI_COUNT=$(find ./artifacts -type f -name "*.msi" | wc -l)
+        
+        echo "見つかった成果物:"
+        echo "  - dmgファイル: $DMG_COUNT 個"
+        echo "  - msiファイル: $MSI_COUNT 個"
+        
+        if [ "$DMG_COUNT" -eq 0 ]; then
+          echo "❌ dmgファイルが見つかりません"
+          echo "::error title=MacOS成果物エラー::dmgファイルがダウンロードされていません"
+          echo "--- MacOS成果物ディレクトリ内容 ---"
+          ls -la ./artifacts/macos/ || echo "MacOS成果物ディレクトリが存在しません"
+          exit 1
+        fi
+        
+        if [ "$MSI_COUNT" -eq 0 ]; then
+          echo "❌ msiファイルが見つかりません"
+          echo "::error title=Windows成果物エラー::msiファイルがダウンロードされていません"
+          echo "--- Windows成果物ディレクトリ内容 ---"
+          ls -la ./artifacts/windows/ || echo "Windows成果物ディレクトリが存在しません"
+          exit 1
+        fi
+        
+        echo "✅ すべての成果物が正常に確認されました"
+        find ./artifacts -type f -name "*.dmg" -o -name "*.msi" | while read file; do
+          echo "  - $file ($(du -h "$file" | cut -f1))"
+        done
         
     - name: クロスプラットフォームGitHubリリースの作成
       uses: actions/github-script@v7
@@ -294,3 +658,202 @@ jobs:
           
           console.log(`クロスプラットフォームリリース ${releaseTag} が正常に作成されました`);
           console.log(`URL: ${release.data.html_url}`);
+          
+    - name: リリース作成失敗時の通知
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { context } = require('@actions/github');
+          
+          // リリース失敗の詳細情報を収集
+          const failureInfo = {
+            process: 'Release Creation',
+            commit: context.sha,
+            actor: context.actor,
+            runId: context.runId,
+            timestamp: new Date().toISOString(),
+            branch: context.ref_name || 'unknown'
+          };
+          
+          // Issue作成でエラー報告
+          const issueTitle = `🚨 クロスプラットフォームリリース作成失敗 - ${failureInfo.commit.substring(0, 7)}`;
+          const issueBody = `## リリース作成エラー報告
+          
+          **📋 リリース情報**
+          - **プロセス**: ${failureInfo.process}
+          - **コミット**: ${failureInfo.commit}
+          - **ブランチ**: ${failureInfo.branch}
+          - **実行者**: ${failureInfo.actor}
+          - **失敗時刻**: ${failureInfo.timestamp}
+          - **ワークフロー実行**: [#${failureInfo.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${failureInfo.runId})
+          
+          **🔍 確認事項**
+          - [ ] 成果物のダウンロードエラー
+          - [ ] GitHubリリース作成エラー
+          - [ ] アセットアップロードエラー
+          - [ ] リリースノート生成エラー
+          - [ ] 権限エラー
+          
+          **📝 対応方法**
+          1. 上記のワークフロー実行リンクから詳細ログを確認
+          2. MacOSとWindowsビルドが正常に完了していることを確認
+          3. GitHub Actionsの権限設定を確認
+          4. 必要に応じて手動でリリースを作成
+          
+          **⚠️ 注意**: このIssueは自動生成されました。解決後はクローズしてください。`;
+          
+          try {
+            // リリース失敗のIssueを作成
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: issueTitle,
+              body: issueBody,
+              labels: ['release-failure', 'ci-cd', 'urgent']
+            });
+            console.log('リリース作成失敗のIssueを作成しました');
+          } catch (error) {
+            console.error('リリース作成失敗通知の作成に失敗しました:', error);
+          }
+
+  # 部分的ビルド失敗の検出と通知
+  check-partial-failure:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: always() && (needs.build-macos.result == 'failure' || needs.build-windows.result == 'failure')
+    
+    steps:
+    - name: 部分的ビルド失敗の通知
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { context } = require('@actions/github');
+          
+          // 各ビルドの結果を確認
+          const macosResult = '${{ needs.build-macos.result }}';
+          const windowsResult = '${{ needs.build-windows.result }}';
+          
+          let failedPlatforms = [];
+          let successPlatforms = [];
+          
+          if (macosResult === 'failure') {
+            failedPlatforms.push('MacOS');
+          } else if (macosResult === 'success') {
+            successPlatforms.push('MacOS');
+          }
+          
+          if (windowsResult === 'failure') {
+            failedPlatforms.push('Windows');
+          } else if (windowsResult === 'success') {
+            successPlatforms.push('Windows');
+          }
+          
+          // 部分的失敗の場合のみ処理
+          if (failedPlatforms.length > 0 && successPlatforms.length > 0) {
+            const issueTitle = `⚠️ 部分的ビルド失敗 - ${context.sha.substring(0, 7)}`;
+            const issueBody = `## 部分的ビルド失敗報告
+            
+            **📋 ビルド状況**
+            - **成功したプラットフォーム**: ${successPlatforms.join(', ')}
+            - **失敗したプラットフォーム**: ${failedPlatforms.join(', ')}
+            - **コミット**: ${context.sha}
+            - **ブランチ**: ${context.ref_name || 'unknown'}
+            - **実行者**: ${context.actor}
+            - **失敗時刻**: ${new Date().toISOString()}
+            - **ワークフロー実行**: [#${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+            
+            **🚨 影響**
+            - クロスプラットフォームリリースが作成されませんでした
+            - ${successPlatforms.join(', ')}のビルドは成功しましたが、${failedPlatforms.join(', ')}のビルドが失敗したため、リリースプロセスが中断されました
+            
+            **📝 対応方法**
+            1. 失敗したプラットフォーム（${failedPlatforms.join(', ')}）のビルドログを確認
+            2. エラーの原因を特定して修正
+            3. 修正後に再度ビルドを実行
+            4. すべてのプラットフォームでビルドが成功したら、自動的にリリースが作成されます
+            
+            **⚠️ 注意**: このIssueは自動生成されました。すべてのプラットフォームでビルドが成功したらクローズしてください。`;
+            
+            try {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: issueBody,
+                labels: ['partial-build-failure', 'ci-cd', 'cross-platform']
+              });
+              console.log('部分的ビルド失敗のIssueを作成しました');
+            } catch (error) {
+              console.error('部分的ビルド失敗通知の作成に失敗しました:', error);
+            }
+          } else if (failedPlatforms.length === 2) {
+            console.log('すべてのプラットフォームでビルドが失敗しました（個別の通知が既に作成されています）');
+          } else {
+            console.log('すべてのプラットフォームでビルドが成功しました');
+          }
+
+  # ワークフロー全体の監視と統合報告
+  workflow-summary:
+    needs: [build-macos, build-windows, create-release]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: ワークフロー実行結果の統合報告
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const { context } = require('@actions/github');
+          
+          // 各ジョブの結果を収集
+          const results = {
+            macos: '${{ needs.build-macos.result }}',
+            windows: '${{ needs.build-windows.result }}',
+            release: '${{ needs.create-release.result }}'
+          };
+          
+          // 統計情報の計算
+          const totalJobs = Object.keys(results).length;
+          const successJobs = Object.values(results).filter(r => r === 'success').length;
+          const failedJobs = Object.values(results).filter(r => r === 'failure').length;
+          const skippedJobs = Object.values(results).filter(r => r === 'skipped').length;
+          
+          // 実行時間の計算（概算）
+          const workflowStartTime = new Date(context.payload.head_commit?.timestamp || new Date());
+          const currentTime = new Date();
+          const executionTime = Math.round((currentTime - workflowStartTime) / 1000 / 60); // 分単位
+          
+          console.log('='.repeat(60));
+          console.log('🎯 クロスプラットフォームCI/CDワークフロー実行結果');
+          console.log('='.repeat(60));
+          console.log(`📊 実行統計:`);
+          console.log(`   - 総ジョブ数: ${totalJobs}`);
+          console.log(`   - 成功: ${successJobs}`);
+          console.log(`   - 失敗: ${failedJobs}`);
+          console.log(`   - スキップ: ${skippedJobs}`);
+          console.log(`   - 実行時間: 約${executionTime}分`);
+          console.log('');
+          console.log(`📋 詳細結果:`);
+          console.log(`   - MacOSビルド: ${results.macos}`);
+          console.log(`   - Windowsビルド: ${results.windows}`);
+          console.log(`   - リリース作成: ${results.release}`);
+          console.log('');
+          
+          // 全体的な成功/失敗の判定
+          if (successJobs === totalJobs) {
+            console.log('✅ すべてのプロセスが正常に完了しました！');
+            console.log('🎉 クロスプラットフォームリリースが正常に作成されました');
+          } else if (failedJobs > 0) {
+            console.log('❌ 一部またはすべてのプロセスが失敗しました');
+            console.log('🔍 詳細なエラー情報は各ジョブのログを確認してください');
+          } else {
+            console.log('⚠️ 一部のプロセスがスキップされました');
+          }
+          
+          console.log('');
+          console.log(`🔗 ワークフロー実行: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`);
+          console.log('='.repeat(60));
