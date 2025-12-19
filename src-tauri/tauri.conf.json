@@ -38,7 +38,7 @@
 	},
 	"bundle": {
 		"active": true,
-		"targets": ["dmg"],
+		"targets": "all",
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
@@ -56,9 +56,10 @@
 			"frameworks": [],
 			"minimumSystemVersion": "10.15",
 			"exceptionDomain": "",
-			"signingIdentity": null,
+			"signingIdentity": "$APPLE_SIGNING_IDENTITY",
 			"providerShortName": null,
 			"entitlements": "entitlements.plist",
+			"hardenedRuntime": true,
 			"dmg": {
 				"appPosition": {
 					"x": 180,
@@ -72,6 +73,37 @@
 					"width": 660,
 					"height": 400
 				}
+			}
+		},
+		"windows": {
+			"certificateThumbprint": null,
+			"digestAlgorithm": "sha256",
+			"timestampUrl": "$WINDOWS_TIMESTAMP_URL",
+			"tsp": false,
+			"signCommand": null,
+			"wix": {
+				"language": "ja-JP",
+				"template": null,
+				"fragmentPaths": [],
+				"componentGroupRefs": [],
+				"componentRefs": [],
+				"featureGroupRefs": [],
+				"featureRefs": [],
+				"mergeRefs": [],
+				"enableElevatedUpdateTask": false,
+				"bannerPath": null,
+				"dialogImagePath": null,
+				"fipsCompliant": false
+			},
+			"nsis": {
+				"template": null,
+				"headerImage": null,
+				"sidebarImage": null,
+				"installerIcon": null,
+				"installMode": "currentUser",
+				"languages": ["Japanese"],
+				"displayLanguageSelector": false,
+				"customLanguageFiles": {}
 			}
 		},
 		"resources": [],

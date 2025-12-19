@@ -73,7 +73,8 @@ pnpm dev
 - **データベース**: SQLite
 - **パッケージマネージャー**: pnpm
 - **コード品質**: Biome (フォーマット・リンティング)
-- **CI/CD**: GitHub Actions
+- **CI/CD**: GitHub Actions (クロスプラットフォーム自動ビルド・リリース)
+- **コード署名**: MacOS (Developer ID) + Windows (Code Signing Certificate)
 
 ## Cloudflare R2 設定
 
@@ -102,3 +103,44 @@ pnpm tauri dev
 ```
 
 詳細な設定手順については、上記のドキュメントを参照してください。
+
+## コード署名設定
+
+このプロジェクトは、MacOSとWindows向けのアプリケーションにコード署名を適用してセキュリティを向上させています。
+
+### 署名済みアプリケーションの利点
+
+- **セキュリティ警告の軽減**: ユーザーがアプリケーションをダウンロード・実行する際の警告が軽減されます
+- **信頼性の向上**: 署名により、アプリケーションの発行者が検証可能になります
+- **改ざん検出**: ファイルが改ざんされていないことを確認できます
+
+### 開発者向け署名設定
+
+コード署名を設定する場合は、以下のドキュメントを参照してください：
+
+- **[コード署名設定ガイド](./docs/CODE_SIGNING_SETUP.md)** - MacOSとWindows向けの署名設定方法
+
+### 署名検証
+
+ダウンロードしたアプリケーションの署名を検証するには：
+
+#### MacOS
+```bash
+# アプリケーションの署名確認
+codesign -dv --verbose=4 /Applications/YourApp.app
+
+# Gatekeeperの検証
+spctl -a -vv /Applications/YourApp.app
+
+# 検証スクリプトの使用
+./script/verify_signatures.sh path/to/app.dmg
+```
+
+#### Windows
+```powershell
+# PowerShellでの署名確認
+Get-AuthenticodeSignature "C:\path\to\app.exe"
+
+# 検証スクリプトの使用
+.\script\verify_signatures.ps1 -MsiFile "C:\path\to\app.msi"
+```
