@@ -1,4 +1,4 @@
-name: MacOS Release Build
+name: クロスプラットフォームリリースビルド
 
 on:
   push:
@@ -27,22 +27,39 @@ jobs:
       with:
         version: latest
         
+    - name: 依存関係キャッシュの復元
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.pnpm-store
+          ~/.cargo/registry
+          ~/.cargo/git
+          src-tauri/target
+        key: ${{ runner.os }}-deps-${{ hashFiles('**/pnpm-lock.yaml', '**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-deps-
+        
     - name: 依存関係のインストール
-      run: pnpm install --no-frozen-lockfile
+      run: pnpm install --frozen-lockfile
         
     - name: Rustツールチェーンのセットアップ
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
         
+    - name: フロントエンドビルド
+      run: |
+        echo "フロントエンドをビルド中..."
+        pnpm build
+        
     - name: Tauriアプリケーションのビルド
       run: |
-        echo "Tauriアプリケーションをビルド中..."
+        echo "MacOS用Tauriアプリケーションをビルド中..."
         pnpm tauri build --bundles dmg
         
     - name: ビルド成果物の確認
       run: |
-        echo "ビルド成果物を確認中..."
+        echo "MacOSビルド成果物を確認中..."
         find src-tauri/target/release/bundle -name "*.dmg" -type f
 
         
@@ -53,24 +70,121 @@ jobs:
         path: src-tauri/target/release/bundle/dmg/*.dmg
         if-no-files-found: error
         retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: リポジトリのチェックアウト
+      uses: actions/checkout@v4
+      
+    - name: Node.jsのセットアップ
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
         
-    - name: GitHubリリースの作成（mainブランチのみ）
-      if: success() && github.ref_name == 'main' && github.event_name == 'push'
+    - name: pnpmのセットアップ
+      uses: pnpm/action-setup@v4
+      with:
+        version: latest
+        
+    - name: 依存関係キャッシュの復元
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.pnpm-store
+          ~/.cargo/registry
+          ~/.cargo/git
+          src-tauri/target
+        key: ${{ runner.os }}-deps-${{ hashFiles('**/pnpm-lock.yaml', '**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-deps-
+        
+    - name: 依存関係のインストール
+      run: pnpm install --frozen-lockfile
+        
+    - name: Rustツールチェーンのセットアップ
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        
+    - name: フロントエンドビルド
+      run: |
+        echo "フロントエンドをビルド中..."
+        pnpm build
+        
+    - name: Tauriアプリケーションのビルド
+      run: |
+        echo "Windows用Tauriアプリケーションをビルド中..."
+        pnpm tauri build --bundles msi
+        
+    - name: ビルド成果物の確認
+      run: |
+        echo "Windowsビルド成果物を確認中..."
+        Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.msi"
+
+        
+    - name: msiファイルのアップロード
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-msi-${{ github.sha }}
+        path: src-tauri/target/release/bundle/msi/*.msi
+        if-no-files-found: error
+        retention-days: 30
+
+  create-release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: success() && github.ref_name == 'main' && github.event_name == 'push'
+    
+    steps:
+    - name: リポジトリのチェックアウト
+      uses: actions/checkout@v4
+      
+    - name: MacOS成果物のダウンロード
+      uses: actions/download-artifact@v4
+      with:
+        name: macos-dmg-${{ github.sha }}
+        path: ./artifacts/macos/
+        
+    - name: Windows成果物のダウンロード
+      uses: actions/download-artifact@v4
+      with:
+        name: windows-msi-${{ github.sha }}
+        path: ./artifacts/windows/
+        
+    - name: 成果物の確認
+      run: |
+        echo "ダウンロードした成果物を確認中..."
+        find ./artifacts -type f -name "*.dmg" -o -name "*.msi"
+        
+    - name: クロスプラットフォームGitHubリリースの作成
       uses: actions/github-script@v7
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          // package.jsonからバージョンを取得
           const fs = require('fs');
+          const path = require('path');
+          
+          // package.jsonからバージョンを取得
           const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           const version = packageJson.version;
           const releaseTag = `v${version}`;
           const releaseName = `オラの経費だゾ ${releaseTag}`;
           
-          // dmgファイルのパスを取得
+          // 成果物ファイルの検索
           const { execSync } = require('child_process');
-          const dmgPath = execSync('find src-tauri/target/release/bundle/dmg -name "*.dmg" -type f | head -1').toString().trim();
-          const dmgName = dmgPath.split('/').pop();
+          const dmgFiles = execSync('find ./artifacts/macos -name "*.dmg" -type f').toString().trim().split('\n').filter(f => f);
+          const msiFiles = execSync('find ./artifacts/windows -name "*.msi" -type f').toString().trim().split('\n').filter(f => f);
+          
+          if (dmgFiles.length === 0 || msiFiles.length === 0) {
+            throw new Error('必要な成果物が見つかりません');
+          }
+          
+          const dmgPath = dmgFiles[0];
+          const msiPath = msiFiles[0];
+          const dmgName = path.basename(dmgPath);
+          const msiName = path.basename(msiPath);
           
           // 既存リリースの確認
           try {
@@ -82,14 +196,15 @@ jobs:
             console.log(`既存のリリース ${releaseTag} が見つかりました`);
             return;
           } catch (error) {
-            console.log(`新しいリリース ${releaseTag} を作成します`);
+            console.log(`新しいクロスプラットフォームリリース ${releaseTag} を作成します`);
           }
           
           // リリースノートの生成
-          const releaseNotes = `## 🎉 新しいリリース: ${releaseTag}
+          const releaseNotes = `## 🎉 新しいクロスプラットフォームリリース: ${releaseTag}
 
           ### 📦 ダウンロード
           - **MacOS**: ${dmgName}
+          - **Windows**: ${msiName}
 
           ### 📋 ビルド情報
           - **コミット**: ${context.sha}
@@ -97,14 +212,22 @@ jobs:
           - **ビルド者**: ${context.actor}
 
           ### 🔧 インストール方法
-          1. 上記のdmgファイルをダウンロード
+
+          #### MacOS
+          1. ${dmgName}をダウンロード
           2. dmgファイルをダブルクリックしてマウント
           3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ
           4. アプリケーションを起動
 
+          #### Windows
+          1. ${msiName}をダウンロード
+          2. msiファイルをダブルクリックして実行
+          3. インストールウィザードに従ってインストール
+          4. スタートメニューからアプリケーションを起動
+
           ### ⚠️ 注意事項
-          - 初回起動時にmacOSのセキュリティ警告が表示される場合があります
-          - システム環境設定 > セキュリティとプライバシーから許可してください`;
+          - **MacOS**: 初回起動時にセキュリティ警告が表示される場合があります。システム環境設定 > セキュリティとプライバシーから許可してください
+          - **Windows**: SmartScreenの警告が表示される場合があります。「詳細情報」をクリックして「実行」を選択してください`;
           
           // リリースの作成
           const release = await github.rest.repos.createRelease({
@@ -127,5 +250,15 @@ jobs:
             data: dmgContent
           });
           
-          console.log(`リリース ${releaseTag} が正常に作成されました`);
+          // msiファイルのアップロード
+          const msiContent = fs.readFileSync(msiPath);
+          await github.rest.repos.uploadReleaseAsset({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: release.data.id,
+            name: msiName,
+            data: msiContent
+          });
+          
+          console.log(`クロスプラットフォームリリース ${releaseTag} が正常に作成されました`);
           console.log(`URL: ${release.data.html_url}`);
