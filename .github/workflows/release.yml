@@ -97,6 +97,35 @@ jobs:
         export TAURI_ENV=production
         echo "環境変数設定: TAURI_ENV=$TAURI_ENV"
         
+        # MacOS署名設定
+        if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ]; then
+          echo "🔐 MacOS署名証明書を設定中..."
+          
+          # 証明書をキーチェーンにインポート
+          echo "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode > certificate.p12
+          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          security import certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
+          
+          # 署名アイデンティティを設定
+          export APPLE_SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          echo "署名アイデンティティ設定: $APPLE_SIGNING_IDENTITY"
+          
+          # 公証用の設定
+          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_ID_PASSWORD }}" ]; then
+            export APPLE_ID="${{ secrets.APPLE_ID }}"
+            export APPLE_ID_PASSWORD="${{ secrets.APPLE_ID_PASSWORD }}"
+            export APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+            echo "公証設定が完了しました"
+          fi
+          
+          rm certificate.p12
+        else
+          echo "⚠️ MacOS署名証明書が設定されていません（開発ビルド）"
+        fi
+        
         # ビルド前の環境確認
         echo "--- ビルド前環境確認 ---"
         echo "Rust: $(rustc --version)"
@@ -167,6 +196,31 @@ jobs:
         path: src-tauri/target/release/bundle/dmg/*.dmg
         if-no-files-found: error
         retention-days: 30
+        
+    - name: MacOS署名環境のクリーンアップ
+      if: always()
+      run: |
+        echo "🧹 MacOS署名環境をクリーンアップ中..."
+        
+        # キーチェーンのクリーンアップ
+        if security list-keychains | grep -q "build.keychain"; then
+          echo "ビルド用キーチェーンを削除中..."
+          security delete-keychain build.keychain || echo "キーチェーンの削除に失敗しました（既に削除済みの可能性があります）"
+        fi
+        
+        # 一時ファイルのクリーンアップ
+        if [ -f "certificate.p12" ]; then
+          echo "一時証明書ファイルを削除中..."
+          rm -f certificate.p12
+        fi
+        
+        # 署名関連の環境変数をクリア
+        unset APPLE_SIGNING_IDENTITY
+        unset APPLE_ID
+        unset APPLE_ID_PASSWORD
+        unset APPLE_TEAM_ID
+        
+        echo "✅ MacOS署名環境のクリーンアップが完了しました"
         
     - name: MacOSビルド失敗時の通知
       if: failure()
@@ -339,6 +393,32 @@ jobs:
         $env:TAURI_ENV = "production"
         Write-Host "環境変数設定: TAURI_ENV=$env:TAURI_ENV" -ForegroundColor Cyan
         
+        # Windows署名設定
+        if ("${{ secrets.WINDOWS_CERTIFICATE }}" -ne "" -and "${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}" -ne "") {
+          Write-Host "🔐 Windows署名証明書を設定中..." -ForegroundColor Green
+          
+          # 証明書をファイルに保存
+          $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
+          [System.IO.File]::WriteAllBytes("$env:TEMP\certificate.pfx", $certBytes)
+          
+          # 署名設定の環境変数を設定
+          $env:WINDOWS_CERTIFICATE_FILE = "$env:TEMP\certificate.pfx"
+          $env:WINDOWS_CERTIFICATE_PASSWORD = "${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}"
+          
+          # タイムスタンプサーバーの設定
+          if ("${{ secrets.WINDOWS_TIMESTAMP_URL }}" -ne "") {
+            $env:WINDOWS_TIMESTAMP_URL = "${{ secrets.WINDOWS_TIMESTAMP_URL }}"
+          } else {
+            $env:WINDOWS_TIMESTAMP_URL = "http://timestamp.digicert.com"
+          }
+          
+          Write-Host "署名証明書設定が完了しました" -ForegroundColor Green
+          Write-Host "証明書ファイル: $env:WINDOWS_CERTIFICATE_FILE" -ForegroundColor Cyan
+          Write-Host "タイムスタンプURL: $env:WINDOWS_TIMESTAMP_URL" -ForegroundColor Cyan
+        } else {
+          Write-Host "⚠️ Windows署名証明書が設定されていません（開発ビルド）" -ForegroundColor Yellow
+        }
+        
         # ビルド前の環境確認
         Write-Host "--- ビルド前環境確認 ---" -ForegroundColor Yellow
         Write-Host "Rust: $(rustc --version)"
@@ -414,6 +494,29 @@ jobs:
         path: src-tauri/target/release/bundle/msi/*.msi
         if-no-files-found: error
         retention-days: 30
+        
+    - name: Windows署名環境のクリーンアップ
+      if: always()
+      run: |
+        Write-Host "🧹 Windows署名環境をクリーンアップ中..." -ForegroundColor Green
+        
+        # 一時証明書ファイルのクリーンアップ
+        if (Test-Path "$env:TEMP\certificate.pfx") {
+          Write-Host "一時証明書ファイルを削除中..." -ForegroundColor Yellow
+          try {
+            Remove-Item "$env:TEMP\certificate.pfx" -Force
+            Write-Host "証明書ファイルを削除しました" -ForegroundColor Green
+          } catch {
+            Write-Host "証明書ファイルの削除に失敗しました: $($_.Exception.Message)" -ForegroundColor Red
+          }
+        }
+        
+        # 署名関連の環境変数をクリア
+        Remove-Item Env:WINDOWS_CERTIFICATE_FILE -ErrorAction SilentlyContinue
+        Remove-Item Env:WINDOWS_CERTIFICATE_PASSWORD -ErrorAction SilentlyContinue
+        Remove-Item Env:WINDOWS_TIMESTAMP_URL -ErrorAction SilentlyContinue
+        
+        Write-Host "✅ Windows署名環境のクリーンアップが完了しました" -ForegroundColor Green
         
     - name: Windowsビルド失敗時の通知
       if: failure()

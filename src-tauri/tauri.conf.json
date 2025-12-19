@@ -56,9 +56,10 @@
 			"frameworks": [],
 			"minimumSystemVersion": "10.15",
 			"exceptionDomain": "",
-			"signingIdentity": null,
+			"signingIdentity": "$APPLE_SIGNING_IDENTITY",
 			"providerShortName": null,
 			"entitlements": "entitlements.plist",
+			"hardenedRuntime": true,
 			"dmg": {
 				"appPosition": {
 					"x": 180,
@@ -77,8 +78,9 @@
 		"windows": {
 			"certificateThumbprint": null,
 			"digestAlgorithm": "sha256",
-			"timestampUrl": "",
+			"timestampUrl": "$WINDOWS_TIMESTAMP_URL",
 			"tsp": false,
+			"signCommand": null,
 			"wix": {
 				"language": "ja-JP",
 				"template": null,
