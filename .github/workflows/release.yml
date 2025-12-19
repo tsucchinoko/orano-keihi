@@ -49,18 +49,33 @@ jobs:
         
     - name: フロントエンドビルド
       run: |
-        echo "フロントエンドをビルド中..."
+        echo "MacOS用フロントエンドをビルド中..."
         pnpm build
+        echo "フロントエンドビルドが完了しました"
+        ls -la build/
         
     - name: Tauriアプリケーションのビルド
       run: |
         echo "MacOS用Tauriアプリケーションをビルド中..."
-        pnpm tauri build --bundles dmg
+        # プロダクション環境でのビルド
+        export TAURI_ENV=production
+        if ! pnpm tauri build --bundles dmg --verbose; then
+          echo "❌ MacOSビルドが失敗しました"
+          echo "ビルドログを確認してください"
+          exit 1
+        fi
+        echo "✅ MacOSビルドが正常に完了しました"
         
     - name: ビルド成果物の確認
       run: |
         echo "MacOSビルド成果物を確認中..."
-        find src-tauri/target/release/bundle -name "*.dmg" -type f
+        DMG_FILES=$(find src-tauri/target/release/bundle -name "*.dmg" -type f)
+        if [ -z "$DMG_FILES" ]; then
+          echo "❌ dmgファイルが見つかりません"
+          exit 1
+        fi
+        echo "✅ 見つかったdmgファイル:"
+        echo "$DMG_FILES"
 
         
     - name: dmgファイルのアップロード
@@ -110,18 +125,35 @@ jobs:
         
     - name: フロントエンドビルド
       run: |
-        echo "フロントエンドをビルド中..."
+        echo "Windows用フロントエンドをビルド中..."
         pnpm build
+        echo "フロントエンドビルドが完了しました"
+        Get-ChildItem -Path "build" -Recurse
         
     - name: Tauriアプリケーションのビルド
       run: |
         echo "Windows用Tauriアプリケーションをビルド中..."
-        pnpm tauri build --bundles msi
+        # プロダクション環境でのビルド
+        $env:TAURI_ENV = "production"
+        try {
+          pnpm tauri build --bundles msi --verbose
+          echo "✅ Windowsビルドが正常に完了しました"
+        } catch {
+          echo "❌ Windowsビルドが失敗しました"
+          echo "ビルドログを確認してください"
+          exit 1
+        }
         
     - name: ビルド成果物の確認
       run: |
         echo "Windowsビルド成果物を確認中..."
-        Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.msi"
+        $msiFiles = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.msi"
+        if ($msiFiles.Count -eq 0) {
+          echo "❌ msiファイルが見つかりません"
+          exit 1
+        }
+        echo "✅ 見つかったmsiファイル:"
+        $msiFiles | ForEach-Object { echo $_.FullName }
 
         
     - name: msiファイルのアップロード

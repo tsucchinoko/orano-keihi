@@ -38,7 +38,7 @@
 	},
 	"bundle": {
 		"active": true,
-		"targets": ["dmg"],
+		"targets": "all",
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
@@ -72,6 +72,40 @@
 					"width": 660,
 					"height": 400
 				}
+			}
+		},
+		"windows": {
+			"certificateThumbprint": null,
+			"digestAlgorithm": "sha256",
+			"timestampUrl": "",
+			"tsp": false,
+			"wix": {
+				"language": "ja-JP",
+				"template": null,
+				"fragmentPaths": [],
+				"componentGroupRefs": [],
+				"componentRefs": [],
+				"featureGroupRefs": [],
+				"featureRefs": [],
+				"mergeRefs": [],
+				"skipWebviewInstall": false,
+				"license": null,
+				"enableElevatedUpdateTask": false,
+				"bannerPath": null,
+				"dialogImagePath": null,
+				"fipsCompliant": false
+			},
+			"nsis": {
+				"template": null,
+				"license": null,
+				"headerImage": null,
+				"sidebarImage": null,
+				"installerIcon": null,
+				"installMode": "currentUser",
+				"languages": ["Japanese"],
+				"displayLanguageSelector": false,
+				"customLanguageFiles": {},
+				"compressionLevel": "high"
 			}
 		},
 		"resources": [],
