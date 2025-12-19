@@ -919,72 +919,61 @@ jobs:
           }
           
           // クロスプラットフォーム対応の詳細なリリースノートの生成
-          const releaseNotes = `## 🎉 新しいクロスプラットフォームリリース: ${releaseTag}
-
-### 📦 ダウンロード
-| プラットフォーム | ファイル | サイズ | 対応OS |
-|---|---|---|---|
-| **MacOS** | ${dmgName} | ${dmgSizeMB} MB | macOS 10.15+ |
-| **Windows** | ${msiName} | ${msiSizeMB} MB | Windows 10+ |
-
-### 📋 ビルド情報
-- **バージョン**: ${version}
-- **リリースタグ**: ${releaseTag}
-- **コミット**: ${context.sha} (${commitShort})
-- **コミットメッセージ**: ${commitInfo}
-- **ビルド日時**: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)
-- **ビルド者**: ${context.actor}
-- **ブランチ**: ${context.ref_name || 'main'}
-- **ワークフロー**: [GitHub Actions #${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
-${changelogSection}
-### 🔧 インストール方法
-
-#### MacOS
-1. **${dmgName}** をダウンロード
-2. dmgファイルをダブルクリックしてマウント
-3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ
-4. Launchpadまたは「アプリケーション」フォルダからアプリケーションを起動
-
-#### Windows
-1. **${msiName}** をダウンロード
-2. msiファイルを右クリックして「管理者として実行」を選択
-3. インストールウィザードに従ってインストール
-4. スタートメニューまたはデスクトップショートカットからアプリケーションを起動
-
-### ⚠️ 重要な注意事項
-
-#### セキュリティ警告について
-- **MacOS**: 初回起動時に「開発元が未確認のため開けません」という警告が表示される場合があります
-  - 対処法: システム環境設定 > セキュリティとプライバシー > 一般 > 「このまま開く」をクリック
-- **Windows**: SmartScreenの警告「WindowsによってPCが保護されました」が表示される場合があります
-  - 対処法: 「詳細情報」をクリック → 「実行」を選択
-
-#### データベースとデータ管理
-- **プロダクション環境**: 開発環境とは別のデータベースファイル（expenses.db）が使用されます
-- **データ移行**: 開発版から本リリース版への移行時は、データのエクスポート/インポートが必要な場合があります
-- **バックアップ**: 重要なデータは定期的にバックアップを取ることを推奨します
-
-#### システム要件
-- **MacOS**: macOS 10.15 (Catalina) 以降
-- **Windows**: Windows 10 バージョン 1903 以降
-- **メモリ**: 最低 4GB RAM 推奨
-- **ストレージ**: 最低 100MB の空き容量
-
-### 🛠️ 技術情報
-- **フレームワーク**: Tauri v1.x + SvelteKit
-- **言語**: Rust (バックエンド) + TypeScript (フロントエンド)
-- **ビルド環境**: GitHub Actions (MacOS runner + Windows runner)
-- **パッケージマネージャー**: pnpm
-- **データベース**: SQLite (環境別ファイル分離)
-- **UI フレームワーク**: Svelte 5 + TypeScript
-
-### 🐛 問題報告・フィードバック
-問題が発生した場合や機能要望がある場合は、[Issues](https://github.com/${context.repo.owner}/${context.repo.repo}/issues) からご報告ください。
-
-### 📚 ドキュメント
-- [環境設定ガイド](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/ENVIRONMENT_SETUP.md)
-- [トラブルシューティング](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/TROUBLESHOOTING.md)
-- [R2設定ガイド](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/R2_SETUP.md)`;
+          const releaseNotes = "## 🎉 新しいクロスプラットフォームリリース: " + releaseTag + "\n\n" +
+            "### 📦 ダウンロード\n" +
+            "| プラットフォーム | ファイル | サイズ | 対応OS |\n" +
+            "|---|---|---|---|\n" +
+            "| **MacOS** | " + dmgName + " | " + dmgSizeMB + " MB | macOS 10.15+ |\n" +
+            "| **Windows** | " + msiName + " | " + msiSizeMB + " MB | Windows 10+ |\n\n" +
+            "### 📋 ビルド情報\n" +
+            "- **バージョン**: " + version + "\n" +
+            "- **リリースタグ**: " + releaseTag + "\n" +
+            "- **コミット**: " + context.sha + " (" + commitShort + ")\n" +
+            "- **コミットメッセージ**: " + commitInfo + "\n" +
+            "- **ビルド日時**: " + new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) + " (JST)\n" +
+            "- **ビルド者**: " + context.actor + "\n" +
+            "- **ブランチ**: " + (context.ref_name || 'main') + "\n" +
+            "- **ワークフロー**: [GitHub Actions #" + context.runId + "](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/actions/runs/" + context.runId + ")\n" +
+            changelogSection + "\n" +
+            "### 🔧 インストール方法\n\n" +
+            "#### MacOS\n" +
+            "1. **" + dmgName + "** をダウンロード\n" +
+            "2. dmgファイルをダブルクリックしてマウント\n" +
+            "3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ\n" +
+            "4. Launchpadまたは「アプリケーション」フォルダからアプリケーションを起動\n\n" +
+            "#### Windows\n" +
+            "1. **" + msiName + "** をダウンロード
+            "2. msiファイルを右クリックして「管理者として実行」を選択\n" +
+            "3. インストールウィザードに従ってインストール\n" +
+            "4. スタートメニューまたはデスクトップショートカットからアプリケーションを起動\n\n" +
+            "### ⚠️ 重要な注意事項\n\n" +
+            "#### セキュリティ警告について\n" +
+            "- **MacOS**: 初回起動時に「開発元が未確認のため開けません」という警告が表示される場合があります\n" +
+            "  - 対処法: システム環境設定 > セキュリティとプライバシー > 一般 > 「このまま開く」をクリック\n" +
+            "- **Windows**: SmartScreenの警告「WindowsによってPCが保護されました」が表示される場合があります\n" +
+            "  - 対処法: 「詳細情報」をクリック → 「実行」を選択\n\n" +
+            "#### データベースとデータ管理\n" +
+            "- **プロダクション環境**: 開発環境とは別のデータベースファイル（expenses.db）が使用されます\n" +
+            "- **データ移行**: 開発版から本リリース版への移行時は、データのエクスポート/インポートが必要な場合があります\n" +
+            "- **バックアップ**: 重要なデータは定期的にバックアップを取ることを推奨します\n\n" +
+            "#### システム要件\n" +
+            "- **MacOS**: macOS 10.15 (Catalina) 以降\n" +
+            "- **Windows**: Windows 10 バージョン 1903 以降\n" +
+            "- **メモリ**: 最低 4GB RAM 推奨\n" +
+            "- **ストレージ**: 最低 100MB の空き容量\n\n" +
+            "### 🛠️ 技術情報\n" +
+            "- **フレームワーク**: Tauri v1.x + SvelteKit\n" +
+            "- **言語**: Rust (バックエンド) + TypeScript (フロントエンド)\n" +
+            "- **ビルド環境**: GitHub Actions (MacOS runner + Windows runner)\n" +
+            "- **パッケージマネージャー**: pnpm\n" +
+            "- **データベース**: SQLite (環境別ファイル分離)\n" +
+            "- **UI フレームワーク**: Svelte 5 + TypeScript\n\n" +
+            "### 🐛 問題報告・フィードバック\n" +
+            "問題が発生した場合や機能要望がある場合は、[Issues](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/issues) からご報告ください。\n\n" +
+            "### 📚 ドキュメント\n" +
+            "- [環境設定ガイド](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/blob/main/docs/ENVIRONMENT_SETUP.md)\n" +
+            "- [トラブルシューティング](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/blob/main/docs/TROUBLESHOOTING.md)\n" +
+            "- [R2設定ガイド](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/blob/main/docs/R2_SETUP.md)";
           
           // リリースの作成
           console.log('📝 GitHubリリースを作成中...');

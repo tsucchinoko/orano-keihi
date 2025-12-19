@@ -90,8 +90,6 @@
 				"featureGroupRefs": [],
 				"featureRefs": [],
 				"mergeRefs": [],
-				"skipWebviewInstall": false,
-				"license": null,
 				"enableElevatedUpdateTask": false,
 				"bannerPath": null,
 				"dialogImagePath": null,
@@ -99,15 +97,13 @@
 			},
 			"nsis": {
 				"template": null,
-				"license": null,
 				"headerImage": null,
 				"sidebarImage": null,
 				"installerIcon": null,
 				"installMode": "currentUser",
 				"languages": ["Japanese"],
 				"displayLanguageSelector": false,
-				"customLanguageFiles": {},
-				"compressionLevel": "high"
+				"customLanguageFiles": {}
 			}
 		},
 		"resources": [],
