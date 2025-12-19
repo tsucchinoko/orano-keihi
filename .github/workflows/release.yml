@@ -962,6 +962,29 @@ ${changelogSection}
           // リリース完了通知の送信
           console.log('📢 リリース完了通知を送信中...');
           
+          // 関係者リストの構築
+          const stakeholders = [];
+          
+          // リリース作成者を追加
+          if (context.actor) {
+            stakeholders.push(context.actor);
+          }
+          
+          // プッシュ実行者を追加（作成者と異なる場合）
+          if (context.payload.pusher && context.payload.pusher.name !== context.actor) {
+            stakeholders.push(context.payload.pusher.name);
+          }
+          
+          // コミット作成者を追加（他の関係者と異なる場合）
+          if (context.payload.head_commit && context.payload.head_commit.author && 
+              context.payload.head_commit.author.username && 
+              !stakeholders.includes(context.payload.head_commit.author.username)) {
+            stakeholders.push(context.payload.head_commit.author.username);
+          }
+          
+          // 関係者への通知メンションを構築
+          const stakeholderMentions = stakeholders.map(user => `@${user}`).join(' ');
+          
           // リリース完了のIssueまたはDiscussionを作成
           try {
             const notificationTitle = `🎉 リリース完了通知: ${releaseTag}`;
@@ -973,19 +996,34 @@ ${changelogSection}
 - **完了時刻**: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)
 
 **📦 成果物**
-- MacOS dmg: ${dmgName} (${dmgSizeMB} MB)
-- Windows msi: ${msiName} (${msiSizeMB} MB)
+- **MacOS dmg**: ${dmgName} (${dmgSizeMB} MB)
+- **Windows msi**: ${msiName} (${msiSizeMB} MB)
+- **総ダウンロードサイズ**: ${(parseFloat(dmgSizeMB) + parseFloat(msiSizeMB)).toFixed(2)} MB
 
 **👥 関係者への通知**
-@${context.actor} リリース作成者
-${context.payload.pusher ? `@${context.payload.pusher.name} プッシュ実行者` : ''}
+${stakeholderMentions}
+
+**📊 ビルド統計**
+- **MacOSビルド**: ✅ 成功
+- **Windowsビルド**: ✅ 成功
+- **リリース作成**: ✅ 成功
+- **アセット添付**: ✅ 完了 (2/2)
 
 **📋 次のステップ**
-- [ ] リリースの動作確認
+- [ ] リリースの動作確認（MacOS）
+- [ ] リリースの動作確認（Windows）
 - [ ] ユーザーへのアナウンス
 - [ ] ドキュメントの更新（必要に応じて）
+- [ ] リリースノートの確認・編集（必要に応じて）
 
-このリリースに関する質問や問題がある場合は、このIssueにコメントしてください。`;
+**🔗 関連リンク**
+- [リリースページ](${finalRelease.data.html_url})
+- [ワークフロー実行](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+- [コミット詳細](https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.sha})
+
+**📝 備考**
+このリリースに関する質問や問題がある場合は、このIssueにコメントしてください。
+リリースの動作確認が完了したら、このIssueをクローズしてください。`;
 
             // 通知用のIssueを作成
             const notificationIssue = await github.rest.issues.create({
@@ -994,13 +1032,221 @@ ${context.payload.pusher ? `@${context.payload.pusher.name} プッシュ実行�
               title: notificationTitle,
               body: notificationBody,
               labels: ['release-notification', 'completed', 'cross-platform'],
-              assignees: [context.actor] // リリース作成者をアサイン
+              assignees: stakeholders.slice(0, 10) // GitHubの制限により最大10人まで
             });
             
             console.log(`✅ リリース完了通知が作成されました: ${notificationIssue.data.html_url}`);
             
+            // 追加の通知チャンネル（Slack、Discord、メールなど）への送信
+            // 環境変数でWebhook URLが設定されている場合のみ実行
+            await sendAdditionalNotifications({
+              releaseTag,
+              releaseUrl: finalRelease.data.html_url,
+              dmgName,
+              msiName,
+              dmgSizeMB,
+              msiSizeMB,
+              stakeholders,
+              context
+            });
+            
           } catch (notificationError) {
             console.error('⚠️ リリース完了通知の作成に失敗しましたが、リリース自体は成功しています:', notificationError.message);
+          }
+          
+          // 追加通知機能の実装
+          async function sendAdditionalNotifications(releaseInfo) {
+            const notifications = [];
+            
+            // Slack通知（SLACK_WEBHOOK_URL環境変数が設定されている場合）
+            if (process.env.SLACK_WEBHOOK_URL) {
+              try {
+                const slackPayload = {
+                  text: `🎉 新しいクロスプラットフォームリリースが完了しました！`,
+                  blocks: [
+                    {
+                      type: "header",
+                      text: {
+                        type: "plain_text",
+                        text: `🎉 リリース完了: ${releaseInfo.releaseTag}`
+                      }
+                    },
+                    {
+                      type: "section",
+                      fields: [
+                        {
+                          type: "mrkdwn",
+                          text: `*バージョン:*\n${releaseInfo.releaseTag}`
+                        },
+                        {
+                          type: "mrkdwn",
+                          text: `*完了時刻:*\n${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`
+                        },
+                        {
+                          type: "mrkdwn",
+                          text: `*MacOS:*\n${releaseInfo.dmgName} (${releaseInfo.dmgSizeMB} MB)`
+                        },
+                        {
+                          type: "mrkdwn",
+                          text: `*Windows:*\n${releaseInfo.msiName} (${releaseInfo.msiSizeMB} MB)`
+                        }
+                      ]
+                    },
+                    {
+                      type: "actions",
+                      elements: [
+                        {
+                          type: "button",
+                          text: {
+                            type: "plain_text",
+                            text: "リリースページを開く"
+                          },
+                          url: releaseInfo.releaseUrl,
+                          style: "primary"
+                        }
+                      ]
+                    }
+                  ]
+                };
+                
+                const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(slackPayload)
+                });
+                
+                if (response.ok) {
+                  notifications.push('Slack通知: ✅ 送信成功');
+                } else {
+                  notifications.push(`Slack通知: ❌ 送信失敗 (${response.status})`);
+                }
+              } catch (error) {
+                notifications.push(`Slack通知: ❌ エラー - ${error.message}`);
+              }
+            }
+            
+            // Discord通知（DISCORD_WEBHOOK_URL環境変数が設定されている場合）
+            if (process.env.DISCORD_WEBHOOK_URL) {
+              try {
+                const discordPayload = {
+                  content: `🎉 **新しいクロスプラットフォームリリースが完了しました！**`,
+                  embeds: [
+                    {
+                      title: `リリース ${releaseInfo.releaseTag}`,
+                      url: releaseInfo.releaseUrl,
+                      color: 0x00ff00, // 緑色
+                      fields: [
+                        {
+                          name: "📦 MacOS",
+                          value: `${releaseInfo.dmgName}\n(${releaseInfo.dmgSizeMB} MB)`,
+                          inline: true
+                        },
+                        {
+                          name: "📦 Windows", 
+                          value: `${releaseInfo.msiName}\n(${releaseInfo.msiSizeMB} MB)`,
+                          inline: true
+                        },
+                        {
+                          name: "👥 関係者",
+                          value: releaseInfo.stakeholders.join(', '),
+                          inline: false
+                        }
+                      ],
+                      timestamp: new Date().toISOString(),
+                      footer: {
+                        text: "GitHub Actions CI/CD"
+                      }
+                    }
+                  ]
+                };
+                
+                const response = await fetch(process.env.DISCORD_WEBHOOK_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(discordPayload)
+                });
+                
+                if (response.ok) {
+                  notifications.push('Discord通知: ✅ 送信成功');
+                } else {
+                  notifications.push(`Discord通知: ❌ 送信失敗 (${response.status})`);
+                }
+              } catch (error) {
+                notifications.push(`Discord通知: ❌ エラー - ${error.message}`);
+              }
+            }
+            
+            // Microsoft Teams通知（TEAMS_WEBHOOK_URL環境変数が設定されている場合）
+            if (process.env.TEAMS_WEBHOOK_URL) {
+              try {
+                const teamsPayload = {
+                  "@type": "MessageCard",
+                  "@context": "http://schema.org/extensions",
+                  "themeColor": "00ff00",
+                  "summary": `リリース完了: ${releaseInfo.releaseTag}`,
+                  "sections": [
+                    {
+                      "activityTitle": "🎉 クロスプラットフォームリリース完了",
+                      "activitySubtitle": `バージョン ${releaseInfo.releaseTag}`,
+                      "facts": [
+                        {
+                          "name": "MacOS",
+                          "value": `${releaseInfo.dmgName} (${releaseInfo.dmgSizeMB} MB)`
+                        },
+                        {
+                          "name": "Windows",
+                          "value": `${releaseInfo.msiName} (${releaseInfo.msiSizeMB} MB)`
+                        },
+                        {
+                          "name": "完了時刻",
+                          "value": new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+                        },
+                        {
+                          "name": "関係者",
+                          "value": releaseInfo.stakeholders.join(', ')
+                        }
+                      ]
+                    }
+                  ],
+                  "potentialAction": [
+                    {
+                      "@type": "OpenUri",
+                      "name": "リリースページを開く",
+                      "targets": [
+                        {
+                          "os": "default",
+                          "uri": releaseInfo.releaseUrl
+                        }
+                      ]
+                    }
+                  ]
+                };
+                
+                const response = await fetch(process.env.TEAMS_WEBHOOK_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(teamsPayload)
+                });
+                
+                if (response.ok) {
+                  notifications.push('Teams通知: ✅ 送信成功');
+                } else {
+                  notifications.push(`Teams通知: ❌ 送信失敗 (${response.status})`);
+                }
+              } catch (error) {
+                notifications.push(`Teams通知: ❌ エラー - ${error.message}`);
+              }
+            }
+            
+            // 通知結果のログ出力
+            if (notifications.length > 0) {
+              console.log('📢 追加通知の送信結果:');
+              notifications.forEach(notification => {
+                console.log(`   ${notification}`);
+              });
+            } else {
+              console.log('📢 追加通知: 設定されたWebhook URLがありません（オプション機能）');
+            }
           }
           
     - name: リリース作成失敗時の通知
@@ -1187,17 +1433,249 @@ ${context.payload.pusher ? `@${context.payload.pusher.name} プッシュ実行�
           console.log(`   - リリース作成: ${results.release}`);
           console.log('');
           
-          // 全体的な成功/失敗の判定
+          // 全体的な成功/失敗の判定と通知
+          let workflowStatus = '';
+          let statusEmoji = '';
+          let statusColor = '';
+          
           if (successJobs === totalJobs) {
+            workflowStatus = 'すべてのプロセスが正常に完了';
+            statusEmoji = '✅';
+            statusColor = '00ff00'; // 緑色
             console.log('✅ すべてのプロセスが正常に完了しました！');
             console.log('🎉 クロスプラットフォームリリースが正常に作成されました');
           } else if (failedJobs > 0) {
+            workflowStatus = '一部またはすべてのプロセスが失敗';
+            statusEmoji = '❌';
+            statusColor = 'ff0000'; // 赤色
             console.log('❌ 一部またはすべてのプロセスが失敗しました');
             console.log('🔍 詳細なエラー情報は各ジョブのログを確認してください');
           } else {
+            workflowStatus = '一部のプロセスがスキップ';
+            statusEmoji = '⚠️';
+            statusColor = 'ffaa00'; // オレンジ色
             console.log('⚠️ 一部のプロセスがスキップされました');
           }
           
           console.log('');
           console.log(`🔗 ワークフロー実行: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`);
           console.log('='.repeat(60));
+          
+          // ワークフロー完了通知の送信
+          try {
+            // 関係者リストの構築
+            const stakeholders = [];
+            if (context.actor) stakeholders.push(context.actor);
+            if (context.payload.pusher && context.payload.pusher.name !== context.actor) {
+              stakeholders.push(context.payload.pusher.name);
+            }
+            
+            // ワークフロー完了通知のIssueまたはコメントを作成
+            const summaryTitle = `${statusEmoji} CI/CDワークフロー完了報告 - ${context.sha.substring(0, 7)}`;
+            const summaryBody = `## ${statusEmoji} ワークフロー実行結果
+
+**📊 実行統計**
+- **総ジョブ数**: ${totalJobs}
+- **成功**: ${successJobs}
+- **失敗**: ${failedJobs}
+- **スキップ**: ${skippedJobs}
+- **実行時間**: 約${executionTime}分
+- **ステータス**: ${workflowStatus}
+
+**📋 詳細結果**
+- **MacOSビルド**: ${results.macos === 'success' ? '✅' : results.macos === 'failure' ? '❌' : '⚠️'} ${results.macos}
+- **Windowsビルド**: ${results.windows === 'success' ? '✅' : results.windows === 'failure' ? '❌' : '⚠️'} ${results.windows}
+- **リリース作成**: ${results.release === 'success' ? '✅' : results.release === 'failure' ? '❌' : '⚠️'} ${results.release}
+
+**📝 実行情報**
+- **コミット**: ${context.sha}
+- **ブランチ**: ${context.ref_name || 'unknown'}
+- **実行者**: ${context.actor}
+- **実行時刻**: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)
+- **ワークフロー**: [実行 #${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+
+**👥 関係者**: ${stakeholders.map(user => `@${user}`).join(' ')}
+
+${failedJobs > 0 ? `**⚠️ 対応が必要**: 失敗したジョブの詳細ログを確認し、問題を修正してください。` : ''}
+${successJobs === totalJobs ? `**🎉 完了**: すべてのプロセスが正常に完了しました。` : ''}`;
+
+            // 既存の関連Issueを検索
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'workflow-summary'
+            });
+            
+            if (existingIssues.data.length > 0) {
+              // 既存のワークフロー統合報告Issueにコメント追加
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssues.data[0].number,
+                body: summaryBody
+              });
+              console.log('📢 既存のワークフロー統合報告Issueにコメントを追加しました');
+            } else {
+              // 新しいワークフロー統合報告Issueを作成
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: summaryTitle,
+                body: summaryBody,
+                labels: ['workflow-summary', 'ci-cd', successJobs === totalJobs ? 'success' : 'needs-attention'],
+                assignees: stakeholders.slice(0, 10)
+              });
+              console.log('📢 新しいワークフロー統合報告Issueを作成しました');
+            }
+            
+            // 外部通知システムへの送信（環境変数が設定されている場合）
+            await sendWorkflowSummaryNotifications({
+              status: workflowStatus,
+              emoji: statusEmoji,
+              color: statusColor,
+              results,
+              totalJobs,
+              successJobs,
+              failedJobs,
+              skippedJobs,
+              executionTime,
+              stakeholders,
+              context
+            });
+            
+          } catch (notificationError) {
+            console.error('⚠️ ワークフロー完了通知の送信に失敗しました:', notificationError.message);
+          }
+          
+          // 外部通知システム用の関数
+          async function sendWorkflowSummaryNotifications(summaryInfo) {
+            const notifications = [];
+            
+            // Slack通知
+            if (process.env.SLACK_WEBHOOK_URL) {
+              try {
+                const slackPayload = {
+                  text: `${summaryInfo.emoji} CI/CDワークフロー完了: ${summaryInfo.status}`,
+                  blocks: [
+                    {
+                      type: "header",
+                      text: {
+                        type: "plain_text",
+                        text: `${summaryInfo.emoji} CI/CDワークフロー完了`
+                      }
+                    },
+                    {
+                      type: "section",
+                      fields: [
+                        {
+                          type: "mrkdwn",
+                          text: `*ステータス:*\n${summaryInfo.status}`
+                        },
+                        {
+                          type: "mrkdwn",
+                          text: `*実行時間:*\n約${summaryInfo.executionTime}分`
+                        },
+                        {
+                          type: "mrkdwn",
+                          text: `*成功/失敗:*\n${summaryInfo.successJobs}/${summaryInfo.totalJobs}`
+                        },
+                        {
+                          type: "mrkdwn",
+                          text: `*実行者:*\n${summaryInfo.context.actor}`
+                        }
+                      ]
+                    },
+                    {
+                      type: "section",
+                      text: {
+                        type: "mrkdwn",
+                        text: `*詳細結果:*\n• MacOS: ${summaryInfo.results.macos}\n• Windows: ${summaryInfo.results.windows}\n• リリース: ${summaryInfo.results.release}`
+                      }
+                    }
+                  ]
+                };
+                
+                const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(slackPayload)
+                });
+                
+                notifications.push(response.ok ? 'Slack通知: ✅ 送信成功' : `Slack通知: ❌ 送信失敗 (${response.status})`);
+              } catch (error) {
+                notifications.push(`Slack通知: ❌ エラー - ${error.message}`);
+              }
+            }
+            
+            // Discord通知
+            if (process.env.DISCORD_WEBHOOK_URL) {
+              try {
+                const discordPayload = {
+                  content: `${summaryInfo.emoji} **CI/CDワークフロー完了**`,
+                  embeds: [
+                    {
+                      title: "ワークフロー実行結果",
+                      color: parseInt(summaryInfo.color, 16),
+                      fields: [
+                        {
+                          name: "ステータス",
+                          value: summaryInfo.status,
+                          inline: true
+                        },
+                        {
+                          name: "実行時間",
+                          value: `約${summaryInfo.executionTime}分`,
+                          inline: true
+                        },
+                        {
+                          name: "成功率",
+                          value: `${summaryInfo.successJobs}/${summaryInfo.totalJobs}`,
+                          inline: true
+                        },
+                        {
+                          name: "MacOSビルド",
+                          value: summaryInfo.results.macos,
+                          inline: true
+                        },
+                        {
+                          name: "Windowsビルド",
+                          value: summaryInfo.results.windows,
+                          inline: true
+                        },
+                        {
+                          name: "リリース作成",
+                          value: summaryInfo.results.release,
+                          inline: true
+                        }
+                      ],
+                      timestamp: new Date().toISOString(),
+                      footer: {
+                        text: `実行者: ${summaryInfo.context.actor}`
+                      }
+                    }
+                  ]
+                };
+                
+                const response = await fetch(process.env.DISCORD_WEBHOOK_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(discordPayload)
+                });
+                
+                notifications.push(response.ok ? 'Discord通知: ✅ 送信成功' : `Discord通知: ❌ 送信失敗 (${response.status})`);
+              } catch (error) {
+                notifications.push(`Discord通知: ❌ エラー - ${error.message}`);
+              }
+            }
+            
+            // 通知結果のログ出力
+            if (notifications.length > 0) {
+              console.log('📢 ワークフロー統合報告の外部通知結果:');
+              notifications.forEach(notification => {
+                console.log(`   ${notification}`);
+              });
+            } else {
+              console.log('📢 外部通知: 設定されたWebhook URLがありません（オプション機能）');
+            }
+          }
