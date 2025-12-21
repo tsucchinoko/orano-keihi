@@ -192,9 +192,9 @@ jobs:
         unset APPLE_CERTIFICATE_PASSWORD
         unset APPLE_ID
         unset APPLE_ID_PASSWORD
+        unset APPLE_TEAM_ID
         
         echo "✅ MacOS署名環境のクリーンアップが完了しました"
-        retention-days: 7
 
   # Windowsビルド
   build-windows:
