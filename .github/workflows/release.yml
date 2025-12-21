@@ -8,6 +8,13 @@ on:
       - 'docs/**'
       - '.gitignore'
       - 'LICENSE'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
 
 env:
   CARGO_TERM_COLOR: always
@@ -92,6 +99,18 @@ jobs:
         APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     
+    - name: ビルド結果の確認
+      run: |
+        echo "🎯 MacOSビルド完了"
+        echo "📦 生成されたファイル:"
+        find src-tauri/target/release/bundle/dmg -name "*.dmg" -exec ls -lh {} \; || echo "dmgファイルが見つかりません"
+        
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
+        else
+          echo "🚀 mainブランチへのpush - リリース作成準備完了"
+        fi
+    
     - name: MacOS成果物のアップロード
       uses: actions/upload-artifact@v4
       with:
@@ -130,6 +149,21 @@ jobs:
     - name: Windowsアプリケーションのビルド
       run: pnpm tauri build
     
+    - name: ビルド結果の確認
+      run: |
+        echo "🎯 Windowsビルド完了"
+        echo "📦 生成されたファイル:"
+        Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Filter "*.msi" | ForEach-Object { 
+          Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)"
+        }
+        
+        if ("${{ github.event_name }}" -eq "pull_request") {
+          echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
+        } else {
+          echo "🚀 mainブランチへのpush - リリース作成準備完了"
+        }
+      shell: pwsh
+    
     - name: Windows成果物のアップロード
       uses: actions/upload-artifact@v4
       with:
@@ -141,7 +175,7 @@ jobs:
   create-release:
     needs: [version-tag, build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: success()
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
     - uses: actions/checkout@v4
@@ -254,3 +288,53 @@ jobs:
           
           console.log('🎉 クロスプラットフォームリリースが正常に作成されました！');
           console.log('🔗 リリースURL: ' + release.data.html_url);
+
+
+  # ビルド結果のサマリー（PR用）
+  build-summary:
+    needs: [version-tag, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: ビルド結果のサマリー表示
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const version = '${{ needs.version-tag.outputs.VERSION }}';
+          const releaseTag = '${{ needs.version-tag.outputs.RELEASE_TAG }}';
+          const macosResult = '${{ needs.build-macos.result }}';
+          const windowsResult = '${{ needs.build-windows.result }}';
+          const eventName = '${{ github.event_name }}';
+          
+          console.log('='.repeat(60));
+          console.log('🎯 クロスプラットフォームビルド結果サマリー');
+          console.log('='.repeat(60));
+          console.log('');
+          console.log('📋 ビルド情報:');
+          console.log('  - バージョン: ' + version);
+          console.log('  - リリースタグ: ' + releaseTag);
+          console.log('  - イベント: ' + eventName);
+          console.log('');
+          console.log('📊 ビルド結果:');
+          console.log('  - MacOS: ' + (macosResult === 'success' ? '✅ 成功' : '❌ 失敗'));
+          console.log('  - Windows: ' + (windowsResult === 'success' ? '✅ 成功' : '❌ 失敗'));
+          console.log('');
+          
+          if (eventName === 'pull_request') {
+            console.log('📝 PR用ビルドテスト:');
+            console.log('  ✅ ビルドテストが完了しました');
+            console.log('  ℹ️  リリースは作成されません（PR用テスト）');
+            console.log('  💡 mainブランチにマージ後、自動的にリリースが作成されます');
+          } else if (macosResult === 'success' && windowsResult === 'success') {
+            console.log('🚀 リリース作成:');
+            console.log('  ✅ すべてのビルドが成功しました');
+            console.log('  📦 リリース作成ジョブが実行されます');
+          } else {
+            console.log('⚠️  ビルド失敗:');
+            console.log('  ❌ 一部のビルドが失敗したため、リリースは作成されません');
+          }
+          
+          console.log('');
+          console.log('='.repeat(60));
