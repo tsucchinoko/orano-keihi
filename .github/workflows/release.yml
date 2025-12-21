@@ -1,979 +1,220 @@
-name: クロスプラットフォームリリースビルド
+name: クロスプラットフォームリリース
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
-    
-    steps:
-    - name: リポジトリのチェックアウト
-      uses: actions/checkout@v4
-      
-    - name: Node.jsのセットアップ
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        
-    - name: pnpmのセットアップ
-      uses: pnpm/action-setup@v4
-      with:
-        version: latest
-        
-    - name: 依存関係キャッシュの復元
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.pnpm-store
-          ~/.cargo/registry
-          ~/.cargo/git
-          src-tauri/target
-        key: ${{ runner.os }}-deps-${{ hashFiles('**/pnpm-lock.yaml', '**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-deps-
-        
-    - name: 依存関係のインストール
-      run: |
-        echo "📦 MacOS用依存関係をインストール中..."
-        if ! pnpm install --frozen-lockfile; then
-          echo "❌ MacOS依存関係のインストールに失敗しました"
-          echo "::error title=MacOS依存関係エラー::pnpmによる依存関係のインストールが失敗しました"
-          echo "--- pnpm環境情報 ---"
-          pnpm --version || echo "pnpmバージョン取得失敗"
-          node --version || echo "Nodeバージョン取得失敗"
-          echo "--- package.jsonの確認 ---"
-          cat package.json | head -20 || echo "package.json読み取り失敗"
-          echo "--- pnpm-lock.yamlの確認 ---"
-          ls -la pnpm-lock.yaml || echo "pnpm-lock.yaml確認失敗"
-          exit 1
-        fi
-        echo "✅ MacOS依存関係のインストールが完了しました"
-        
-    - name: Rustツールチェーンのセットアップ
-      run: |
-        echo "🦀 MacOS用Rustツールチェーンをセットアップ中..."
-        if ! rustup show; then
-          echo "❌ Rustツールチェーンの確認に失敗しました"
-          echo "::error title=MacOS Rustエラー::Rustツールチェーンのセットアップが失敗しました"
-          echo "--- Rust環境情報 ---"
-          rustup --version || echo "rustupバージョン取得失敗"
-          rustc --version || echo "rustcバージョン取得失敗"
-          cargo --version || echo "cargoバージョン取得失敗"
-          exit 1
-        fi
-        echo "✅ MacOS Rustツールチェーンのセットアップが完了しました"
-        
-    - name: フロントエンドビルド
-      run: |
-        echo "🏗️ MacOS用フロントエンドをビルド中..."
-        if ! pnpm build; then
-          echo "❌ MacOSフロントエンドビルドが失敗しました"
-          echo "::error title=MacOSフロントエンドエラー::SvelteKitビルドプロセスが失敗しました"
-          echo "--- ビルド環境情報 ---"
-          echo "Node.js: $(node --version)"
-          echo "pnpm: $(pnpm --version)"
-          echo "--- package.jsonスクリプト確認 ---"
-          cat package.json | grep -A 10 '"scripts"' || echo "スクリプト確認失敗"
-          echo "--- ビルドディレクトリ確認 ---"
-          ls -la . || echo "ディレクトリ確認失敗"
-          echo "--- vite設定確認 ---"
-          cat vite.config.js || echo "vite設定確認失敗"
-          exit 1
-        fi
-        echo "✅ MacOSフロントエンドビルドが完了しました"
-        echo "--- ビルド成果物確認 ---"
-        ls -la build/ || echo "ビルドディレクトリ確認失敗"
-        
-    - name: Tauriアプリケーションのビルド
-      run: |
-        echo "🚀 MacOS用Tauriアプリケーションをビルド中..."
-        export TAURI_ENV=production
-        echo "環境変数設定: TAURI_ENV=$TAURI_ENV"
-        
-        # MacOS署名設定
-        if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" ]; then
-          echo "🔐 MacOS署名証明書を設定中..."
-          
-          # 証明書をキーチェーンにインポート
-          echo "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode > certificate.p12
-          security create-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-          security import certificate.p12 -k build.keychain -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.KEYCHAIN_PASSWORD }}" build.keychain
-          
-          # 署名アイデンティティを設定
-          export APPLE_SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          echo "署名アイデンティティ設定: $APPLE_SIGNING_IDENTITY"
-          
-          # 公証用の設定
-          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_ID_PASSWORD }}" ]; then
-            export APPLE_ID="${{ secrets.APPLE_ID }}"
-            export APPLE_ID_PASSWORD="${{ secrets.APPLE_ID_PASSWORD }}"
-            export APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
-            echo "公証設定が完了しました"
-          fi
-          
-          rm certificate.p12
-        else
-          echo "⚠️ MacOS署名証明書が設定されていません（開発ビルド）"
-        fi
-        
-        # ビルド前の環境確認
-        echo "--- ビルド前環境確認 ---"
-        echo "Rust: $(rustc --version)"
-        echo "Cargo: $(cargo --version)"
-        echo "Tauri CLI: $(pnpm tauri --version || echo 'Tauri CLI確認失敗')"
-        
-        # Tauriビルドの実行
-        if ! pnpm tauri build --bundles dmg --verbose 2>&1 | tee /tmp/tauri-build.log; then
-          echo "❌ MacOS Tauriビルドが失敗しました"
-          echo "::error title=MacOS Tauriビルドエラー::Tauriアプリケーションのビルドプロセスが失敗しました"
-          
-          echo "--- 詳細エラーログ ---"
-          cat /tmp/tauri-build.log | tail -50 || echo "ログファイル読み取り失敗"
-          
-          echo "--- Tauri設定確認 ---"
-          cat src-tauri/tauri.conf.json | head -30 || echo "Tauri設定確認失敗"
-          
-          echo "--- Cargo.toml確認 ---"
-          cat src-tauri/Cargo.toml || echo "Cargo.toml確認失敗"
-          
-          echo "--- ターゲットディレクトリ確認 ---"
-          ls -la src-tauri/target/ || echo "ターゲットディレクトリ確認失敗"
-          
-          echo "--- システム情報 ---"
-          uname -a || echo "システム情報取得失敗"
-          xcode-select --version || echo "Xcode情報取得失敗"
-          
-          exit 1
-        fi
-        echo "✅ MacOS Tauriビルドが正常に完了しました"
-        
-    - name: ビルド成果物の確認
-      run: |
-        echo "📋 MacOSビルド成果物を確認中..."
-        
-        # バンドルディレクトリの確認
-        if [ ! -d "src-tauri/target/release/bundle" ]; then
-          echo "❌ バンドルディレクトリが存在しません"
-          echo "::error title=MacOS成果物エラー::バンドルディレクトリが見つかりません"
-          echo "--- ターゲットディレクトリ構造 ---"
-          find src-tauri/target -type d -name "*bundle*" || echo "バンドルディレクトリ検索失敗"
-          ls -la src-tauri/target/release/ || echo "リリースディレクトリ確認失敗"
-          exit 1
-        fi
-        
-        # dmgファイルの検索
-        DMG_FILES=$(find src-tauri/target/release/bundle -name "*.dmg" -type f)
-        if [ -z "$DMG_FILES" ]; then
-          echo "❌ dmgファイルが見つかりません"
-          echo "::error title=MacOS dmgエラー::生成されたdmgファイルが見つかりません"
-          echo "--- バンドルディレクトリ内容 ---"
-          find src-tauri/target/release/bundle -type f || echo "バンドル内容確認失敗"
-          echo "--- dmgディレクトリ確認 ---"
-          ls -la src-tauri/target/release/bundle/dmg/ || echo "dmgディレクトリ確認失敗"
-          exit 1
-        fi
-        
-        echo "✅ 見つかったdmgファイル:"
-        for dmg in $DMG_FILES; do
-          echo "  - $dmg ($(du -h "$dmg" | cut -f1))"
-        done
-
-        
-    - name: dmgファイルのアップロード
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-dmg-${{ github.sha }}
-        path: src-tauri/target/release/bundle/dmg/*.dmg
-        if-no-files-found: error
-        retention-days: 30
-        
-    - name: MacOS署名環境のクリーンアップ
-      if: always()
-      run: |
-        echo "🧹 MacOS署名環境をクリーンアップ中..."
-        
-        # キーチェーンのクリーンアップ
-        if security list-keychains | grep -q "build.keychain"; then
-          echo "ビルド用キーチェーンを削除中..."
-          security delete-keychain build.keychain || echo "キーチェーンの削除に失敗しました（既に削除済みの可能性があります）"
-        fi
-        
-        # 一時ファイルのクリーンアップ
-        if [ -f "certificate.p12" ]; then
-          echo "一時証明書ファイルを削除中..."
-          rm -f certificate.p12
-        fi
-        
-        # 署名関連の環境変数をクリア
-        unset APPLE_SIGNING_IDENTITY
-        unset APPLE_ID
-        unset APPLE_ID_PASSWORD
-        unset APPLE_TEAM_ID
-        
-        echo "✅ MacOS署名環境のクリーンアップが完了しました"
-        
-    - name: MacOSビルド失敗時の通知
-      if: failure()
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context } = require('@actions/github');
-          
-          // ビルド失敗の詳細情報を収集
-          const failureInfo = {
-            platform: 'MacOS',
-            commit: context.sha,
-            actor: context.actor,
-            runId: context.runId,
-            timestamp: new Date().toISOString(),
-            branch: context.ref_name || 'unknown'
-          };
-          
-          // Issue作成またはコメント追加でエラー報告
-          const issueTitle = `🚨 MacOSビルド失敗 - ${failureInfo.commit.substring(0, 7)}`;
-          const issueBody = `## MacOSビルドエラー報告
-          
-          **📋 ビルド情報**
-          - **プラットフォーム**: ${failureInfo.platform}
-          - **コミット**: ${failureInfo.commit}
-          - **ブランチ**: ${failureInfo.branch}
-          - **実行者**: ${failureInfo.actor}
-          - **失敗時刻**: ${failureInfo.timestamp}
-          - **ワークフロー実行**: [#${failureInfo.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${failureInfo.runId})
-          
-          **🔍 確認事項**
-          - [ ] 依存関係のインストールエラー
-          - [ ] フロントエンドビルドエラー
-          - [ ] Tauriビルドエラー
-          - [ ] dmgファイル生成エラー
-          - [ ] 環境設定エラー
-          
-          **📝 対応方法**
-          1. 上記のワークフロー実行リンクから詳細ログを確認
-          2. エラーの原因を特定
-          3. 必要に応じてコードまたは設定を修正
-          4. 修正後に再度ビルドを実行
-          
-          **⚠️ 注意**: このIssueは自動生成されました。解決後はクローズしてください。`;
-          
-          try {
-            // 既存の同様のIssueを検索
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'build-failure,macos'
-            });
-            
-            if (existingIssues.data.length === 0) {
-              // 新しいIssueを作成
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: issueBody,
-                labels: ['build-failure', 'macos', 'ci-cd']
-              });
-              console.log('MacOSビルド失敗のIssueを作成しました');
-            } else {
-              // 既存のIssueにコメント追加
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssues.data[0].number,
-                body: `## 新しいMacOSビルド失敗\n\n${issueBody}`
-              });
-              console.log('既存のMacOSビルド失敗Issueにコメントを追加しました');
-            }
-          } catch (error) {
-            console.error('MacOSビルド失敗通知の作成に失敗しました:', error);
-          }
-
-  build-windows:
-    runs-on: windows-latest
-    
-    steps:
-    - name: リポジトリのチェックアウト
-      uses: actions/checkout@v4
-      
-    - name: Node.jsのセットアップ
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        
-    - name: pnpmのセットアップ
-      uses: pnpm/action-setup@v4
-      with:
-        version: latest
-        
-    - name: 依存関係キャッシュの復元
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.pnpm-store
-          ~/.cargo/registry
-          ~/.cargo/git
-          src-tauri/target
-        key: ${{ runner.os }}-deps-${{ hashFiles('**/pnpm-lock.yaml', '**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-deps-
-        
-    - name: 依存関係のインストール
-      run: |
-        Write-Host "📦 Windows用依存関係をインストール中..." -ForegroundColor Green
-        try {
-          pnpm install --frozen-lockfile
-          Write-Host "✅ Windows依存関係のインストールが完了しました" -ForegroundColor Green
-        } catch {
-          Write-Host "❌ Windows依存関係のインストールに失敗しました" -ForegroundColor Red
-          Write-Host "::error title=Windows依存関係エラー::pnpmによる依存関係のインストールが失敗しました"
-          Write-Host "--- pnpm環境情報 ---" -ForegroundColor Yellow
-          try { pnpm --version } catch { Write-Host "pnpmバージョン取得失敗" }
-          try { node --version } catch { Write-Host "Nodeバージョン取得失敗" }
-          Write-Host "--- package.jsonの確認 ---" -ForegroundColor Yellow
-          try { Get-Content package.json | Select-Object -First 20 } catch { Write-Host "package.json読み取り失敗" }
-          Write-Host "--- pnpm-lock.yamlの確認 ---" -ForegroundColor Yellow
-          try { Get-Item pnpm-lock.yaml } catch { Write-Host "pnpm-lock.yaml確認失敗" }
-          exit 1
-        }
-        
-    - name: Rustツールチェーンのセットアップ
-      run: |
-        Write-Host "🦀 Windows用Rustツールチェーンをセットアップ中..." -ForegroundColor Green
-        try {
-          rustup show
-          Write-Host "✅ Windows Rustツールチェーンのセットアップが完了しました" -ForegroundColor Green
-        } catch {
-          Write-Host "❌ Rustツールチェーンの確認に失敗しました" -ForegroundColor Red
-          Write-Host "::error title=Windows Rustエラー::Rustツールチェーンのセットアップが失敗しました"
-          Write-Host "--- Rust環境情報 ---" -ForegroundColor Yellow
-          try { rustup --version } catch { Write-Host "rustupバージョン取得失敗" }
-          try { rustc --version } catch { Write-Host "rustcバージョン取得失敗" }
-          try { cargo --version } catch { Write-Host "cargoバージョン取得失敗" }
-          exit 1
-        }
-        
-    - name: フロントエンドビルド
-      run: |
-        Write-Host "🏗️ Windows用フロントエンドをビルド中..." -ForegroundColor Green
-        try {
-          pnpm build
-          Write-Host "✅ Windowsフロントエンドビルドが完了しました" -ForegroundColor Green
-          Write-Host "--- ビルド成果物確認 ---" -ForegroundColor Yellow
-          Get-ChildItem -Path "build" -Recurse -ErrorAction SilentlyContinue
-        } catch {
-          Write-Host "❌ Windowsフロントエンドビルドが失敗しました" -ForegroundColor Red
-          Write-Host "::error title=Windowsフロントエンドエラー::SvelteKitビルドプロセスが失敗しました"
-          Write-Host "--- ビルド環境情報 ---" -ForegroundColor Yellow
-          Write-Host "Node.js: $(node --version)"
-          Write-Host "pnpm: $(pnpm --version)"
-          Write-Host "--- package.jsonスクリプト確認 ---" -ForegroundColor Yellow
-          try { Get-Content package.json | Select-String '"scripts"' -Context 0,10 } catch { Write-Host "スクリプト確認失敗" }
-          Write-Host "--- ビルドディレクトリ確認 ---" -ForegroundColor Yellow
-          try { Get-ChildItem -Path . } catch { Write-Host "ディレクトリ確認失敗" }
-          Write-Host "--- vite設定確認 ---" -ForegroundColor Yellow
-          try { Get-Content vite.config.js } catch { Write-Host "vite設定確認失敗" }
-          exit 1
-        }
-        
-    - name: Tauriアプリケーションのビルド
-      run: |
-        Write-Host "🚀 Windows用Tauriアプリケーションをビルド中..." -ForegroundColor Green
-        $env:TAURI_ENV = "production"
-        Write-Host "環境変数設定: TAURI_ENV=$env:TAURI_ENV" -ForegroundColor Cyan
-        
-        # Windows署名設定
-        if ("${{ secrets.WINDOWS_CERTIFICATE }}" -ne "" -and "${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}" -ne "") {
-          Write-Host "🔐 Windows署名証明書を設定中..." -ForegroundColor Green
-          
-          # 証明書をファイルに保存
-          $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
-          [System.IO.File]::WriteAllBytes("$env:TEMP\certificate.pfx", $certBytes)
-          
-          # 署名設定の環境変数を設定
-          $env:WINDOWS_CERTIFICATE_FILE = "$env:TEMP\certificate.pfx"
-          $env:WINDOWS_CERTIFICATE_PASSWORD = "${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}"
-          
-          # タイムスタンプサーバーの設定
-          if ("${{ secrets.WINDOWS_TIMESTAMP_URL }}" -ne "") {
-            $env:WINDOWS_TIMESTAMP_URL = "${{ secrets.WINDOWS_TIMESTAMP_URL }}"
-          } else {
-            $env:WINDOWS_TIMESTAMP_URL = "http://timestamp.digicert.com"
-          }
-          
-          Write-Host "署名証明書設定が完了しました" -ForegroundColor Green
-          Write-Host "証明書ファイル: $env:WINDOWS_CERTIFICATE_FILE" -ForegroundColor Cyan
-          Write-Host "タイムスタンプURL: $env:WINDOWS_TIMESTAMP_URL" -ForegroundColor Cyan
-        } else {
-          Write-Host "⚠️ Windows署名証明書が設定されていません（開発ビルド）" -ForegroundColor Yellow
-        }
-        
-        # ビルド前の環境確認
-        Write-Host "--- ビルド前環境確認 ---" -ForegroundColor Yellow
-        Write-Host "Rust: $(rustc --version)"
-        Write-Host "Cargo: $(cargo --version)"
-        try { Write-Host "Tauri CLI: $(pnpm tauri --version)" } catch { Write-Host "Tauri CLI確認失敗" }
-        
-        # Tauriビルドの実行
-        try {
-          # PowerShellでのログ出力とエラーキャッチ
-          $buildOutput = pnpm tauri build --bundles msi --verbose 2>&1
-          $buildOutput | Out-File -FilePath "$env:TEMP\tauri-build.log" -Encoding UTF8
-          Write-Host $buildOutput
-          Write-Host "✅ Windows Tauriビルドが正常に完了しました" -ForegroundColor Green
-        } catch {
-          Write-Host "❌ Windows Tauriビルドが失敗しました" -ForegroundColor Red
-          Write-Host "::error title=Windows Tauriビルドエラー::Tauriアプリケーションのビルドプロセスが失敗しました"
-          
-          Write-Host "--- 詳細エラーログ ---" -ForegroundColor Yellow
-          try { Get-Content "$env:TEMP\tauri-build.log" | Select-Object -Last 50 } catch { Write-Host "ログファイル読み取り失敗" }
-          
-          Write-Host "--- Tauri設定確認 ---" -ForegroundColor Yellow
-          try { Get-Content src-tauri/tauri.conf.json | Select-Object -First 30 } catch { Write-Host "Tauri設定確認失敗" }
-          
-          Write-Host "--- Cargo.toml確認 ---" -ForegroundColor Yellow
-          try { Get-Content src-tauri/Cargo.toml } catch { Write-Host "Cargo.toml確認失敗" }
-          
-          Write-Host "--- ターゲットディレクトリ確認 ---" -ForegroundColor Yellow
-          try { Get-ChildItem src-tauri/target/ } catch { Write-Host "ターゲットディレクトリ確認失敗" }
-          
-          Write-Host "--- システム情報 ---" -ForegroundColor Yellow
-          try { Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion } catch { Write-Host "システム情報取得失敗" }
-          
-          exit 1
-        }
-        
-    - name: ビルド成果物の確認
-      run: |
-        Write-Host "📋 Windowsビルド成果物を確認中..." -ForegroundColor Green
-        
-        # バンドルディレクトリの確認
-        if (-not (Test-Path "src-tauri/target/release/bundle")) {
-          Write-Host "❌ バンドルディレクトリが存在しません" -ForegroundColor Red
-          Write-Host "::error title=Windows成果物エラー::バンドルディレクトリが見つかりません"
-          Write-Host "--- ターゲットディレクトリ構造 ---" -ForegroundColor Yellow
-          try { Get-ChildItem src-tauri/target -Recurse -Directory | Where-Object { $_.Name -like "*bundle*" } } catch { Write-Host "バンドルディレクトリ検索失敗" }
-          try { Get-ChildItem src-tauri/target/release/ } catch { Write-Host "リリースディレクトリ確認失敗" }
-          exit 1
-        }
-        
-        # msiファイルの検索
-        $msiFiles = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.msi" -ErrorAction SilentlyContinue
-        if ($msiFiles.Count -eq 0) {
-          Write-Host "❌ msiファイルが見つかりません" -ForegroundColor Red
-          Write-Host "::error title=Windows msiエラー::生成されたmsiファイルが見つかりません"
-          Write-Host "--- バンドルディレクトリ内容 ---" -ForegroundColor Yellow
-          try { Get-ChildItem src-tauri/target/release/bundle -Recurse } catch { Write-Host "バンドル内容確認失敗" }
-          Write-Host "--- msiディレクトリ確認 ---" -ForegroundColor Yellow
-          try { Get-ChildItem src-tauri/target/release/bundle/msi/ } catch { Write-Host "msiディレクトリ確認失敗" }
-          exit 1
-        }
-        
-        Write-Host "✅ 見つかったmsiファイル:" -ForegroundColor Green
-        $msiFiles | ForEach-Object { 
-          $size = [math]::Round((Get-Item $_.FullName).Length / 1MB, 2)
-          Write-Host "  - $($_.FullName) ($size MB)" -ForegroundColor Cyan
-        }
-
-        
-    - name: msiファイルのアップロード
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-msi-${{ github.sha }}
-        path: src-tauri/target/release/bundle/msi/*.msi
-        if-no-files-found: error
-        retention-days: 30
-        
-    - name: Windows署名環境のクリーンアップ
-      if: always()
-      run: |
-        Write-Host "🧹 Windows署名環境をクリーンアップ中..." -ForegroundColor Green
-        
-        # 一時証明書ファイルのクリーンアップ
-        if (Test-Path "$env:TEMP\certificate.pfx") {
-          Write-Host "一時証明書ファイルを削除中..." -ForegroundColor Yellow
-          try {
-            Remove-Item "$env:TEMP\certificate.pfx" -Force
-            Write-Host "証明書ファイルを削除しました" -ForegroundColor Green
-          } catch {
-            Write-Host "証明書ファイルの削除に失敗しました: $($_.Exception.Message)" -ForegroundColor Red
-          }
-        }
-        
-        # 署名関連の環境変数をクリア
-        Remove-Item Env:WINDOWS_CERTIFICATE_FILE -ErrorAction SilentlyContinue
-        Remove-Item Env:WINDOWS_CERTIFICATE_PASSWORD -ErrorAction SilentlyContinue
-        Remove-Item Env:WINDOWS_TIMESTAMP_URL -ErrorAction SilentlyContinue
-        
-        Write-Host "✅ Windows署名環境のクリーンアップが完了しました" -ForegroundColor Green
-        
-    - name: Windowsビルド失敗時の通知
-      if: failure()
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context } = require('@actions/github');
-          
-          // ビルド失敗の詳細情報を収集
-          const failureInfo = {
-            platform: 'Windows',
-            commit: context.sha,
-            actor: context.actor,
-            runId: context.runId,
-            timestamp: new Date().toISOString(),
-            branch: context.ref_name || 'unknown'
-          };
-          
-          // Issue作成またはコメント追加でエラー報告
-          const issueTitle = `🚨 Windowsビルド失敗 - ${failureInfo.commit.substring(0, 7)}`;
-          const issueBody = `## Windowsビルドエラー報告
-          
-          **📋 ビルド情報**
-          - **プラットフォーム**: ${failureInfo.platform}
-          - **コミット**: ${failureInfo.commit}
-          - **ブランチ**: ${failureInfo.branch}
-          - **実行者**: ${failureInfo.actor}
-          - **失敗時刻**: ${failureInfo.timestamp}
-          - **ワークフロー実行**: [#${failureInfo.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${failureInfo.runId})
-          
-          **🔍 確認事項**
-          - [ ] 依存関係のインストールエラー
-          - [ ] フロントエンドビルドエラー
-          - [ ] Tauriビルドエラー
-          - [ ] msiファイル生成エラー
-          - [ ] 環境設定エラー
-          
-          **📝 対応方法**
-          1. 上記のワークフロー実行リンクから詳細ログを確認
-          2. エラーの原因を特定
-          3. 必要に応じてコードまたは設定を修正
-          4. 修正後に再度ビルドを実行
-          
-          **⚠️ 注意**: このIssueは自動生成されました。解決後はクローズしてください。`;
-          
-          try {
-            // 既存の同様のIssueを検索
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'build-failure,windows'
-            });
-            
-            if (existingIssues.data.length === 0) {
-              // 新しいIssueを作成
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: issueBody,
-                labels: ['build-failure', 'windows', 'ci-cd']
-              });
-              console.log('Windowsビルド失敗のIssueを作成しました');
-            } else {
-              // 既存のIssueにコメント追加
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssues.data[0].number,
-                body: `## 新しいWindowsビルド失敗\n\n${issueBody}`
-              });
-              console.log('既存のWindowsビルド失敗Issueにコメントを追加しました');
-            }
-          } catch (error) {
-            console.error('Windowsビルド失敗通知の作成に失敗しました:', error);
-          }
-
-  create-release:
-    needs: [build-macos, build-windows]
+  # バージョンとタグの生成
+  version-tag:
     runs-on: ubuntu-latest
-    if: success() && github.ref_name == 'main' && github.event_name == 'push'
+    outputs:
+      VERSION: ${{ steps.version.outputs.VERSION }}
+      RELEASE_TAG: ${{ steps.version.outputs.RELEASE_TAG }}
+      COMMIT_SHORT: ${{ steps.version.outputs.COMMIT_SHORT }}
+      TIMESTAMP: ${{ steps.version.outputs.TIMESTAMP }}
     
     steps:
-    - name: リポジトリのチェックアウト
-      uses: actions/checkout@v4
-      
-    - name: MacOS成果物のダウンロード
-      uses: actions/download-artifact@v4
+    - uses: actions/checkout@v4
       with:
-        name: macos-dmg-${{ github.sha }}
-        path: ./artifacts/macos/
-        
-    - name: Windows成果物のダウンロード
-      uses: actions/download-artifact@v4
-      with:
-        name: windows-msi-${{ github.sha }}
-        path: ./artifacts/windows/
-        
-    - name: 成果物の確認
+        fetch-depth: 0
+    
+    - name: バージョン情報の生成
+      id: version
       run: |
-        echo "📋 ダウンロードした成果物を確認中..."
-        
-        # 成果物ディレクトリの存在確認
-        if [ ! -d "./artifacts" ]; then
-          echo "❌ 成果物ディレクトリが存在しません"
-          echo "::error title=リリース成果物エラー::成果物ディレクトリが見つかりません"
-          exit 1
-        fi
-        
-        # dmgファイルの確認
-        DMG_COUNT=$(find ./artifacts -type f -name "*.dmg" | wc -l)
-        MSI_COUNT=$(find ./artifacts -type f -name "*.msi" | wc -l)
-        
-        echo "見つかった成果物:"
-        echo "  - dmgファイル: $DMG_COUNT 個"
-        echo "  - msiファイル: $MSI_COUNT 個"
-        
-        if [ "$DMG_COUNT" -eq 0 ]; then
-          echo "❌ dmgファイルが見つかりません"
-          echo "::error title=MacOS成果物エラー::dmgファイルがダウンロードされていません"
-          echo "--- MacOS成果物ディレクトリ内容 ---"
-          ls -la ./artifacts/macos/ || echo "MacOS成果物ディレクトリが存在しません"
-          exit 1
-        fi
-        
-        if [ "$MSI_COUNT" -eq 0 ]; then
-          echo "❌ msiファイルが見つかりません"
-          echo "::error title=Windows成果物エラー::msiファイルがダウンロードされていません"
-          echo "--- Windows成果物ディレクトリ内容 ---"
-          ls -la ./artifacts/windows/ || echo "Windows成果物ディレクトリが存在しません"
-          exit 1
-        fi
-        
-        echo "✅ すべての成果物が正常に確認されました"
-        find ./artifacts -type f -name "*.dmg" -o -name "*.msi" | while read file; do
-          echo "  - $file ($(du -h "$file" | cut -f1))"
-        done
-        
-    - name: バージョンタグの自動生成と検証
-      id: version-tag
-      run: |
-        echo "🏷️ バージョンタグを自動生成中..."
-        
         # package.jsonからバージョンを取得
         VERSION=$(node -p "require('./package.json').version")
-        RELEASE_TAG="v${VERSION}"
-        COMMIT_SHORT="${{ github.sha }}"
-        COMMIT_SHORT="${COMMIT_SHORT:0:7}"
         
-        # タイムスタンプ付きのユニークなタグを生成（必要に応じて）
-        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        # 日本時間でのタイムスタンプ生成
+        TIMESTAMP=$(TZ=Asia/Tokyo date '+%Y%m%d-%H%M%S')
         
-        echo "📋 バージョン情報:"
-        echo "  - パッケージバージョン: ${VERSION}"
-        echo "  - リリースタグ: ${RELEASE_TAG}"
-        echo "  - コミット: ${COMMIT_SHORT}"
-        echo "  - タイムスタンプ: ${TIMESTAMP}"
+        # リリースタグの生成
+        RELEASE_TAG="v${VERSION}-${TIMESTAMP}"
         
-        # 環境変数として設定
+        # コミットハッシュ（短縮版）
+        COMMIT_SHORT=$(git rev-parse --short HEAD)
+        
         echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
         echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_OUTPUT
         echo "COMMIT_SHORT=${COMMIT_SHORT}" >> $GITHUB_OUTPUT
         echo "TIMESTAMP=${TIMESTAMP}" >> $GITHUB_OUTPUT
         
-        # バージョンの妥当性チェック
-        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "❌ 無効なバージョン形式: $VERSION"
-          echo "::error title=バージョンエラー::package.jsonのバージョンがセマンティックバージョニング形式ではありません"
-          exit 1
-        fi
-        
-        echo "✅ バージョンタグの生成が完了しました: ${RELEASE_TAG}"
-        
-    - name: クロスプラットフォームGitHubリリースの作成
+        echo "📋 生成されたバージョン情報:"
+        echo "  - バージョン: ${VERSION}"
+        echo "  - リリースタグ: ${RELEASE_TAG}"
+        echo "  - コミット: ${COMMIT_SHORT}"
+        echo "  - タイムスタンプ: ${TIMESTAMP}"
+
+  # MacOSビルド
+  build-macos:
+    needs: version-tag
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Node.js環境のセットアップ
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+    
+    - name: pnpmのインストール
+      uses: pnpm/action-setup@v4
+      with:
+        version: 8
+    
+    - name: Rust環境のセットアップ
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: 依存関係のインストール
+      run: pnpm install
+    
+    - name: フロントエンドビルド
+      run: pnpm build
+    
+    - name: MacOSアプリケーションのビルド
+      run: pnpm tauri build
+      env:
+        APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    
+    - name: MacOS成果物のアップロード
+      uses: actions/upload-artifact@v4
+      with:
+        name: macos-artifacts
+        path: src-tauri/target/release/bundle/dmg/*.dmg
+        retention-days: 7
+
+  # Windowsビルド
+  build-windows:
+    needs: version-tag
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Node.js環境のセットアップ
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+    
+    - name: pnpmのインストール
+      uses: pnpm/action-setup@v4
+      with:
+        version: 8
+    
+    - name: Rust環境のセットアップ
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: 依存関係のインストール
+      run: pnpm install
+    
+    - name: フロントエンドビルド
+      run: pnpm build
+    
+    - name: Windowsアプリケーションのビルド
+      run: pnpm tauri build
+    
+    - name: Windows成果物のアップロード
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-artifacts
+        path: src-tauri/target/release/bundle/msi/*.msi
+        retention-days: 7
+
+  # リリース作成
+  create-release:
+    needs: [version-tag, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: 成果物のダウンロード
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+    
+    - name: リリースの作成とアップロード
       uses: actions/github-script@v7
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const fs = require('fs');
           const path = require('path');
-          const { execSync } = require('child_process');
           
-          // バージョン情報の取得
-          const version = '${{ steps.version-tag.outputs.VERSION }}';
-          const releaseTag = '${{ steps.version-tag.outputs.RELEASE_TAG }}';
-          const commitShort = '${{ steps.version-tag.outputs.COMMIT_SHORT }}';
-          const timestamp = '${{ steps.version-tag.outputs.TIMESTAMP }}';
-          const releaseName = `オラの経費だゾ ${releaseTag}`;
+          const version = '${{ needs.version-tag.outputs.VERSION }}';
+          const releaseTag = '${{ needs.version-tag.outputs.RELEASE_TAG }}';
+          const commitShort = '${{ needs.version-tag.outputs.COMMIT_SHORT }}';
           
-          console.log(`🚀 クロスプラットフォームリリース作成開始: ${releaseTag}`);
+          console.log('🚀 リリース作成開始: ' + releaseTag);
           
-          // 成果物ファイルの詳細検索と検証
-          console.log('📦 成果物ファイルを検索中...');
+          // 成果物ファイルの検索
+          const dmgFiles = fs.readdirSync('./artifacts/macos-artifacts').filter(f => f.endsWith('.dmg'));
+          const msiFiles = fs.readdirSync('./artifacts/windows-artifacts').filter(f => f.endsWith('.msi'));
           
-          let dmgFiles, msiFiles;
-          try {
-            dmgFiles = execSync('find ./artifacts/macos -name "*.dmg" -type f').toString().trim().split('\n').filter(f => f);
-            msiFiles = execSync('find ./artifacts/windows -name "*.msi" -type f').toString().trim().split('\n').filter(f => f);
-          } catch (error) {
-            console.error('成果物ファイルの検索に失敗しました:', error);
-            throw new Error('成果物ファイルの検索に失敗しました');
+          if (dmgFiles.length === 0 || msiFiles.length === 0) {
+            throw new Error('必要な成果物ファイルが見つかりません');
           }
           
-          // 成果物の存在確認
-          if (dmgFiles.length === 0) {
-            console.error('❌ dmgファイルが見つかりません');
-            console.error('MacOS成果物ディレクトリ内容:');
-            try {
-              execSync('ls -la ./artifacts/macos/');
-            } catch (e) {
-              console.error('MacOS成果物ディレクトリが存在しません');
-            }
-            throw new Error('dmgファイルが見つかりません');
-          }
+          const dmgPath = path.join('./artifacts/macos-artifacts', dmgFiles[0]);
+          const msiPath = path.join('./artifacts/windows-artifacts', msiFiles[0]);
           
-          if (msiFiles.length === 0) {
-            console.error('❌ msiファイルが見つかりません');
-            console.error('Windows成果物ディレクトリ内容:');
-            try {
-              execSync('ls -la ./artifacts/windows/');
-            } catch (e) {
-              console.error('Windows成果物ディレクトリが存在しません');
-            }
-            throw new Error('msiファイルが見つかりません');
-          }
-          
-          const dmgPath = dmgFiles[0];
-          const msiPath = msiFiles[0];
-          const dmgName = path.basename(dmgPath);
-          const msiName = path.basename(msiPath);
-          
-          // ファイルサイズの確認
+          // ファイルサイズの取得
           const dmgStats = fs.statSync(dmgPath);
           const msiStats = fs.statSync(msiPath);
           const dmgSizeMB = (dmgStats.size / 1024 / 1024).toFixed(2);
           const msiSizeMB = (msiStats.size / 1024 / 1024).toFixed(2);
           
-          console.log('✅ 成果物ファイルが確認されました:');
-          console.log(`  - MacOS dmg: ${dmgName} (${dmgSizeMB} MB)`);
-          console.log(`  - Windows msi: ${msiName} (${msiSizeMB} MB)`);
+          console.log('📦 成果物ファイル:');
+          console.log('  - MacOS: ' + dmgFiles[0] + ' (' + dmgSizeMB + ' MB)');
+          console.log('  - Windows: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
           
-          // 既存リリースの確認と処理
-          let existingRelease = null;
-          try {
-            existingRelease = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: releaseTag
-            });
-            console.log(`⚠️ 既存のリリース ${releaseTag} が見つかりました`);
-            
-            // 既存リリースを削除して新しいリリースを作成
-            console.log('🗑️ 既存リリースを削除して新しいリリースを作成します...');
-            await github.rest.repos.deleteRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: existingRelease.data.id
-            });
-            
-            // タグも削除
-            try {
-              await github.rest.git.deleteRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `tags/${releaseTag}`
-              });
-            } catch (tagError) {
-              console.log('タグの削除をスキップしました（存在しない可能性があります）');
-            }
-            
-          } catch (error) {
-            console.log(`✨ 新しいクロスプラットフォームリリース ${releaseTag} を作成します`);
-          }
-          
-          // 前回のリリースからの変更履歴を取得してリリースノートを自動生成
-          console.log('📝 リリースノートを自動生成中...');
-          
-          let changelogSection = '';
-          let commitInfo = '';
-          
-          try {
-            // 最新のコミット情報を取得
-            const commit = await github.rest.repos.getCommit({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: context.sha
-            });
-            commitInfo = commit.data.commit.message.split('\n')[0]; // 最初の行のみ
-            
-            // 前回のリリースタグを取得
-            let previousTag = null;
-            try {
-              const releases = await github.rest.repos.listReleases({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 10
-              });
-              
-              // 現在のタグ以外の最新リリースを探す
-              const previousRelease = releases.data.find(r => r.tag_name !== releaseTag);
-              if (previousRelease) {
-                previousTag = previousRelease.tag_name;
-                console.log(`📋 前回のリリース: ${previousTag}`);
-              }
-            } catch (error) {
-              console.log('前回のリリース情報の取得をスキップしました');
-            }
-            
-            // 前回のリリースからの変更履歴を取得
-            if (previousTag) {
-              try {
-                const comparison = await github.rest.repos.compareCommits({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  base: previousTag,
-                  head: context.sha
-                });
-                
-                const commits = comparison.data.commits;
-                console.log(`📊 ${previousTag}からの変更: ${commits.length}件のコミット`);
-                
-                if (commits.length > 0) {
-                  // コミットメッセージを分類
-                  const features = [];
-                  const fixes = [];
-                  const improvements = [];
-                  const others = [];
-                  
-                  commits.forEach(commit => {
-                    const message = commit.commit.message.split('\n')[0];
-                    const lowerMessage = message.toLowerCase();
-                    
-                    if (lowerMessage.includes('feat') || lowerMessage.includes('feature') || lowerMessage.includes('新機能') || lowerMessage.includes('追加')) {
-                      features.push(`- ${message} (${commit.sha.substring(0, 7)})`);
-                    } else if (lowerMessage.includes('fix') || lowerMessage.includes('bug') || lowerMessage.includes('修正') || lowerMessage.includes('バグ')) {
-                      fixes.push(`- ${message} (${commit.sha.substring(0, 7)})`);
-                    } else if (lowerMessage.includes('improve') || lowerMessage.includes('update') || lowerMessage.includes('改善') || lowerMessage.includes('更新')) {
-                      improvements.push(`- ${message} (${commit.sha.substring(0, 7)})`);
-                    } else {
-                      others.push(`- ${message} (${commit.sha.substring(0, 7)})`);
-                    }
-                  });
-                  
-                  // 変更履歴セクションを構築
-                  changelogSection = '\n### 📝 変更履歴\n\n';
-                  
-                  if (features.length > 0) {
-                    changelogSection += '#### 🆕 新機能\n' + features.join('\n') + '\n\n';
-                  }
-                  
-                  if (improvements.length > 0) {
-                    changelogSection += '#### ⚡ 改善・更新\n' + improvements.join('\n') + '\n\n';
-                  }
-                  
-                  if (fixes.length > 0) {
-                    changelogSection += '#### 🐛 バグ修正\n' + fixes.join('\n') + '\n\n';
-                  }
-                  
-                  if (others.length > 0) {
-                    changelogSection += '#### 🔧 その他の変更\n' + others.join('\n') + '\n\n';
-                  }
-                  
-                  // 統計情報を追加
-                  changelogSection += `#### 📊 変更統計\n`;
-                  changelogSection += `- **総コミット数**: ${commits.length}\n`;
-                  changelogSection += `- **新機能**: ${features.length}\n`;
-                  changelogSection += `- **改善・更新**: ${improvements.length}\n`;
-                  changelogSection += `- **バグ修正**: ${fixes.length}\n`;
-                  changelogSection += `- **その他**: ${others.length}\n`;
-                  
-                  // ファイル変更統計
-                  if (comparison.data.files && comparison.data.files.length > 0) {
-                    const totalAdditions = comparison.data.files.reduce((sum, file) => sum + file.additions, 0);
-                    const totalDeletions = comparison.data.files.reduce((sum, file) => sum + file.deletions, 0);
-                    const changedFiles = comparison.data.files.length;
-                    
-                    changelogSection += `- **変更ファイル数**: ${changedFiles}\n`;
-                    changelogSection += `- **追加行数**: +${totalAdditions}\n`;
-                    changelogSection += `- **削除行数**: -${totalDeletions}\n`;
-                  }
-                  
-                } else {
-                  changelogSection = '\n### 📝 変更履歴\n\n初回リリースまたは変更なし\n';
-                }
-                
-              } catch (comparisonError) {
-                console.log('変更履歴の取得に失敗しました:', comparisonError.message);
-                changelogSection = '\n### 📝 変更履歴\n\n変更履歴の自動生成に失敗しました\n';
-              }
-            } else {
-              changelogSection = '\n### 📝 変更履歴\n\n初回リリース\n';
-            }
-            
-          } catch (error) {
-            console.log('コミット情報の取得に失敗しました:', error.message);
-            commitInfo = 'コミット情報の取得に失敗しました';
-            changelogSection = '\n### 📝 変更履歴\n\nリリースノートの自動生成に失敗しました\n';
-          }
-          
-          // クロスプラットフォーム対応の詳細なリリースノートの生成
-          const releaseNotes = "## 🎉 新しいクロスプラットフォームリリース: " + releaseTag + "\n\n" +
-            "### 📦 ダウンロード\n" +
-            "| プラットフォーム | ファイル | サイズ | 対応OS |\n" +
-            "|---|---|---|---|\n" +
-            "| **MacOS** | " + dmgName + " | " + dmgSizeMB + " MB | macOS 10.15+ |\n" +
-            "| **Windows** | " + msiName + " | " + msiSizeMB + " MB | Windows 10+ |\n\n" +
-            "### 📋 ビルド情報\n" +
-            "- **バージョン**: " + version + "\n" +
-            "- **リリースタグ**: " + releaseTag + "\n" +
-            "- **コミット**: " + context.sha + " (" + commitShort + ")\n" +
-            "- **コミットメッセージ**: " + commitInfo + "\n" +
-            "- **ビルド日時**: " + new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) + " (JST)\n" +
-            "- **ビルド者**: " + context.actor + "\n" +
-            "- **ブランチ**: " + (context.ref_name || 'main') + "\n" +
-            "- **ワークフロー**: [GitHub Actions #" + context.runId + "](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/actions/runs/" + context.runId + ")\n" +
-            changelogSection + "\n" +
-            "### 🔧 インストール方法\n\n" +
-            "#### MacOS\n" +
-            "1. **" + dmgName + "** をダウンロード\n" +
-            "2. dmgファイルをダブルクリックしてマウント\n" +
-            "3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ\n" +
-            "4. Launchpadまたは「アプリケーション」フォルダからアプリケーションを起動\n\n" +
-            "#### Windows\n" +
-            "1. **" + msiName + "** をダウンロード
-            "2. msiファイルを右クリックして「管理者として実行」を選択\n" +
-            "3. インストールウィザードに従ってインストール\n" +
-            "4. スタートメニューまたはデスクトップショートカットからアプリケーションを起動\n\n" +
-            "### ⚠️ 重要な注意事項\n\n" +
-            "#### セキュリティ警告について\n" +
-            "- **MacOS**: 初回起動時に「開発元が未確認のため開けません」という警告が表示される場合があります\n" +
-            "  - 対処法: システム環境設定 > セキュリティとプライバシー > 一般 > 「このまま開く」をクリック\n" +
-            "- **Windows**: SmartScreenの警告「WindowsによってPCが保護されました」が表示される場合があります\n" +
-            "  - 対処法: 「詳細情報」をクリック → 「実行」を選択\n\n" +
-            "#### データベースとデータ管理\n" +
-            "- **プロダクション環境**: 開発環境とは別のデータベースファイル（expenses.db）が使用されます\n" +
-            "- **データ移行**: 開発版から本リリース版への移行時は、データのエクスポート/インポートが必要な場合があります\n" +
-            "- **バックアップ**: 重要なデータは定期的にバックアップを取ることを推奨します\n\n" +
-            "#### システム要件\n" +
-            "- **MacOS**: macOS 10.15 (Catalina) 以降\n" +
-            "- **Windows**: Windows 10 バージョン 1903 以降\n" +
-            "- **メモリ**: 最低 4GB RAM 推奨\n" +
-            "- **ストレージ**: 最低 100MB の空き容量\n\n" +
-            "### 🛠️ 技術情報\n" +
-            "- **フレームワーク**: Tauri v1.x + SvelteKit\n" +
-            "- **言語**: Rust (バックエンド) + TypeScript (フロントエンド)\n" +
-            "- **ビルド環境**: GitHub Actions (MacOS runner + Windows runner)\n" +
-            "- **パッケージマネージャー**: pnpm\n" +
-            "- **データベース**: SQLite (環境別ファイル分離)\n" +
-            "- **UI フレームワーク**: Svelte 5 + TypeScript\n\n" +
-            "### 🐛 問題報告・フィードバック\n" +
-            "問題が発生した場合や機能要望がある場合は、[Issues](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/issues) からご報告ください。\n\n" +
-            "### 📚 ドキュメント\n" +
-            "- [環境設定ガイド](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/blob/main/docs/ENVIRONMENT_SETUP.md)\n" +
-            "- [トラブルシューティング](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/blob/main/docs/TROUBLESHOOTING.md)\n" +
-            "- [R2設定ガイド](https://github.com/" + context.repo.owner + "/" + context.repo.repo + "/blob/main/docs/R2_SETUP.md)";
+          // リリースノートの生成
+          const releaseNotes = [
+            '## 🎉 新しいクロスプラットフォームリリース: ' + releaseTag,
+            '',
+            '### 📦 ダウンロード',
+            '| プラットフォーム | ファイル | サイズ |',
+            '|---|---|---|',
+            '| **MacOS** | ' + dmgFiles[0] + ' | ' + dmgSizeMB + ' MB |',
+            '| **Windows** | ' + msiFiles[0] + ' | ' + msiSizeMB + ' MB |',
+            '',
+            '### 📋 ビルド情報',
+            '- **バージョン**: ' + version,
+            '- **リリースタグ**: ' + releaseTag,
+            '- **コミット**: ' + context.sha + ' (' + commitShort + ')',
+            '- **ビルド日時**: ' + new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) + ' (JST)',
+            '- **ビルド者**: ' + context.actor,
+            '',
+            '### 🔧 インストール方法',
+            '',
+            '#### MacOS',
+            '1. dmgファイルをダウンロード',
+            '2. dmgファイルをダブルクリックしてマウント',
+            '3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ',
+            '',
+            '#### Windows',
+            '1. msiファイルをダウンロード',
+            '2. msiファイルを右クリックして「管理者として実行」を選択',
+            '3. インストールウィザードに従ってインストール'
+          ].join('\n');
           
           // リリースの作成
           console.log('📝 GitHubリリースを作成中...');
@@ -981,793 +222,35 @@ jobs:
             owner: context.repo.owner,
             repo: context.repo.repo,
             tag_name: releaseTag,
-            name: releaseName,
+            name: 'オラの経費だゾ ' + releaseTag,
             body: releaseNotes,
             draft: false,
-            prerelease: false,
-            generate_release_notes: false // 手動でリリースノートを生成するため
+            prerelease: false
           });
           
-          console.log(`✅ リリースが作成されました: ${release.data.html_url}`);
+          console.log('✅ リリースが作成されました: ' + release.data.html_url);
           
           // dmgファイルのアップロード
           console.log('📤 MacOS dmgファイルをアップロード中...');
-          try {
-            const dmgContent = fs.readFileSync(dmgPath);
-            const dmgUpload = await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.data.id,
-              name: dmgName,
-              data: dmgContent,
-              headers: {
-                'content-type': 'application/octet-stream',
-                'content-length': dmgStats.size
-              }
-            });
-            console.log(`✅ dmgファイルのアップロードが完了しました: ${dmgUpload.data.browser_download_url}`);
-          } catch (error) {
-            console.error('❌ dmgファイルのアップロードに失敗しました:', error);
-            throw new Error(`dmgファイルのアップロードに失敗: ${error.message}`);
-          }
+          const dmgContent = fs.readFileSync(dmgPath);
+          await github.rest.repos.uploadReleaseAsset({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            release_id: release.data.id,
+            name: dmgFiles[0],
+            data: dmgContent
+          });
           
           // msiファイルのアップロード
           console.log('📤 Windows msiファイルをアップロード中...');
-          try {
-            const msiContent = fs.readFileSync(msiPath);
-            const msiUpload = await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.data.id,
-              name: msiName,
-              data: msiContent,
-              headers: {
-                'content-type': 'application/octet-stream',
-                'content-length': msiStats.size
-              }
-            });
-            console.log(`✅ msiファイルのアップロードが完了しました: ${msiUpload.data.browser_download_url}`);
-          } catch (error) {
-            console.error('❌ msiファイルのアップロードに失敗しました:', error);
-            throw new Error(`msiファイルのアップロードに失敗: ${error.message}`);
-          }
-          
-          // リリース作成の最終確認
-          const finalRelease = await github.rest.repos.getRelease({
+          const msiContent = fs.readFileSync(msiPath);
+          await github.rest.repos.uploadReleaseAsset({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            release_id: release.data.id
+            release_id: release.data.id,
+            name: msiFiles[0],
+            data: msiContent
           });
           
-          const assetCount = finalRelease.data.assets.length;
-          console.log(`🎯 リリース作成が完了しました:`);
-          console.log(`   - リリースURL: ${finalRelease.data.html_url}`);
-          console.log(`   - タグ: ${finalRelease.data.tag_name}`);
-          console.log(`   - アセット数: ${assetCount}/2`);
-          
-          if (assetCount !== 2) {
-            throw new Error(`期待されるアセット数(2)と実際のアセット数(${assetCount})が一致しません`);
-          }
-          
           console.log('🎉 クロスプラットフォームリリースが正常に作成されました！');
-          
-          // リリース完了通知の送信
-          console.log('📢 リリース完了通知を送信中...');
-          
-          // 関係者リストの構築
-          const stakeholders = [];
-          
-          // リリース作成者を追加
-          if (context.actor) {
-            stakeholders.push(context.actor);
-          }
-          
-          // プッシュ実行者を追加（作成者と異なる場合）
-          if (context.payload.pusher && context.payload.pusher.name !== context.actor) {
-            stakeholders.push(context.payload.pusher.name);
-          }
-          
-          // コミット作成者を追加（他の関係者と異なる場合）
-          if (context.payload.head_commit && context.payload.head_commit.author && 
-              context.payload.head_commit.author.username && 
-              !stakeholders.includes(context.payload.head_commit.author.username)) {
-            stakeholders.push(context.payload.head_commit.author.username);
-          }
-          
-          // 関係者への通知メンションを構築
-          const stakeholderMentions = stakeholders.map(user => `@${user}`).join(' ');
-          
-          // リリース完了のIssueまたはDiscussionを作成
-          try {
-            const notificationTitle = `🎉 リリース完了通知: ${releaseTag}`;
-            const notificationBody = `## ✅ クロスプラットフォームリリースが完了しました
-
-**🎯 リリース情報**
-- **バージョン**: ${releaseTag}
-- **リリースURL**: ${finalRelease.data.html_url}
-- **完了時刻**: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)
-
-**📦 成果物**
-- **MacOS dmg**: ${dmgName} (${dmgSizeMB} MB)
-- **Windows msi**: ${msiName} (${msiSizeMB} MB)
-- **総ダウンロードサイズ**: ${(parseFloat(dmgSizeMB) + parseFloat(msiSizeMB)).toFixed(2)} MB
-
-**👥 関係者への通知**
-${stakeholderMentions}
-
-**📊 ビルド統計**
-- **MacOSビルド**: ✅ 成功
-- **Windowsビルド**: ✅ 成功
-- **リリース作成**: ✅ 成功
-- **アセット添付**: ✅ 完了 (2/2)
-
-**📋 次のステップ**
-- [ ] リリースの動作確認（MacOS）
-- [ ] リリースの動作確認（Windows）
-- [ ] ユーザーへのアナウンス
-- [ ] ドキュメントの更新（必要に応じて）
-- [ ] リリースノートの確認・編集（必要に応じて）
-
-**🔗 関連リンク**
-- [リリースページ](${finalRelease.data.html_url})
-- [ワークフロー実行](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
-- [コミット詳細](https://github.com/${context.repo.owner}/${context.repo.repo}/commit/${context.sha})
-
-**📝 備考**
-このリリースに関する質問や問題がある場合は、このIssueにコメントしてください。
-リリースの動作確認が完了したら、このIssueをクローズしてください。`;
-
-            // 通知用のIssueを作成
-            const notificationIssue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: notificationTitle,
-              body: notificationBody,
-              labels: ['release-notification', 'completed', 'cross-platform'],
-              assignees: stakeholders.slice(0, 10) // GitHubの制限により最大10人まで
-            });
-            
-            console.log(`✅ リリース完了通知が作成されました: ${notificationIssue.data.html_url}`);
-            
-            // 追加の通知チャンネル（Slack、Discord、メールなど）への送信
-            // 環境変数でWebhook URLが設定されている場合のみ実行
-            await sendAdditionalNotifications({
-              releaseTag,
-              releaseUrl: finalRelease.data.html_url,
-              dmgName,
-              msiName,
-              dmgSizeMB,
-              msiSizeMB,
-              stakeholders,
-              context
-            });
-            
-          } catch (notificationError) {
-            console.error('⚠️ リリース完了通知の作成に失敗しましたが、リリース自体は成功しています:', notificationError.message);
-          }
-          
-          // 追加通知機能の実装
-          async function sendAdditionalNotifications(releaseInfo) {
-            const notifications = [];
-            
-            // Slack通知（SLACK_WEBHOOK_URL環境変数が設定されている場合）
-            if (process.env.SLACK_WEBHOOK_URL) {
-              try {
-                const slackPayload = {
-                  text: `🎉 新しいクロスプラットフォームリリースが完了しました！`,
-                  blocks: [
-                    {
-                      type: "header",
-                      text: {
-                        type: "plain_text",
-                        text: `🎉 リリース完了: ${releaseInfo.releaseTag}`
-                      }
-                    },
-                    {
-                      type: "section",
-                      fields: [
-                        {
-                          type: "mrkdwn",
-                          text: `*バージョン:*\n${releaseInfo.releaseTag}`
-                        },
-                        {
-                          type: "mrkdwn",
-                          text: `*完了時刻:*\n${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`
-                        },
-                        {
-                          type: "mrkdwn",
-                          text: `*MacOS:*\n${releaseInfo.dmgName} (${releaseInfo.dmgSizeMB} MB)`
-                        },
-                        {
-                          type: "mrkdwn",
-                          text: `*Windows:*\n${releaseInfo.msiName} (${releaseInfo.msiSizeMB} MB)`
-                        }
-                      ]
-                    },
-                    {
-                      type: "actions",
-                      elements: [
-                        {
-                          type: "button",
-                          text: {
-                            type: "plain_text",
-                            text: "リリースページを開く"
-                          },
-                          url: releaseInfo.releaseUrl,
-                          style: "primary"
-                        }
-                      ]
-                    }
-                  ]
-                };
-                
-                const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(slackPayload)
-                });
-                
-                if (response.ok) {
-                  notifications.push('Slack通知: ✅ 送信成功');
-                } else {
-                  notifications.push(`Slack通知: ❌ 送信失敗 (${response.status})`);
-                }
-              } catch (error) {
-                notifications.push(`Slack通知: ❌ エラー - ${error.message}`);
-              }
-            }
-            
-            // Discord通知（DISCORD_WEBHOOK_URL環境変数が設定されている場合）
-            if (process.env.DISCORD_WEBHOOK_URL) {
-              try {
-                const discordPayload = {
-                  content: `🎉 **新しいクロスプラットフォームリリースが完了しました！**`,
-                  embeds: [
-                    {
-                      title: `リリース ${releaseInfo.releaseTag}`,
-                      url: releaseInfo.releaseUrl,
-                      color: 0x00ff00, // 緑色
-                      fields: [
-                        {
-                          name: "📦 MacOS",
-                          value: `${releaseInfo.dmgName}\n(${releaseInfo.dmgSizeMB} MB)`,
-                          inline: true
-                        },
-                        {
-                          name: "📦 Windows", 
-                          value: `${releaseInfo.msiName}\n(${releaseInfo.msiSizeMB} MB)`,
-                          inline: true
-                        },
-                        {
-                          name: "👥 関係者",
-                          value: releaseInfo.stakeholders.join(', '),
-                          inline: false
-                        }
-                      ],
-                      timestamp: new Date().toISOString(),
-                      footer: {
-                        text: "GitHub Actions CI/CD"
-                      }
-                    }
-                  ]
-                };
-                
-                const response = await fetch(process.env.DISCORD_WEBHOOK_URL, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(discordPayload)
-                });
-                
-                if (response.ok) {
-                  notifications.push('Discord通知: ✅ 送信成功');
-                } else {
-                  notifications.push(`Discord通知: ❌ 送信失敗 (${response.status})`);
-                }
-              } catch (error) {
-                notifications.push(`Discord通知: ❌ エラー - ${error.message}`);
-              }
-            }
-            
-            // Microsoft Teams通知（TEAMS_WEBHOOK_URL環境変数が設定されている場合）
-            if (process.env.TEAMS_WEBHOOK_URL) {
-              try {
-                const teamsPayload = {
-                  "@type": "MessageCard",
-                  "@context": "http://schema.org/extensions",
-                  "themeColor": "00ff00",
-                  "summary": `リリース完了: ${releaseInfo.releaseTag}`,
-                  "sections": [
-                    {
-                      "activityTitle": "🎉 クロスプラットフォームリリース完了",
-                      "activitySubtitle": `バージョン ${releaseInfo.releaseTag}`,
-                      "facts": [
-                        {
-                          "name": "MacOS",
-                          "value": `${releaseInfo.dmgName} (${releaseInfo.dmgSizeMB} MB)`
-                        },
-                        {
-                          "name": "Windows",
-                          "value": `${releaseInfo.msiName} (${releaseInfo.msiSizeMB} MB)`
-                        },
-                        {
-                          "name": "完了時刻",
-                          "value": new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
-                        },
-                        {
-                          "name": "関係者",
-                          "value": releaseInfo.stakeholders.join(', ')
-                        }
-                      ]
-                    }
-                  ],
-                  "potentialAction": [
-                    {
-                      "@type": "OpenUri",
-                      "name": "リリースページを開く",
-                      "targets": [
-                        {
-                          "os": "default",
-                          "uri": releaseInfo.releaseUrl
-                        }
-                      ]
-                    }
-                  ]
-                };
-                
-                const response = await fetch(process.env.TEAMS_WEBHOOK_URL, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(teamsPayload)
-                });
-                
-                if (response.ok) {
-                  notifications.push('Teams通知: ✅ 送信成功');
-                } else {
-                  notifications.push(`Teams通知: ❌ 送信失敗 (${response.status})`);
-                }
-              } catch (error) {
-                notifications.push(`Teams通知: ❌ エラー - ${error.message}`);
-              }
-            }
-            
-            // 通知結果のログ出力
-            if (notifications.length > 0) {
-              console.log('📢 追加通知の送信結果:');
-              notifications.forEach(notification => {
-                console.log(`   ${notification}`);
-              });
-            } else {
-              console.log('📢 追加通知: 設定されたWebhook URLがありません（オプション機能）');
-            }
-          }
-          
-    - name: リリース作成失敗時の通知
-      if: failure()
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context } = require('@actions/github');
-          
-          // リリース失敗の詳細情報を収集
-          const failureInfo = {
-            process: 'Release Creation',
-            commit: context.sha,
-            actor: context.actor,
-            runId: context.runId,
-            timestamp: new Date().toISOString(),
-            branch: context.ref_name || 'unknown'
-          };
-          
-          // Issue作成でエラー報告
-          const issueTitle = `🚨 クロスプラットフォームリリース作成失敗 - ${failureInfo.commit.substring(0, 7)}`;
-          const issueBody = `## リリース作成エラー報告
-          
-          **📋 リリース情報**
-          - **プロセス**: ${failureInfo.process}
-          - **コミット**: ${failureInfo.commit}
-          - **ブランチ**: ${failureInfo.branch}
-          - **実行者**: ${failureInfo.actor}
-          - **失敗時刻**: ${failureInfo.timestamp}
-          - **ワークフロー実行**: [#${failureInfo.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${failureInfo.runId})
-          
-          **🔍 確認事項**
-          - [ ] 成果物のダウンロードエラー
-          - [ ] GitHubリリース作成エラー
-          - [ ] アセットアップロードエラー
-          - [ ] リリースノート生成エラー
-          - [ ] 権限エラー
-          
-          **📝 対応方法**
-          1. 上記のワークフロー実行リンクから詳細ログを確認
-          2. MacOSとWindowsビルドが正常に完了していることを確認
-          3. GitHub Actionsの権限設定を確認
-          4. 必要に応じて手動でリリースを作成
-          
-          **⚠️ 注意**: このIssueは自動生成されました。解決後はクローズしてください。`;
-          
-          try {
-            // リリース失敗のIssueを作成
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: issueTitle,
-              body: issueBody,
-              labels: ['release-failure', 'ci-cd', 'urgent']
-            });
-            console.log('リリース作成失敗のIssueを作成しました');
-          } catch (error) {
-            console.error('リリース作成失敗通知の作成に失敗しました:', error);
-          }
-
-  # 部分的ビルド失敗の検出と通知
-  check-partial-failure:
-    needs: [build-macos, build-windows]
-    runs-on: ubuntu-latest
-    if: always() && (needs.build-macos.result == 'failure' || needs.build-windows.result == 'failure')
-    
-    steps:
-    - name: 部分的ビルド失敗の通知
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context } = require('@actions/github');
-          
-          // 各ビルドの結果を確認
-          const macosResult = '${{ needs.build-macos.result }}';
-          const windowsResult = '${{ needs.build-windows.result }}';
-          
-          let failedPlatforms = [];
-          let successPlatforms = [];
-          
-          if (macosResult === 'failure') {
-            failedPlatforms.push('MacOS');
-          } else if (macosResult === 'success') {
-            successPlatforms.push('MacOS');
-          }
-          
-          if (windowsResult === 'failure') {
-            failedPlatforms.push('Windows');
-          } else if (windowsResult === 'success') {
-            successPlatforms.push('Windows');
-          }
-          
-          // 部分的失敗の場合のみ処理
-          if (failedPlatforms.length > 0 && successPlatforms.length > 0) {
-            const issueTitle = `⚠️ 部分的ビルド失敗 - ${context.sha.substring(0, 7)}`;
-            const issueBody = `## 部分的ビルド失敗報告
-            
-            **📋 ビルド状況**
-            - **成功したプラットフォーム**: ${successPlatforms.join(', ')}
-            - **失敗したプラットフォーム**: ${failedPlatforms.join(', ')}
-            - **コミット**: ${context.sha}
-            - **ブランチ**: ${context.ref_name || 'unknown'}
-            - **実行者**: ${context.actor}
-            - **失敗時刻**: ${new Date().toISOString()}
-            - **ワークフロー実行**: [#${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
-            
-            **🚨 影響**
-            - クロスプラットフォームリリースが作成されませんでした
-            - ${successPlatforms.join(', ')}のビルドは成功しましたが、${failedPlatforms.join(', ')}のビルドが失敗したため、リリースプロセスが中断されました
-            
-            **📝 対応方法**
-            1. 失敗したプラットフォーム（${failedPlatforms.join(', ')}）のビルドログを確認
-            2. エラーの原因を特定して修正
-            3. 修正後に再度ビルドを実行
-            4. すべてのプラットフォームでビルドが成功したら、自動的にリリースが作成されます
-            
-            **⚠️ 注意**: このIssueは自動生成されました。すべてのプラットフォームでビルドが成功したらクローズしてください。`;
-            
-            try {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: issueBody,
-                labels: ['partial-build-failure', 'ci-cd', 'cross-platform']
-              });
-              console.log('部分的ビルド失敗のIssueを作成しました');
-            } catch (error) {
-              console.error('部分的ビルド失敗通知の作成に失敗しました:', error);
-            }
-          } else if (failedPlatforms.length === 2) {
-            console.log('すべてのプラットフォームでビルドが失敗しました（個別の通知が既に作成されています）');
-          } else {
-            console.log('すべてのプラットフォームでビルドが成功しました');
-          }
-
-  # ワークフロー全体の監視と統合報告
-  workflow-summary:
-    needs: [build-macos, build-windows, create-release]
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-    - name: ワークフロー実行結果の統合報告
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { context } = require('@actions/github');
-          
-          // 各ジョブの結果を収集
-          const results = {
-            macos: '${{ needs.build-macos.result }}',
-            windows: '${{ needs.build-windows.result }}',
-            release: '${{ needs.create-release.result }}'
-          };
-          
-          // 統計情報の計算
-          const totalJobs = Object.keys(results).length;
-          const successJobs = Object.values(results).filter(r => r === 'success').length;
-          const failedJobs = Object.values(results).filter(r => r === 'failure').length;
-          const skippedJobs = Object.values(results).filter(r => r === 'skipped').length;
-          
-          // 実行時間の計算（概算）
-          const workflowStartTime = new Date(context.payload.head_commit?.timestamp || new Date());
-          const currentTime = new Date();
-          const executionTime = Math.round((currentTime - workflowStartTime) / 1000 / 60); // 分単位
-          
-          console.log('='.repeat(60));
-          console.log('🎯 クロスプラットフォームCI/CDワークフロー実行結果');
-          console.log('='.repeat(60));
-          console.log(`📊 実行統計:`);
-          console.log(`   - 総ジョブ数: ${totalJobs}`);
-          console.log(`   - 成功: ${successJobs}`);
-          console.log(`   - 失敗: ${failedJobs}`);
-          console.log(`   - スキップ: ${skippedJobs}`);
-          console.log(`   - 実行時間: 約${executionTime}分`);
-          console.log('');
-          console.log(`📋 詳細結果:`);
-          console.log(`   - MacOSビルド: ${results.macos}`);
-          console.log(`   - Windowsビルド: ${results.windows}`);
-          console.log(`   - リリース作成: ${results.release}`);
-          console.log('');
-          
-          // 全体的な成功/失敗の判定と通知
-          let workflowStatus = '';
-          let statusEmoji = '';
-          let statusColor = '';
-          
-          if (successJobs === totalJobs) {
-            workflowStatus = 'すべてのプロセスが正常に完了';
-            statusEmoji = '✅';
-            statusColor = '00ff00'; // 緑色
-            console.log('✅ すべてのプロセスが正常に完了しました！');
-            console.log('🎉 クロスプラットフォームリリースが正常に作成されました');
-          } else if (failedJobs > 0) {
-            workflowStatus = '一部またはすべてのプロセスが失敗';
-            statusEmoji = '❌';
-            statusColor = 'ff0000'; // 赤色
-            console.log('❌ 一部またはすべてのプロセスが失敗しました');
-            console.log('🔍 詳細なエラー情報は各ジョブのログを確認してください');
-          } else {
-            workflowStatus = '一部のプロセスがスキップ';
-            statusEmoji = '⚠️';
-            statusColor = 'ffaa00'; // オレンジ色
-            console.log('⚠️ 一部のプロセスがスキップされました');
-          }
-          
-          console.log('');
-          console.log(`🔗 ワークフロー実行: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`);
-          console.log('='.repeat(60));
-          
-          // ワークフロー完了通知の送信
-          try {
-            // 関係者リストの構築
-            const stakeholders = [];
-            if (context.actor) stakeholders.push(context.actor);
-            if (context.payload.pusher && context.payload.pusher.name !== context.actor) {
-              stakeholders.push(context.payload.pusher.name);
-            }
-            
-            // ワークフロー完了通知のIssueまたはコメントを作成
-            const summaryTitle = `${statusEmoji} CI/CDワークフロー完了報告 - ${context.sha.substring(0, 7)}`;
-            const summaryBody = `## ${statusEmoji} ワークフロー実行結果
-
-**📊 実行統計**
-- **総ジョブ数**: ${totalJobs}
-- **成功**: ${successJobs}
-- **失敗**: ${failedJobs}
-- **スキップ**: ${skippedJobs}
-- **実行時間**: 約${executionTime}分
-- **ステータス**: ${workflowStatus}
-
-**📋 詳細結果**
-- **MacOSビルド**: ${results.macos === 'success' ? '✅' : results.macos === 'failure' ? '❌' : '⚠️'} ${results.macos}
-- **Windowsビルド**: ${results.windows === 'success' ? '✅' : results.windows === 'failure' ? '❌' : '⚠️'} ${results.windows}
-- **リリース作成**: ${results.release === 'success' ? '✅' : results.release === 'failure' ? '❌' : '⚠️'} ${results.release}
-
-**📝 実行情報**
-- **コミット**: ${context.sha}
-- **ブランチ**: ${context.ref_name || 'unknown'}
-- **実行者**: ${context.actor}
-- **実行時刻**: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)
-- **ワークフロー**: [実行 #${context.runId}](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
-
-**👥 関係者**: ${stakeholders.map(user => `@${user}`).join(' ')}
-
-${failedJobs > 0 ? `**⚠️ 対応が必要**: 失敗したジョブの詳細ログを確認し、問題を修正してください。` : ''}
-${successJobs === totalJobs ? `**🎉 完了**: すべてのプロセスが正常に完了しました。` : ''}`;
-
-            // 既存の関連Issueを検索
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'workflow-summary'
-            });
-            
-            if (existingIssues.data.length > 0) {
-              // 既存のワークフロー統合報告Issueにコメント追加
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssues.data[0].number,
-                body: summaryBody
-              });
-              console.log('📢 既存のワークフロー統合報告Issueにコメントを追加しました');
-            } else {
-              // 新しいワークフロー統合報告Issueを作成
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: summaryTitle,
-                body: summaryBody,
-                labels: ['workflow-summary', 'ci-cd', successJobs === totalJobs ? 'success' : 'needs-attention'],
-                assignees: stakeholders.slice(0, 10)
-              });
-              console.log('📢 新しいワークフロー統合報告Issueを作成しました');
-            }
-            
-            // 外部通知システムへの送信（環境変数が設定されている場合）
-            await sendWorkflowSummaryNotifications({
-              status: workflowStatus,
-              emoji: statusEmoji,
-              color: statusColor,
-              results,
-              totalJobs,
-              successJobs,
-              failedJobs,
-              skippedJobs,
-              executionTime,
-              stakeholders,
-              context
-            });
-            
-          } catch (notificationError) {
-            console.error('⚠️ ワークフロー完了通知の送信に失敗しました:', notificationError.message);
-          }
-          
-          // 外部通知システム用の関数
-          async function sendWorkflowSummaryNotifications(summaryInfo) {
-            const notifications = [];
-            
-            // Slack通知
-            if (process.env.SLACK_WEBHOOK_URL) {
-              try {
-                const slackPayload = {
-                  text: `${summaryInfo.emoji} CI/CDワークフロー完了: ${summaryInfo.status}`,
-                  blocks: [
-                    {
-                      type: "header",
-                      text: {
-                        type: "plain_text",
-                        text: `${summaryInfo.emoji} CI/CDワークフロー完了`
-                      }
-                    },
-                    {
-                      type: "section",
-                      fields: [
-                        {
-                          type: "mrkdwn",
-                          text: `*ステータス:*\n${summaryInfo.status}`
-                        },
-                        {
-                          type: "mrkdwn",
-                          text: `*実行時間:*\n約${summaryInfo.executionTime}分`
-                        },
-                        {
-                          type: "mrkdwn",
-                          text: `*成功/失敗:*\n${summaryInfo.successJobs}/${summaryInfo.totalJobs}`
-                        },
-                        {
-                          type: "mrkdwn",
-                          text: `*実行者:*\n${summaryInfo.context.actor}`
-                        }
-                      ]
-                    },
-                    {
-                      type: "section",
-                      text: {
-                        type: "mrkdwn",
-                        text: `*詳細結果:*\n• MacOS: ${summaryInfo.results.macos}\n• Windows: ${summaryInfo.results.windows}\n• リリース: ${summaryInfo.results.release}`
-                      }
-                    }
-                  ]
-                };
-                
-                const response = await fetch(process.env.SLACK_WEBHOOK_URL, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(slackPayload)
-                });
-                
-                notifications.push(response.ok ? 'Slack通知: ✅ 送信成功' : `Slack通知: ❌ 送信失敗 (${response.status})`);
-              } catch (error) {
-                notifications.push(`Slack通知: ❌ エラー - ${error.message}`);
-              }
-            }
-            
-            // Discord通知
-            if (process.env.DISCORD_WEBHOOK_URL) {
-              try {
-                const discordPayload = {
-                  content: `${summaryInfo.emoji} **CI/CDワークフロー完了**`,
-                  embeds: [
-                    {
-                      title: "ワークフロー実行結果",
-                      color: parseInt(summaryInfo.color, 16),
-                      fields: [
-                        {
-                          name: "ステータス",
-                          value: summaryInfo.status,
-                          inline: true
-                        },
-                        {
-                          name: "実行時間",
-                          value: `約${summaryInfo.executionTime}分`,
-                          inline: true
-                        },
-                        {
-                          name: "成功率",
-                          value: `${summaryInfo.successJobs}/${summaryInfo.totalJobs}`,
-                          inline: true
-                        },
-                        {
-                          name: "MacOSビルド",
-                          value: summaryInfo.results.macos,
-                          inline: true
-                        },
-                        {
-                          name: "Windowsビルド",
-                          value: summaryInfo.results.windows,
-                          inline: true
-                        },
-                        {
-                          name: "リリース作成",
-                          value: summaryInfo.results.release,
-                          inline: true
-                        }
-                      ],
-                      timestamp: new Date().toISOString(),
-                      footer: {
-                        text: `実行者: ${summaryInfo.context.actor}`
-                      }
-                    }
-                  ]
-                };
-                
-                const response = await fetch(process.env.DISCORD_WEBHOOK_URL, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(discordPayload)
-                });
-                
-                notifications.push(response.ok ? 'Discord通知: ✅ 送信成功' : `Discord通知: ❌ 送信失敗 (${response.status})`);
-              } catch (error) {
-                notifications.push(`Discord通知: ❌ エラー - ${error.message}`);
-              }
-            }
-            
-            // 通知結果のログ出力
-            if (notifications.length > 0) {
-              console.log('📢 ワークフロー統合報告の外部通知結果:');
-              notifications.forEach(notification => {
-                console.log(`   ${notification}`);
-              });
-            } else {
-              console.log('📢 外部通知: 設定されたWebhook URLがありません（オプション機能）');
-            }
-          }
+          console.log('🔗 リリースURL: ' + release.data.html_url);
