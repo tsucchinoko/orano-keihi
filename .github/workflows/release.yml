@@ -69,16 +69,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: pnpmのインストール
+      uses: pnpm/action-setup@v4
+      with:
+        version: 8
+    
     - name: Node.js環境のセットアップ
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'pnpm'
-    
-    - name: pnpmのインストール
-      uses: pnpm/action-setup@v4
-      with:
-        version: 8
     
     - name: Rust環境のセットアップ
       uses: dtolnay/rust-toolchain@stable
@@ -126,16 +126,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: pnpmのインストール
+      uses: pnpm/action-setup@v4
+      with:
+        version: 8
+    
     - name: Node.js環境のセットアップ
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'pnpm'
-    
-    - name: pnpmのインストール
-      uses: pnpm/action-setup@v4
-      with:
-        version: 8
     
     - name: Rust環境のセットアップ
       uses: dtolnay/rust-toolchain@stable
