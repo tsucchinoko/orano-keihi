@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ReceiptCache {
     pub id: i64,
-    pub receipt_url: String,    // R2のHTTPS URL
-    pub local_path: String,     // ローカルキャッシュファイルのパス
-    pub cached_at: String,      // キャッシュ作成日時（RFC3339形式、JST）
-    pub file_size: i64,         // ファイルサイズ（バイト）
-    pub last_accessed: String,  // 最終アクセス日時（RFC3339形式、JST）
+    pub receipt_url: String,   // R2のHTTPS URL
+    pub local_path: String,    // ローカルキャッシュファイルのパス
+    pub cached_at: String,     // キャッシュ作成日時（RFC3339形式、JST）
+    pub file_size: i64,        // ファイルサイズ（バイト）
+    pub last_accessed: String, // 最終アクセス日時（RFC3339形式、JST）
 }
 
 /// 複数ファイルアップロード用の入力構造体
@@ -240,7 +240,7 @@ mod tests {
         // キャッシュ統計モデルのテスト
         let stats = CacheStats {
             total_files: 10,
-            total_size_bytes: 1024 * 1024, // 1MB
+            total_size_bytes: 1024 * 1024,     // 1MB
             max_size_bytes: 100 * 1024 * 1024, // 100MB
             cache_hit_rate: 0.85,
         };

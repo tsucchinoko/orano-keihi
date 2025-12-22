@@ -181,22 +181,22 @@
   - 診断情報取得のテスト
   - _要件: 1.4, 3.1, 3.4_
 
-- [ ] 7. Migrations機能モジュールを作成する
+- [x] 7. Migrations機能モジュールを作成する
   - features/migrations/ディレクトリ構造を作成する
   - 既存のマイグレーション関連コードを機能モジュールに移行する
   - _要件: 1.5, 2.1, 2.2, 3.1, 3.2_
 
-- [ ] 7.1 features/migrations/service.rsを作成する
+- [x] 7.1 features/migrations/service.rsを作成する
   - 既存のdb/migrations.rsの内容を移行する
   - マイグレーション実行とバックアップ機能を実装する
   - _要件: 1.5, 2.2_
 
-- [ ] 7.2 features/migrations/commands.rsを作成する
+- [x] 7.2 features/migrations/commands.rsを作成する
   - 既存のcommands/migration_commands.rsの内容を移行する
   - マイグレーション関連のTauriコマンドを実装する
   - _要件: 1.5, 2.1, 3.1_
 
-- [ ] 7.3 features/migrations/mod.rsを作成する
+- [x] 7.3 features/migrations/mod.rsを作成する
   - マイグレーション機能の公開インターフェースを定義する
   - モジュール境界を明確にする
   - _要件: 2.1, 2.3_

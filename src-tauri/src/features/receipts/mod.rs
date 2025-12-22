@@ -30,39 +30,35 @@ pub use commands::{
 /// 領収書機能の初期化とセットアップ
 pub fn initialize() {
     log::info!("領収書機能モジュールを初期化しています...");
-    
+
     // 必要に応じて初期化処理を追加
     // 例：キャッシュディレクトリの作成、設定の検証など
-    
+
     log::info!("領収書機能モジュールの初期化が完了しました");
 }
 
 /// 領収書機能のヘルスチェック
 pub async fn health_check() -> Result<(), String> {
     log::info!("領収書機能のヘルスチェックを実行しています...");
-    
+
     // R2接続テスト
     match crate::services::config::R2Config::from_env() {
-        Ok(config) => {
-            match R2Client::new(config).await {
-                Ok(client) => {
-                    match client.test_connection().await {
-                        Ok(_) => {
-                            log::info!("領収書機能のヘルスチェックが成功しました");
-                            Ok(())
-                        }
-                        Err(e) => {
-                            log::warn!("R2接続テストに失敗しました: {e}");
-                            Err(format!("R2接続テストに失敗しました: {e}"))
-                        }
-                    }
+        Ok(config) => match R2Client::new(config).await {
+            Ok(client) => match client.test_connection().await {
+                Ok(_) => {
+                    log::info!("領収書機能のヘルスチェックが成功しました");
+                    Ok(())
                 }
                 Err(e) => {
-                    log::warn!("R2クライアントの初期化に失敗しました: {e}");
-                    Err(format!("R2クライアントの初期化に失敗しました: {e}"))
+                    log::warn!("R2接続テストに失敗しました: {e}");
+                    Err(format!("R2接続テストに失敗しました: {e}"))
                 }
+            },
+            Err(e) => {
+                log::warn!("R2クライアントの初期化に失敗しました: {e}");
+                Err(format!("R2クライアントの初期化に失敗しました: {e}"))
             }
-        }
+        },
         Err(e) => {
             log::warn!("R2設定の読み込みに失敗しました: {e}");
             Err(format!("R2設定の読み込みに失敗しました: {e}"))
@@ -73,25 +69,28 @@ pub async fn health_check() -> Result<(), String> {
 /// 領収書機能の統計情報を取得
 pub fn get_feature_stats() -> std::collections::HashMap<String, String> {
     let mut stats = std::collections::HashMap::new();
-    
+
     stats.insert("feature_name".to_string(), "receipts".to_string());
     stats.insert("version".to_string(), "1.0.0".to_string());
     stats.insert("status".to_string(), "active".to_string());
-    
+
     // 利用可能なコマンド数
     stats.insert("available_commands".to_string(), "9".to_string());
-    
+
     // サポートされるファイル形式
-    stats.insert("supported_formats".to_string(), "PNG,JPG,JPEG,PDF".to_string());
-    
+    stats.insert(
+        "supported_formats".to_string(),
+        "PNG,JPG,JPEG,PDF".to_string(),
+    );
+
     // 最大ファイルサイズ（MB）
     stats.insert("max_file_size_mb".to_string(), "10".to_string());
-    
+
     // デフォルトキャッシュサイズ（MB）
     stats.insert("default_cache_size_mb".to_string(), "100".to_string());
-    
+
     log::debug!("領収書機能の統計情報: {stats:?}");
-    
+
     stats
 }
 
@@ -102,7 +101,7 @@ mod tests {
     #[test]
     fn test_module_exports() {
         // モジュールのエクスポートが正しく機能することを確認
-        
+
         // モデルのテスト
         let _cache_stats: Option<CacheStats> = None;
         let _receipt_cache: Option<ReceiptCache> = None;
@@ -118,7 +117,7 @@ mod tests {
         let _upload_progress: Option<UploadProgress> = None;
         let _upload_status: Option<UploadStatus> = None;
         let _multiple_file_upload: Option<MultipleFileUpload> = None;
-        
+
         // この時点でコンパイルが通れば、エクスポートは正しく機能している
         assert!(true);
     }
@@ -126,12 +125,15 @@ mod tests {
     #[test]
     fn test_feature_stats() {
         let stats = get_feature_stats();
-        
+
         assert_eq!(stats.get("feature_name"), Some(&"receipts".to_string()));
         assert_eq!(stats.get("version"), Some(&"1.0.0".to_string()));
         assert_eq!(stats.get("status"), Some(&"active".to_string()));
         assert_eq!(stats.get("available_commands"), Some(&"9".to_string()));
-        assert_eq!(stats.get("supported_formats"), Some(&"PNG,JPG,JPEG,PDF".to_string()));
+        assert_eq!(
+            stats.get("supported_formats"),
+            Some(&"PNG,JPG,JPEG,PDF".to_string())
+        );
         assert_eq!(stats.get("max_file_size_mb"), Some(&"10".to_string()));
         assert_eq!(stats.get("default_cache_size_mb"), Some(&"100".to_string()));
     }

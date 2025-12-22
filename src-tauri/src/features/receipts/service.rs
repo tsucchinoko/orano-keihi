@@ -1,8 +1,10 @@
 // 領収書機能のR2サービス
 
-use super::models::{MultipleFileUpload, PerformanceStats, UploadProgress, UploadResult, UploadStatus};
-use crate::shared::errors::{AppError, AppResult};
+use super::models::{
+    MultipleFileUpload, PerformanceStats, UploadProgress, UploadResult, UploadStatus,
+};
 use crate::services::{config::R2Config, security::SecurityManager, R2Error};
+use crate::shared::errors::{AppError, AppResult};
 use crate::R2ConnectionCache;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
@@ -635,7 +637,9 @@ impl From<R2Error> for AppError {
             R2Error::ConnectionFailed(msg) => AppError::ExternalService(msg),
             R2Error::UploadFailed(msg) => AppError::ExternalService(msg),
             R2Error::NetworkError(msg) => AppError::ExternalService(msg),
-            R2Error::InvalidCredentials => AppError::Configuration("無効な認証情報です".to_string()),
+            R2Error::InvalidCredentials => {
+                AppError::Configuration("無効な認証情報です".to_string())
+            }
         }
     }
 }

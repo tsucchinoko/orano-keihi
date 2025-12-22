@@ -66,8 +66,9 @@ impl CacheManager {
         let cache_path = self.cache_dir.join(&filename);
 
         // ファイルをキャッシュに保存
-        std::fs::write(&cache_path, &data)
-            .map_err(|e| AppError::ExternalService(format!("キャッシュファイル書き込み失敗: {e}")))?;
+        std::fs::write(&cache_path, &data).map_err(|e| {
+            AppError::ExternalService(format!("キャッシュファイル書き込み失敗: {e}"))
+        })?;
 
         // データベースにキャッシュ情報を保存
         let local_path_str = cache_path
@@ -104,8 +105,9 @@ impl CacheManager {
                 self.update_cache_access_time(conn, receipt_url)?;
 
                 // ファイルを読み込み
-                let data = std::fs::read(cache_path)
-                    .map_err(|e| AppError::ExternalService(format!("キャッシュファイル読み込み失敗: {e}")))?;
+                let data = std::fs::read(cache_path).map_err(|e| {
+                    AppError::ExternalService(format!("キャッシュファイル読み込み失敗: {e}"))
+                })?;
 
                 return Ok(Some(data));
             } else {
@@ -217,8 +219,8 @@ impl CacheManager {
             .map_err(|e| AppError::ExternalService(format!("ディレクトリ読み込み失敗: {e}")))?;
 
         for entry in entries {
-            let entry =
-                entry.map_err(|e| AppError::ExternalService(format!("エントリ読み込み失敗: {e}")))?;
+            let entry = entry
+                .map_err(|e| AppError::ExternalService(format!("エントリ読み込み失敗: {e}")))?;
 
             if entry
                 .file_type()

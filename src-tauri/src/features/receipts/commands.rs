@@ -86,7 +86,9 @@ async fn upload_receipt_internal(
     let filename = source_path
         .file_name()
         .and_then(|s| s.to_str())
-        .ok_or_else(|| AppError::Validation(format!("ファイル名の取得に失敗しました: {file_path}")))?;
+        .ok_or_else(|| {
+            AppError::Validation(format!("ファイル名の取得に失敗しました: {file_path}"))
+        })?;
 
     debug!("ファイル名を取得しました: {filename}");
 
@@ -169,10 +171,9 @@ async fn upload_receipt_internal(
 
             // 元のreceipt_urlを復元（もしあれば）
             if let Some(original_url) = original_receipt_url {
-                let db = state
-                    .db
-                    .lock()
-                    .map_err(|e| AppError::Database(format!("ロールバック時のデータベースロック取得エラー: {e}")))?;
+                let db = state.db.lock().map_err(|e| {
+                    AppError::Database(format!("ロールバック時のデータベースロック取得エラー: {e}"))
+                })?;
 
                 if let Err(restore_error) =
                     expense_operations::set_receipt_url(&db, expense_id, original_url)
@@ -247,20 +248,20 @@ async fn get_receipt_internal(
     }
 
     // キャッシュマネージャーを初期化
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Configuration(format!("アプリデータディレクトリの取得に失敗しました: {e}")))?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| {
+        AppError::Configuration(format!("アプリデータディレクトリの取得に失敗しました: {e}"))
+    })?;
 
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = CacheManager::new(cache_dir, 100); // 100MB制限
 
     // まずキャッシュから取得を試行
     let cached_result = {
-        let db = state
-            .db
-            .lock()
-            .map_err(|e| AppError::Database(format!("キャッシュ確認時のデータベースロック取得エラー: {e}")))?;
+        let db = state.db.lock().map_err(|e| {
+            AppError::Database(format!(
+                "キャッシュ確認時のデータベースロック取得エラー: {e}"
+            ))
+        })?;
 
         cache_manager.get_cached_file(&receipt_url, &db)
     };
@@ -288,10 +289,11 @@ async fn get_receipt_internal(
 
     // 取得したファイルをキャッシュに保存（エラーは無視）
     {
-        let db = state
-            .db
-            .lock()
-            .map_err(|e| AppError::Database(format!("キャッシュ保存時のデータベースロック取得エラー: {e}")))?;
+        let db = state.db.lock().map_err(|e| {
+            AppError::Database(format!(
+                "キャッシュ保存時のデータベースロック取得エラー: {e}"
+            ))
+        })?;
 
         if let Err(e) = cache_manager.cache_file(&receipt_url, file_data.clone(), &db) {
             warn!("キャッシュ保存エラー（無視して続行）: {e}");
@@ -480,10 +482,9 @@ async fn delete_receipt_internal(
     let client = R2Client::new(config).await?;
 
     // キャッシュマネージャーを初期化
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Configuration(format!("アプリデータディレクトリの取得に失敗しました: {e}")))?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| {
+        AppError::Configuration(format!("アプリデータディレクトリの取得に失敗しました: {e}"))
+    })?;
 
     let cache_dir = app_data_dir.join("receipt_cache");
     let cache_manager = CacheManager::new(cache_dir, 100);
@@ -496,10 +497,11 @@ async fn delete_receipt_internal(
 
     // 2. キャッシュからも削除（エラーは無視）
     {
-        let db = state
-            .db
-            .lock()
-            .map_err(|e| AppError::Database(format!("キャッシュ削除時のデータベースロック取得エラー: {e}")))?;
+        let db = state.db.lock().map_err(|e| {
+            AppError::Database(format!(
+                "キャッシュ削除時のデータベースロック取得エラー: {e}"
+            ))
+        })?;
 
         if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
             warn!("キャッシュ削除エラー（無視して続行）: {e}");
@@ -508,9 +510,7 @@ async fn delete_receipt_internal(
 
     // 削除操作のログ記録
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
-    info!(
-        "領収書削除完了: receipt_url={receipt_url}, timestamp={now}"
-    );
+    info!("領収書削除完了: receipt_url={receipt_url}, timestamp={now}");
 
     let security_manager = SecurityManager::new();
     security_manager.log_security_event(
