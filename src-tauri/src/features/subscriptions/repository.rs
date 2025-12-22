@@ -58,7 +58,7 @@ pub fn find_by_id(conn: &Connection, id: i64) -> Result<Subscription, AppError> 
         rusqlite::Error::QueryReturnedNoRows => {
             AppError::NotFound(format!("ID {id} のサブスクリプションが見つかりません"))
         }
-        _ => AppError::Database(e),
+        _ => AppError::Database(e.to_string()),
     })
 }
 
@@ -97,7 +97,7 @@ pub fn find_all(conn: &Connection, active_only: bool) -> Result<Vec<Subscription
 
     subscriptions
         .collect::<Result<Vec<_>, _>>()
-        .map_err(AppError::Database)
+        .map_err(|e| AppError::Database(e.to_string()))
 }
 
 /// サブスクリプションを更新する
@@ -256,6 +256,6 @@ pub fn get_receipt_path(conn: &Connection, id: i64) -> Result<Option<String>, Ap
         rusqlite::Error::QueryReturnedNoRows => {
             AppError::NotFound(format!("ID {id} のサブスクリプションが見つかりません"))
         }
-        _ => AppError::Database(e),
+        _ => AppError::Database(e.to_string()),
     })
 }

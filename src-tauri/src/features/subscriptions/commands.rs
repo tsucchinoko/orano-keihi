@@ -1,6 +1,5 @@
 use super::models::{CreateSubscriptionDto, Subscription, UpdateSubscriptionDto};
 use super::repository;
-use crate::shared::errors::AppError;
 use crate::AppState;
 use tauri::State;
 

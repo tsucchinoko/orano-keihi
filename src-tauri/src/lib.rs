@@ -1,20 +1,17 @@
-mod commands;
-mod config;
-pub mod db;
-mod models;
-mod services;
-
-// 新しい機能モジュール
+// 新しい機能モジュール構造
 pub mod features;
 pub mod shared;
 
-use commands::{
-    expense_commands, migration_commands, receipt_commands, security_commands,
-    subscription_commands,
+// 新しい機能モジュールからコマンドをインポート
+use features::security::service::SecurityManager;
+use features::{
+    expenses::commands as expense_commands, migrations::commands as migration_commands,
+    receipts::commands as receipt_commands, security::commands as security_commands,
+    subscriptions::commands as subscription_commands,
 };
 use log::{error, info, warn};
 use rusqlite::Connection;
-use services::security::{EnvironmentConfig, SecurityManager};
+use shared::config::environment::EnvironmentConfig;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -86,7 +83,7 @@ pub fn run() {
             load_environment_variables();
 
             // セキュリティマネージャーを初期化（.envファイル読み込み後）
-            let security_manager = SecurityManager::new();
+            let mut security_manager = SecurityManager::new();
 
             // セキュリティ設定の検証
             if let Err(e) = security_manager.validate_configuration() {
@@ -109,17 +106,18 @@ pub fn run() {
 
             // アプリ起動時にデータベースを初期化
             info!("データベースを初期化しています...");
-            let db_conn = db::initialize_database(app.handle()).map_err(|e| {
-                error!("データベースの初期化に失敗しました: {e}");
-                security_manager.log_security_event("database_init_failed", &e.to_string());
-                e
-            })?;
+            let db_conn =
+                shared::database::connection::initialize_database(app.handle()).map_err(|e| {
+                    error!("データベースの初期化に失敗しました: {e}");
+                    security_manager.log_security_event("database_init_failed", &e.to_string());
+                    e
+                })?;
 
             info!("データベースの初期化が完了しました");
             security_manager.log_security_event("database_init_success", "データベース初期化完了");
 
             // データベース接続とセキュリティマネージャーをアプリ状態に保存
-            let security_manager_clone = security_manager.clone();
+            let mut security_manager_clone = security_manager.clone();
             app.manage(AppState {
                 db: Mutex::new(db_conn),
                 security_manager,
@@ -145,10 +143,6 @@ pub fn run() {
             subscription_commands::toggle_subscription_status,
             subscription_commands::get_monthly_subscription_total,
             // 領収書コマンド
-            receipt_commands::save_receipt,
-            receipt_commands::save_subscription_receipt,
-            receipt_commands::delete_receipt,
-            receipt_commands::delete_subscription_receipt,
             receipt_commands::test_r2_connection,
             // R2領収書コマンド
             receipt_commands::upload_receipt_to_r2,
@@ -160,17 +154,11 @@ pub fn run() {
             receipt_commands::get_cache_stats,
             // 並列処理とパフォーマンス関連コマンド
             receipt_commands::upload_multiple_receipts_to_r2,
-            receipt_commands::cancel_upload,
             receipt_commands::get_r2_performance_stats,
-            // 統合テストとデバッグ機能
-            receipt_commands::test_r2_connection_detailed,
-            receipt_commands::get_r2_usage_monitoring,
-            receipt_commands::get_r2_debug_info,
             // マイグレーションコマンド
             migration_commands::check_migration_status,
             migration_commands::execute_receipt_url_migration,
             migration_commands::restore_database_from_backup,
-            migration_commands::list_backup_files,
             migration_commands::drop_receipt_path_column_command,
             // セキュリティコマンド
             security_commands::get_system_diagnostic_info,

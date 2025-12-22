@@ -3,10 +3,10 @@ use super::service::{
     migrate_receipt_path_to_url, restore_from_backup, MigrationResult, MigrationStatus,
     RestoreResult,
 };
-use crate::shared::{database::connection::initialize_database, errors::AppError};
+use crate::shared::database::connection::initialize_database;
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 /// マイグレーション状態を確認する
 ///

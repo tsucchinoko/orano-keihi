@@ -2,11 +2,9 @@
 
 use super::models::*;
 use super::service::SecurityManager;
-use crate::shared::errors::AppError;
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::time::Instant;
-use tauri::State;
 
 /// システム診断情報を取得
 #[tauri::command]
@@ -61,13 +59,13 @@ pub async fn test_r2_connection_secure() -> Result<ConnectionTestResult, String>
     let start_time = Instant::now();
 
     // R2設定を取得
-    let config = match crate::services::config::R2Config::from_env() {
-        Ok(config) => config,
-        Err(e) => {
-            let error_msg = format!("R2設定の読み込みに失敗しました: {e:?}");
+    let config = match crate::shared::config::environment::R2Config::from_env() {
+        Some(config) => config,
+        None => {
+            let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
             security_manager.log_security_event_with_severity(
                 "r2_config_load_failed",
-                &error_msg,
+                error_msg,
                 EventSeverity::Error,
             );
 
@@ -78,7 +76,10 @@ pub async fn test_r2_connection_secure() -> Result<ConnectionTestResult, String>
                 access_key: "****".to_string(),
             };
 
-            return Ok(ConnectionTestResult::failure(error_msg, connection_details));
+            return Ok(ConnectionTestResult::failure(
+                error_msg.to_string(),
+                connection_details,
+            ));
         }
     };
 
@@ -222,16 +223,16 @@ pub async fn get_r2_diagnostic_info() -> Result<HashMap<String, String>, String>
     security_manager.log_security_event("r2_diagnostic_requested", "R2診断情報の取得要求");
 
     // R2設定を取得
-    let config = match crate::services::config::R2Config::from_env() {
-        Ok(config) => config,
-        Err(e) => {
-            let error_msg = format!("R2設定の読み込みに失敗しました: {e:?}");
+    let config = match crate::shared::config::environment::R2Config::from_env() {
+        Some(config) => config,
+        None => {
+            let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
             security_manager.log_security_event_with_severity(
                 "r2_config_load_failed",
-                &error_msg,
+                error_msg,
                 EventSeverity::Error,
             );
-            return Err(error_msg);
+            return Err(error_msg.to_string());
         }
     };
 

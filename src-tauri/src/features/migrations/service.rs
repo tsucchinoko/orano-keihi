@@ -1,6 +1,7 @@
-use crate::shared::{database::connection::Connection, errors::AppError};
+use crate::shared::errors::AppError;
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
+use rusqlite::Connection;
 use rusqlite::{Result, Transaction};
 use serde::{Deserialize, Serialize};
 use std::path::Path;

@@ -42,8 +42,8 @@ pub async fn health_check() -> Result<(), String> {
     log::info!("領収書機能のヘルスチェックを実行しています...");
 
     // R2接続テスト
-    match crate::services::config::R2Config::from_env() {
-        Ok(config) => match R2Client::new(config).await {
+    match crate::shared::config::environment::R2Config::from_env() {
+        Some(config) => match R2Client::new(config).await {
             Ok(client) => match client.test_connection().await {
                 Ok(_) => {
                     log::info!("領収書機能のヘルスチェックが成功しました");
@@ -59,9 +59,9 @@ pub async fn health_check() -> Result<(), String> {
                 Err(format!("R2クライアントの初期化に失敗しました: {e}"))
             }
         },
-        Err(e) => {
-            log::warn!("R2設定の読み込みに失敗しました: {e}");
-            Err(format!("R2設定の読み込みに失敗しました: {e}"))
+        None => {
+            log::warn!("R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません");
+            Err("R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません".to_string())
         }
     }
 }

@@ -432,7 +432,7 @@ impl SecurityManager {
 
     /// セキュリティ監査ログを生成
     pub fn generate_audit_log(&self, period_start: String, period_end: String) -> SecurityAuditLog {
-        use chrono::{TimeZone, Utc};
+        use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
 
         let now_jst = Utc::now().with_timezone(&Tokyo);

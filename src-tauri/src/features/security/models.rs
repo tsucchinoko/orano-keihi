@@ -268,7 +268,7 @@ impl SecurityEvent {
         severity: EventSeverity,
         user_context: Option<String>,
     ) -> Self {
-        use chrono::{TimeZone, Utc};
+        use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
         use uuid::Uuid;
 
@@ -289,7 +289,7 @@ impl SecurityEvent {
 impl ConnectionTestResult {
     /// 成功結果を作成
     pub fn success(response_time_ms: u64, connection_details: ConnectionDetails) -> Self {
-        use chrono::{TimeZone, Utc};
+        use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
 
         let now_jst = Utc::now().with_timezone(&Tokyo);
@@ -306,7 +306,7 @@ impl ConnectionTestResult {
 
     /// 失敗結果を作成
     pub fn failure(error_message: String, connection_details: ConnectionDetails) -> Self {
-        use chrono::{TimeZone, Utc};
+        use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
 
         let now_jst = Utc::now().with_timezone(&Tokyo);

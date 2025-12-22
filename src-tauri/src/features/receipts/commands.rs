@@ -4,12 +4,13 @@ use super::{
     cache::CacheManager,
     models::{
         CacheStats, MultipleFileUploadInput, MultipleUploadResult, PerformanceStats,
-        R2ConnectionTestResult, R2DebugInfo, R2UsageInfo, SingleUploadResult, TestStepResult,
+        SingleUploadResult,
     },
     service::R2Client,
 };
 use crate::features::expenses::repository as expense_operations;
-use crate::services::{config::R2Config, security::SecurityManager};
+use crate::features::security::service::SecurityManager;
+use crate::shared::config::environment::R2Config;
 use crate::shared::errors::AppError;
 use crate::AppState;
 use chrono::Utc;
@@ -38,7 +39,7 @@ pub async fn upload_receipt_to_r2(
 ) -> Result<String, String> {
     info!("R2への領収書アップロードを開始します: expense_id={expense_id}, file_path={file_path}");
 
-    let security_manager = SecurityManager::new();
+    let mut security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "receipt_upload_started",
         &format!("expense_id={expense_id}, file_path={file_path}"),
@@ -111,8 +112,11 @@ async fn upload_receipt_internal(
     info!("ファイルを読み込みました: {} bytes", file_data.len());
 
     // R2設定を読み込み
-    let config = R2Config::from_env()
-        .map_err(|e| AppError::Configuration(format!("R2設定読み込み失敗: {e}")))?;
+    let config = R2Config::from_env().ok_or_else(|| {
+        AppError::Configuration(
+            "R2設定読み込み失敗: 必要な環境変数が設定されていません".to_string(),
+        )
+    })?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config).await?;
@@ -204,7 +208,7 @@ pub async fn get_receipt_from_r2(
 ) -> Result<String, String> {
     info!("R2からの領収書取得を開始します: receipt_url={receipt_url}");
 
-    let security_manager = SecurityManager::new();
+    let mut security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "receipt_download_started",
         &format!("receipt_url={receipt_url}"),
@@ -322,8 +326,11 @@ async fn download_from_r2_internal(receipt_url: &str) -> Result<Vec<u8>, AppErro
     }
 
     // R2設定を読み込み
-    let config = R2Config::from_env()
-        .map_err(|e| AppError::Configuration(format!("R2設定読み込み失敗: {e}")))?;
+    let config = R2Config::from_env().ok_or_else(|| {
+        AppError::Configuration(
+            "R2設定読み込み失敗: 必要な環境変数が設定されていません".to_string(),
+        )
+    })?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config).await?;
@@ -421,7 +428,7 @@ pub async fn delete_receipt_from_r2(
 ) -> Result<bool, String> {
     info!("R2からの領収書削除を開始します: receipt_url={receipt_url}");
 
-    let security_manager = SecurityManager::new();
+    let mut security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "receipt_delete_started",
         &format!("receipt_url={receipt_url}"),
@@ -475,8 +482,11 @@ async fn delete_receipt_internal(
     };
 
     // R2設定を読み込み
-    let config = R2Config::from_env()
-        .map_err(|e| AppError::Configuration(format!("R2設定読み込み失敗: {e}")))?;
+    let config = R2Config::from_env().ok_or_else(|| {
+        AppError::Configuration(
+            "R2設定読み込み失敗: 必要な環境変数が設定されていません".to_string(),
+        )
+    })?;
 
     // R2クライアントを初期化
     let client = R2Client::new(config).await?;
@@ -512,7 +522,7 @@ async fn delete_receipt_internal(
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
     info!("領収書削除完了: receipt_url={receipt_url}, timestamp={now}");
 
-    let security_manager = SecurityManager::new();
+    let mut security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "receipt_delete_completed",
         &format!("receipt_url={receipt_url}, timestamp={now}"),
@@ -696,7 +706,7 @@ pub async fn upload_multiple_receipts_to_r2(
         max_concurrent
     );
 
-    let security_manager = SecurityManager::new();
+    let mut security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "multiple_upload_started",
         &format!(
@@ -707,11 +717,11 @@ pub async fn upload_multiple_receipts_to_r2(
     );
 
     // R2設定を読み込み
-    let config = R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {e}");
+    let config = R2Config::from_env().ok_or_else(|| {
+        let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
         error!("{error_msg}");
-        security_manager.log_security_event("r2_config_load_failed", &format!("error={e:?}"));
-        error_msg
+        security_manager.log_security_event("r2_config_load_failed", error_msg);
+        error_msg.to_string()
     })?;
 
     // R2クライアントを初期化
@@ -719,7 +729,7 @@ pub async fn upload_multiple_receipts_to_r2(
         let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
         error!("{error_msg}");
         security_manager.log_security_event("r2_client_init_failed", &format!("error={e}"));
-        error_msg
+        error_msg.to_string()
     })?;
 
     // ファイルを読み込んでMultipleFileUpload構造体に変換
@@ -807,7 +817,7 @@ pub async fn upload_multiple_receipts_to_r2(
             let error_msg = format!("並列アップロードに失敗しました: {e}");
             error!("{error_msg}");
             security_manager.log_security_event("parallel_upload_failed", &format!("error={e}"));
-            error_msg
+            error_msg.to_string()
         })?;
 
     // データベースに結果を保存
@@ -902,15 +912,15 @@ pub async fn upload_multiple_receipts_to_r2(
 pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, String> {
     info!("R2接続テストを開始します");
 
-    let security_manager = SecurityManager::new();
+    let mut security_manager = SecurityManager::new();
     security_manager.log_security_event("r2_connection_test_started", "従来のR2接続テスト開始");
 
     // 環境変数からR2設定を読み込み
-    let config = R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {e}");
+    let config = R2Config::from_env().ok_or_else(|| {
+        let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
         error!("{error_msg}");
         security_manager.log_security_event("r2_config_load_failed", &error_msg);
-        error_msg
+        error_msg.to_string()
     })?;
 
     // R2クライアントを初期化
@@ -918,7 +928,7 @@ pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, Str
         let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
         error!("{error_msg}");
         security_manager.log_security_event("r2_client_init_failed", &error_msg);
-        error_msg
+        error_msg.to_string()
     })?;
 
     // 接続テストを実行
@@ -926,7 +936,7 @@ pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, Str
         let error_msg = format!("R2接続テストに失敗しました: {e}");
         error!("{error_msg}");
         security_manager.log_security_event("r2_connection_test_failed", &error_msg);
-        error_msg
+        error_msg.to_string()
     })?;
 
     info!("R2接続テストが成功しました");
@@ -947,18 +957,18 @@ pub async fn get_r2_performance_stats(
 ) -> Result<PerformanceStats, String> {
     info!("R2パフォーマンス統計取得開始");
 
-    let security_manager = &state.security_manager;
+    let mut security_manager = SecurityManager::new();
     security_manager.log_security_event(
         "performance_stats_requested",
         "R2パフォーマンス統計取得開始",
     );
 
     // R2設定を読み込み
-    let config = R2Config::from_env().map_err(|e| {
-        let error_msg = format!("R2設定の読み込みに失敗しました: {e}");
+    let config = R2Config::from_env().ok_or_else(|| {
+        let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
         error!("{error_msg}");
-        security_manager.log_security_event("r2_config_load_failed", &format!("error={e:?}"));
-        error_msg
+        security_manager.log_security_event("r2_config_load_failed", error_msg);
+        error_msg.to_string()
     })?;
 
     // R2クライアントを初期化
@@ -966,7 +976,7 @@ pub async fn get_r2_performance_stats(
         let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
         error!("{error_msg}");
         security_manager.log_security_event("r2_client_init_failed", &format!("error={e}"));
-        error_msg
+        error_msg.to_string()
     })?;
 
     // キャッシュされた接続テスト結果を確認
@@ -992,7 +1002,7 @@ pub async fn get_r2_performance_stats(
             let error_msg = format!("パフォーマンス統計の取得に失敗しました: {e}");
             error!("{error_msg}");
             security_manager.log_security_event("performance_stats_failed", &format!("error={e}"));
-            error_msg
+            error_msg.to_string()
         })?;
 
     info!(

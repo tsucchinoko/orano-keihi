@@ -206,6 +206,92 @@ pub fn initialize_logging_system() {
     );
 }
 
+/// R2（Cloudflare R2）の設定を管理する構造体
+#[derive(Debug, Clone)]
+pub struct R2Config {
+    /// R2のアクセスキーID
+    pub access_key_id: String,
+    /// R2のシークレットアクセスキー
+    pub secret_access_key: String,
+    /// R2のバケット名
+    pub bucket_name: String,
+    /// R2のエンドポイントURL
+    pub endpoint_url: String,
+    /// R2のリージョン
+    pub region: String,
+}
+
+impl R2Config {
+    /// 環境変数からR2設定を読み込む
+    ///
+    /// # 戻り値
+    /// R2設定、または設定が不完全な場合はNone
+    pub fn from_env() -> Option<Self> {
+        let access_key_id = std::env::var("R2_ACCESS_KEY_ID").ok()?;
+        let secret_access_key = std::env::var("R2_SECRET_ACCESS_KEY").ok()?;
+        let bucket_name = std::env::var("R2_BUCKET_NAME").ok()?;
+        let endpoint_url = std::env::var("R2_ENDPOINT_URL").ok()?;
+        let region = std::env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string());
+
+        Some(Self {
+            access_key_id,
+            secret_access_key,
+            bucket_name,
+            endpoint_url,
+            region,
+        })
+    }
+
+    /// R2設定が有効かどうかを判定
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はtrue
+    pub fn is_valid(&self) -> bool {
+        !self.access_key_id.is_empty()
+            && !self.secret_access_key.is_empty()
+            && !self.bucket_name.is_empty()
+            && !self.endpoint_url.is_empty()
+    }
+
+    /// 設定を検証する
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はOk(())、無効な場合はErr
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.is_valid() {
+            return Err("R2設定が不完全です".to_string());
+        }
+        Ok(())
+    }
+
+    /// 環境に応じたバケット名を取得
+    ///
+    /// # 戻り値
+    /// バケット名
+    pub fn get_environment_bucket_name(&self) -> String {
+        self.bucket_name.clone()
+    }
+
+    /// デバッグ情報を取得
+    ///
+    /// # 戻り値
+    /// デバッグ情報のマップ
+    pub fn get_debug_info(&self) -> std::collections::HashMap<String, String> {
+        let mut info = std::collections::HashMap::new();
+        info.insert(
+            "access_key_id".to_string(),
+            format!(
+                "{}****",
+                &self.access_key_id[..4.min(self.access_key_id.len())]
+            ),
+        );
+        info.insert("bucket_name".to_string(), self.bucket_name.clone());
+        info.insert("endpoint_url".to_string(), self.endpoint_url.clone());
+        info.insert("region".to_string(), self.region.clone());
+        info
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

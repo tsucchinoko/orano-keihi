@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum AppError {
     /// データベース関連のエラー
     #[error("データベースエラー: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(String),
 
     /// バリデーション関連のエラー
     #[error("バリデーションエラー: {0}")]
@@ -38,6 +38,10 @@ pub enum AppError {
     /// 並行処理関連のエラー
     #[error("並行処理エラー: {0}")]
     Concurrency(String),
+
+    /// R2（AWS S3）関連のエラー
+    #[error("R2エラー: {0}")]
+    R2(String),
 }
 
 /// エラーの重要度を表す列挙型
@@ -69,6 +73,7 @@ impl AppError {
             AppError::Io(_) => "ファイル操作でエラーが発生しました",
             AppError::Json(_) => "データ形式の解析でエラーが発生しました",
             AppError::Concurrency(_) => "並行処理でエラーが発生しました",
+            AppError::R2(_) => "クラウドストレージでエラーが発生しました",
         }
     }
 
@@ -95,6 +100,7 @@ impl AppError {
             AppError::Io(_) => ErrorSeverity::Medium,
             AppError::Json(_) => ErrorSeverity::Medium,
             AppError::Concurrency(_) => ErrorSeverity::High,
+            AppError::R2(_) => ErrorSeverity::Medium,
         }
     }
 
@@ -164,6 +170,17 @@ impl AppError {
     pub fn concurrency<S: Into<String>>(message: S) -> Self {
         AppError::Concurrency(message.into())
     }
+
+    /// R2エラーを作成するヘルパー関数
+    ///
+    /// # 引数
+    /// * `message` - R2エラーメッセージ
+    ///
+    /// # 戻り値
+    /// R2エラー
+    pub fn r2<S: Into<String>>(message: S) -> Self {
+        AppError::R2(message.into())
+    }
 }
 
 /// AppErrorからStringへの変換（Tauriコマンドでの使用のため）
@@ -173,8 +190,18 @@ impl From<AppError> for String {
     }
 }
 
+/// rusqlite::ErrorからAppErrorへの変換
+impl From<rusqlite::Error> for AppError {
+    fn from(error: rusqlite::Error) -> Self {
+        AppError::Database(error.to_string())
+    }
+}
+
 /// Result型のエイリアス（アプリケーション全体で使用）
 pub type AppResult<T> = Result<T, AppError>;
+
+/// R2Error型のエイリアス（後方互換性のため）
+pub type R2Error = AppError;
 
 #[cfg(test)]
 mod tests {

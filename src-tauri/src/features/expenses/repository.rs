@@ -56,7 +56,7 @@ pub fn find_by_id(conn: &Connection, id: i64) -> AppResult<Expense> {
     )
     .map_err(|e| match e {
         rusqlite::Error::QueryReturnedNoRows => AppError::not_found("経費"),
-        _ => AppError::Database(e),
+        _ => AppError::Database(e.to_string()),
     })
 }
 
@@ -113,7 +113,7 @@ pub fn find_all(
 
     expenses
         .collect::<Result<Vec<_>, _>>()
-        .map_err(AppError::Database)
+        .map_err(|e| AppError::Database(e.to_string()))
 }
 
 /// 経費を更新する
@@ -223,7 +223,7 @@ pub fn get_receipt_url(conn: &Connection, id: i64) -> AppResult<Option<String>> 
     )
     .map_err(|e| match e {
         rusqlite::Error::QueryReturnedNoRows => AppError::not_found("経費"),
-        _ => AppError::Database(e),
+        _ => AppError::Database(e.to_string()),
     })
 }
 
@@ -282,7 +282,7 @@ pub fn get_receipt_cache(conn: &Connection, receipt_url: &str) -> AppResult<Opti
     ) {
         Ok(cache) => Ok(Some(cache)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(AppError::Database(e)),
+        Err(e) => Err(AppError::Database(e.to_string())),
     }
 }
 

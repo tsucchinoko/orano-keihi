@@ -21,7 +21,7 @@ pub fn initialize_database(app_handle: &AppHandle) -> AppResult<Connection> {
     let database_path = get_database_path(app_handle)?;
 
     // データベース接続を開く
-    let conn = Connection::open(&database_path).map_err(|e| AppError::Database(e))?;
+    let conn = Connection::open(&database_path).map_err(|e| AppError::Database(e.to_string()))?;
 
     // テーブルを作成
     create_tables(&conn)?;
@@ -121,7 +121,7 @@ pub fn create_tables(conn: &Connection) -> AppResult<()> {
             [],
             |row| row.get(0),
         )
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     if table_exists == 0 {
         // 新規インストール: 最新のスキーマ（receipt_url）でテーブルを作成
@@ -159,7 +159,7 @@ fn create_expenses_table(conn: &Connection) -> AppResult<()> {
         )",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     Ok(())
 }
@@ -192,19 +192,19 @@ fn create_indexes(conn: &Connection) -> AppResult<()> {
         "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     Ok(())
 }
@@ -222,19 +222,19 @@ fn create_receipt_cache_table(conn: &Connection) -> AppResult<()> {
         )",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_receipt_cache_url ON receipt_cache(receipt_url)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_receipt_cache_accessed ON receipt_cache(last_accessed)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     Ok(())
 }
@@ -256,7 +256,7 @@ fn create_subscriptions_table(conn: &Connection) -> AppResult<()> {
         )",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     // 既存のサブスクリプションテーブルにreceipt_pathカラムを追加（存在しない場合）
     let _ = conn.execute("ALTER TABLE subscriptions ADD COLUMN receipt_path TEXT", []);
@@ -266,7 +266,7 @@ fn create_subscriptions_table(conn: &Connection) -> AppResult<()> {
         "CREATE INDEX IF NOT EXISTS idx_subscriptions_active ON subscriptions(is_active)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     Ok(())
 }
@@ -282,12 +282,12 @@ fn create_categories_table(conn: &Connection) -> AppResult<()> {
         )",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     // テーブルが空の場合、初期カテゴリデータを挿入
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     if count == 0 {
         insert_default_categories(conn)?;
@@ -312,7 +312,7 @@ fn insert_default_categories(conn: &Connection) -> AppResult<()> {
             "INSERT INTO categories (name, color, icon) VALUES (?1, ?2, ?3)",
             [name, color, icon],
         )
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
     }
 
     Ok(())
@@ -328,18 +328,20 @@ fn drop_receipt_path_column(conn: &Connection) -> AppResult<()> {
     log::info!("receipt_pathカラムを削除します...");
 
     // トランザクション内でマイグレーションを実行
-    let tx = conn.unchecked_transaction().map_err(AppError::Database)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     // 既存のテーブル構造を確認
     let table_info: Vec<(String, String)> = tx
         .prepare("PRAGMA table_info(expenses)")
-        .map_err(AppError::Database)?
+        .map_err(|e| AppError::Database(e.to_string()))?
         .query_map([], |row| {
             Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
         })
-        .map_err(AppError::Database)?
+        .map_err(|e| AppError::Database(e.to_string()))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     let has_receipt_url = table_info.iter().any(|(name, _)| name == "receipt_url");
 
@@ -368,7 +370,7 @@ fn drop_receipt_path_column(conn: &Connection) -> AppResult<()> {
     };
 
     tx.execute(create_table_sql, [])
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     // 既存データを移行（receipt_pathカラムを除く）
     let insert_sql = if has_receipt_url {
@@ -381,39 +383,40 @@ fn drop_receipt_path_column(conn: &Connection) -> AppResult<()> {
          FROM expenses"
     };
 
-    tx.execute(insert_sql, []).map_err(AppError::Database)?;
+    tx.execute(insert_sql, [])
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     // 古いテーブルを削除
     tx.execute("DROP TABLE expenses", [])
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     // 新しいテーブルをリネーム
     tx.execute("ALTER TABLE expenses_temp RENAME TO expenses", [])
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     // インデックスを再作成
     tx.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     tx.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
         [],
     )
-    .map_err(AppError::Database)?;
+    .map_err(|e| AppError::Database(e.to_string()))?;
 
     if has_receipt_url {
         tx.execute(
             "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
             [],
         )
-        .map_err(AppError::Database)?;
+        .map_err(|e| AppError::Database(e.to_string()))?;
     }
 
     // コミット
-    tx.commit().map_err(AppError::Database)?;
+    tx.commit().map_err(|e| AppError::Database(e.to_string()))?;
 
     log::info!("receipt_pathカラムの削除が完了しました");
 

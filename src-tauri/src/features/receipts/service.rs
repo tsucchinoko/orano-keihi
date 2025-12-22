@@ -3,7 +3,8 @@
 use super::models::{
     MultipleFileUpload, PerformanceStats, UploadProgress, UploadResult, UploadStatus,
 };
-use crate::services::{config::R2Config, security::SecurityManager, R2Error};
+use crate::features::security::service::SecurityManager;
+use crate::shared::config::environment::R2Config;
 use crate::shared::errors::{AppError, AppResult};
 use crate::R2ConnectionCache;
 use aws_config::{BehaviorVersion, Region};
@@ -31,7 +32,7 @@ impl R2Client {
         info!("R2クライアントを初期化しています...");
 
         // セキュリティマネージャーでログ記録
-        let security_manager = SecurityManager::new();
+        let mut security_manager = SecurityManager::new();
         security_manager.log_security_event("r2_client_init", "R2クライアント初期化開始");
 
         // 設定を検証
@@ -43,16 +44,18 @@ impl R2Client {
 
         // 認証情報を設定（ログには出力しない）
         debug!("認証情報を設定中...");
-        let credentials =
-            Credentials::new(&config.access_key, &config.secret_key, None, None, "r2");
+        let credentials = Credentials::new(
+            &config.access_key_id,
+            &config.secret_access_key,
+            None,
+            None,
+            "r2",
+        );
 
         // S3互換設定を構築
-        debug!(
-            "AWS設定を構築中... エンドポイント: {}",
-            config.endpoint_url()
-        );
+        debug!("AWS設定を構築中... エンドポイント: {}", config.endpoint_url);
         let aws_config = aws_config::defaults(BehaviorVersion::latest())
-            .endpoint_url(config.endpoint_url())
+            .endpoint_url(config.endpoint_url.clone())
             .region(Region::new(config.region.clone()))
             .credentials_provider(SharedCredentialsProvider::new(credentials))
             .load()
@@ -112,7 +115,7 @@ impl R2Client {
                 error!("詳細エラー情報: {error_debug}");
 
                 // セキュリティログ記録
-                let security_manager = SecurityManager::new();
+                let mut security_manager = SecurityManager::new();
                 security_manager
                     .log_security_event("upload_failed", &format!("key={key}, error={error_msg}"));
 
@@ -124,7 +127,7 @@ impl R2Client {
         // アップロード成功時のHTTPS URLを生成
         let url = format!(
             "https://{}/{}/{}",
-            self.config.endpoint_url().replace("https://", ""),
+            self.config.endpoint_url.replace("https://", ""),
             self.bucket_name,
             key
         );
@@ -132,7 +135,7 @@ impl R2Client {
         info!("ファイルアップロード成功: key={key}, url={url}, duration={duration:?}");
 
         // セキュリティログ記録
-        let security_manager = SecurityManager::new();
+        let mut security_manager = SecurityManager::new();
         security_manager.log_security_event(
             "upload_success",
             &format!("key={key}, size={file_size} bytes"),
@@ -179,7 +182,7 @@ impl R2Client {
                     );
 
                     // セキュリティログ記録
-                    let security_manager = SecurityManager::new();
+                    let mut security_manager = SecurityManager::new();
                     security_manager.log_security_event(
                         "upload_final_failure",
                         &format!("key={}, attempts={}", key, attempts + 1),
@@ -246,7 +249,7 @@ impl R2Client {
                 );
 
                 // セキュリティログ記録
-                let security_manager = SecurityManager::new();
+                let mut security_manager = SecurityManager::new();
                 security_manager.log_security_event(
                     "connection_test_failed",
                     &format!("bucket={}, error={}", self.bucket_name, error_msg),
@@ -262,7 +265,7 @@ impl R2Client {
         );
 
         // セキュリティログ記録
-        let security_manager = SecurityManager::new();
+        let mut security_manager = SecurityManager::new();
         security_manager.log_security_event(
             "connection_test_success",
             &format!("bucket={}, duration={:?}", self.bucket_name, duration),
@@ -276,7 +279,7 @@ impl R2Client {
         let mut info = std::collections::HashMap::new();
 
         info.insert("bucket_name".to_string(), self.bucket_name.clone());
-        info.insert("endpoint_url".to_string(), self.config.endpoint_url());
+        info.insert("endpoint_url".to_string(), self.config.endpoint_url.clone());
         info.insert("region".to_string(), self.config.region.clone());
 
         // 設定のデバッグ情報を追加
@@ -512,7 +515,7 @@ impl R2Client {
         );
 
         // セキュリティログ記録
-        let security_manager = SecurityManager::new();
+        let mut security_manager = SecurityManager::new();
         security_manager.log_security_event(
             "parallel_upload_completed",
             &format!(
@@ -631,19 +634,6 @@ impl R2Client {
 }
 
 // R2Errorとの互換性のための変換
-impl From<R2Error> for AppError {
-    fn from(error: R2Error) -> Self {
-        match error {
-            R2Error::ConnectionFailed(msg) => AppError::ExternalService(msg),
-            R2Error::UploadFailed(msg) => AppError::ExternalService(msg),
-            R2Error::NetworkError(msg) => AppError::ExternalService(msg),
-            R2Error::InvalidCredentials => {
-                AppError::Configuration("無効な認証情報です".to_string())
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

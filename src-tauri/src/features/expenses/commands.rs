@@ -115,8 +115,12 @@ pub async fn delete_expense(
     // 領収書がR2に存在する場合は削除
     if let Some(receipt_url) = current_receipt_url {
         // R2からファイルを削除（トランザクション的な削除処理：R2→DB順）
-        let deletion_result =
-            crate::commands::receipt_commands::delete_from_r2_with_retry(&receipt_url).await;
+        let deletion_result = crate::features::receipts::commands::delete_receipt_from_r2(
+            receipt_url.clone(),
+            app.clone(),
+            state.clone(),
+        )
+        .await;
 
         match deletion_result {
             Ok(_) => {
@@ -124,7 +128,7 @@ pub async fn delete_expense(
                 if let Ok(app_data_dir) = app.path().app_data_dir() {
                     let cache_dir = app_data_dir.join("receipt_cache");
                     let cache_manager =
-                        crate::services::cache_manager::CacheManager::new(cache_dir, 100);
+                        crate::features::receipts::CacheManager::new(cache_dir, 100);
 
                     let db = state.db.lock().map_err(|e| {
                         AppError::concurrency(format!("データベースロック取得失敗: {e}"))
