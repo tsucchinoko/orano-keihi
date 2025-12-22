@@ -21,7 +21,7 @@ pub struct MultipleFileUploadInput {
 }
 
 /// 複数ファイルアップロード結果の構造体
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultipleUploadResult {
     pub total_files: usize,
     pub successful_uploads: usize,
@@ -31,7 +31,7 @@ pub struct MultipleUploadResult {
 }
 
 /// 単一アップロード結果の構造体
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SingleUploadResult {
     pub expense_id: i64,
     pub success: bool,
@@ -42,7 +42,7 @@ pub struct SingleUploadResult {
 }
 
 /// キャッシュ統計情報の構造体
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheStats {
     pub total_files: usize,
     pub total_size_bytes: u64,
@@ -131,7 +131,7 @@ pub struct UploadProgress {
 }
 
 /// アップロードステータス
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum UploadStatus {
     Started,
     Completed,
