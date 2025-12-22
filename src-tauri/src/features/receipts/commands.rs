@@ -919,7 +919,7 @@ pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, Str
     let config = R2Config::from_env().ok_or_else(|| {
         let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
         error!("{error_msg}");
-        security_manager.log_security_event("r2_config_load_failed", &error_msg);
+        security_manager.log_security_event("r2_config_load_failed", error_msg);
         error_msg.to_string()
     })?;
 

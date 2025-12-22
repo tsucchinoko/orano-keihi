@@ -119,7 +119,6 @@ mod tests {
         let _multiple_file_upload: Option<MultipleFileUpload> = None;
 
         // この時点でコンパイルが通れば、エクスポートは正しく機能している
-        assert!(true);
     }
 
     #[test]
@@ -143,6 +142,5 @@ mod tests {
         // 初期化関数が正常に実行されることを確認
         initialize();
         // パニックしなければ成功
-        assert!(true);
     }
 }

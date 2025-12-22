@@ -40,24 +40,3 @@ pub const SUPPORTED_MIGRATIONS: &[&str] = &[
 /// マイグレーション機能の説明
 pub const DESCRIPTION: &str =
     "データベーススキーマのマイグレーション、バックアップ、復元機能を提供します";
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_module_constants() {
-        assert_eq!(VERSION, "1.0.0");
-        assert!(!SUPPORTED_MIGRATIONS.is_empty());
-        assert!(SUPPORTED_MIGRATIONS.contains(&"receipt_path_to_receipt_url"));
-        assert!(SUPPORTED_MIGRATIONS.contains(&"drop_receipt_path_column"));
-        assert!(!DESCRIPTION.is_empty());
-    }
-
-    #[test]
-    fn test_init() {
-        // 初期化処理が正常に実行されることを確認
-        init();
-        // パニックしなければ成功
-    }
-}

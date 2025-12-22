@@ -23,9 +23,7 @@ pub fn validate_date(date_str: &str) -> AppResult<()> {
     }
 
     // ハイフンの位置チェック
-    if !date_str.chars().nth(4).map_or(false, |c| c == '-')
-        || !date_str.chars().nth(7).map_or(false, |c| c == '-')
-    {
+    if (date_str.chars().nth(4) != Some('-')) || (date_str.chars().nth(7) != Some('-')) {
         return Err(AppError::validation(
             "日付はYYYY-MM-DD形式で入力してください",
         ));
@@ -37,7 +35,7 @@ pub fn validate_date(date_str: &str) -> AppResult<()> {
 
     // 年の範囲チェック
     let year = date.year();
-    if year < 1900 || year > 2100 {
+    if !(1900..=2100).contains(&year) {
         return Err(AppError::validation(
             "日付は1900年から2100年の間で入力してください",
         ));
@@ -249,9 +247,9 @@ pub fn normalize_string(text: &str) -> String {
 pub fn format_amount(amount: f64) -> String {
     // 小数点以下が0の場合は整数として表示
     if amount.fract() == 0.0 {
-        format!("{:.0}", amount)
+        format!("{amount:.0}")
     } else {
-        format!("{:.2}", amount)
+        format!("{amount:.2}")
     }
 }
 

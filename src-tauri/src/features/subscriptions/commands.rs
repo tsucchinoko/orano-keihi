@@ -234,13 +234,13 @@ fn validate_date_format(date: &str) -> Result<(), String> {
         .map_err(|_| "日は数値で入力してください".to_string())?;
 
     // 基本的な範囲チェック
-    if year < 1900 || year > 2100 {
+    if !(1900..=2100).contains(&year) {
         return Err("年は1900年から2100年の間で入力してください".to_string());
     }
-    if month < 1 || month > 12 {
+    if !(1..=12).contains(&month) {
         return Err("月は1から12の間で入力してください".to_string());
     }
-    if day < 1 || day > 31 {
+    if !(1..=31).contains(&day) {
         return Err("日は1から31の間で入力してください".to_string());
     }
 

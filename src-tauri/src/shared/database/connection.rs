@@ -26,7 +26,7 @@ pub fn initialize_database(app_handle: &AppHandle) -> AppResult<Connection> {
     // テーブルを作成
     create_tables(&conn)?;
 
-    log::info!("データベースを初期化しました: {:?}", database_path);
+    log::info!("データベースを初期化しました: {database_path:?}");
 
     Ok(conn)
 }
@@ -49,10 +49,7 @@ pub fn get_database_path(app_handle: &AppHandle) -> AppResult<PathBuf> {
         std::fs::create_dir_all(&app_data_dir).map_err(|e| {
             AppError::configuration(format!("アプリデータディレクトリの作成に失敗: {e}"))
         })?;
-        log::info!(
-            "アプリケーションデータディレクトリを作成: {:?}",
-            app_data_dir
-        );
+        log::info!("アプリケーションデータディレクトリを作成: {app_data_dir:?}");
     }
 
     // 環境に応じたデータベースファイル名を決定

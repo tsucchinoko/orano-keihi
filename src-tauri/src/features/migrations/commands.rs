@@ -232,7 +232,6 @@ pub struct DatabaseStats {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod tests {
     // use super::*;
 

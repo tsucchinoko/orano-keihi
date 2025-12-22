@@ -56,7 +56,7 @@ pub struct ValidationDetail {
 }
 
 /// 検証ステータス
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum ValidationStatus {
     /// 成功
     Success,
@@ -65,6 +65,7 @@ pub enum ValidationStatus {
     /// エラー
     Error,
     /// 未検証
+    #[default]
     NotChecked,
 }
 
@@ -114,9 +115,10 @@ pub struct SecurityEvent {
 }
 
 /// イベント重要度
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum EventSeverity {
     /// 情報
+    #[default]
     Info,
     /// 警告
     Warning,
@@ -159,32 +161,15 @@ pub struct EnvironmentInfo {
 }
 
 /// 設定の読み込み元
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum ConfigSource {
     /// コンパイル時埋め込み
     Embedded,
     /// 実行時環境変数
     Environment,
     /// デフォルト値
+    #[default]
     Default,
-}
-
-impl Default for ValidationStatus {
-    fn default() -> Self {
-        ValidationStatus::NotChecked
-    }
-}
-
-impl Default for EventSeverity {
-    fn default() -> Self {
-        EventSeverity::Info
-    }
-}
-
-impl Default for ConfigSource {
-    fn default() -> Self {
-        ConfigSource::Default
-    }
 }
 
 impl DiagnosticInfo {

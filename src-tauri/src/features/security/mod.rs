@@ -123,11 +123,9 @@ mod tests {
         match result {
             Ok(()) => {
                 // 成功の場合
-                assert!(true);
             }
             Err(_) => {
                 // 失敗の場合（設定が不完全な場合など）
-                assert!(true);
             }
         }
     }

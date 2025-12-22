@@ -41,6 +41,5 @@ mod tests {
         let _receipt_cache: Option<ReceiptCache> = None;
 
         // この時点でコンパイルが通れば、エクスポートは正しく機能している
-        assert!(true);
     }
 }
