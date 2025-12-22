@@ -66,28 +66,28 @@
   - エラーハンドリングのテスト
   - _要件: 1.1, 3.1, 3.2_
 
-- [ ] 3. Subscriptions機能モジュールを作成する
+- [x] 3. Subscriptions機能モジュールを作成する
   - features/subscriptions/ディレクトリ構造を作成する
   - 既存のサブスクリプション関連コードを機能モジュールに移行する
   - 共有モジュールとの統合を行う
   - _要件: 1.2, 2.1, 2.2, 3.1, 3.2_
 
-- [ ] 3.1 features/subscriptions/models.rsを作成する
+- [x] 3.1 features/subscriptions/models.rsを作成する
   - 既存のmodels/subscription.rsの内容を移行する
   - DTOとデータモデルを整理する
   - _要件: 1.2_
 
-- [ ] 3.2 features/subscriptions/repository.rsを作成する
+- [x] 3.2 features/subscriptions/repository.rsを作成する
   - 既存のdb/subscription_operations.rsの内容を移行する
   - 共有データベース接続を使用するよう修正する
   - _要件: 1.2, 2.2_
 
-- [ ] 3.3 features/subscriptions/commands.rsを作成する
+- [x] 3.3 features/subscriptions/commands.rsを作成する
   - 既存のcommands/subscription_commands.rsの内容を移行する
   - 統一されたエラーハンドリングを使用するよう修正する
   - _要件: 1.2, 2.1, 3.1_
 
-- [ ] 3.4 features/subscriptions/mod.rsを作成する
+- [x] 3.4 features/subscriptions/mod.rsを作成する
   - サブスクリプション機能の公開インターフェースを定義する
   - モジュール境界を明確にする
   - _要件: 2.1, 2.3_

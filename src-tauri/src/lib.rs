@@ -4,6 +4,10 @@ pub mod db;
 mod models;
 mod services;
 
+// 新しい機能モジュール
+pub mod features;
+pub mod shared;
+
 use commands::{
     expense_commands, migration_commands, receipt_commands, security_commands,
     subscription_commands,

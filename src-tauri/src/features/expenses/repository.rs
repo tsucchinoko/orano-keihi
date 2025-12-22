@@ -1,4 +1,6 @@
-use crate::features::expenses::models::{CreateExpenseDto, Expense, UpdateExpenseDto, ReceiptCache};
+use crate::features::expenses::models::{
+    CreateExpenseDto, Expense, ReceiptCache, UpdateExpenseDto,
+};
 use crate::shared::errors::{AppError, AppResult};
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
@@ -109,7 +111,9 @@ pub fn find_all(
         })
     })?;
 
-    expenses.collect::<Result<Vec<_>, _>>().map_err(AppError::Database)
+    expenses
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(AppError::Database)
 }
 
 /// 経費を更新する
@@ -153,11 +157,11 @@ pub fn update(conn: &Connection, id: i64, dto: UpdateExpenseDto) -> AppResult<Ex
 /// 成功時はOk(())、失敗時はエラー
 pub fn delete(conn: &Connection, id: i64) -> AppResult<()> {
     let affected_rows = conn.execute("DELETE FROM expenses WHERE id = ?1", params![id])?;
-    
+
     if affected_rows == 0 {
         return Err(AppError::not_found("経費"));
     }
-    
+
     Ok(())
 }
 
@@ -180,7 +184,9 @@ pub fn set_receipt_url(conn: &Connection, id: i64, receipt_url: String) -> AppRe
     } else {
         // HTTPS URLの検証
         if !receipt_url.starts_with("https://") {
-            return Err(AppError::validation("領収書URLはHTTPS形式である必要があります"));
+            return Err(AppError::validation(
+                "領収書URLはHTTPS形式である必要があります",
+            ));
         }
         Some(receipt_url)
     };
@@ -258,10 +264,7 @@ pub fn save_receipt_cache(
 ///
 /// # 戻り値
 /// キャッシュ情報（存在する場合）、または失敗時はエラー
-pub fn get_receipt_cache(
-    conn: &Connection,
-    receipt_url: &str,
-) -> AppResult<Option<ReceiptCache>> {
+pub fn get_receipt_cache(conn: &Connection, receipt_url: &str) -> AppResult<Option<ReceiptCache>> {
     match conn.query_row(
         "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed
          FROM receipt_cache WHERE receipt_url = ?1",

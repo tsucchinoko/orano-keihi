@@ -109,7 +109,7 @@ pub async fn delete_expense(
             .lock()
             .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-        repository::get_receipt_url(&db, id).map_err(|e| e.into())?
+        repository::get_receipt_url(&db, id).map_err(|e| e.user_message().to_string())?
     };
 
     // 領収書がR2に存在する場合は削除
@@ -126,10 +126,9 @@ pub async fn delete_expense(
                     let cache_manager =
                         crate::services::cache_manager::CacheManager::new(cache_dir, 100);
 
-                    let db = state
-                        .db
-                        .lock()
-                        .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
+                    let db = state.db.lock().map_err(|e| {
+                        AppError::concurrency(format!("データベースロック取得失敗: {e}"))
+                    })?;
 
                     if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
                         eprintln!("キャッシュ削除エラー: {e}");

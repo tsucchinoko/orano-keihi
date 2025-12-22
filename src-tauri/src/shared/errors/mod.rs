@@ -215,7 +215,10 @@ mod tests {
         assert_eq!(not_found_error.user_message(), "経費が見つかりません");
 
         let security_error = AppError::security("認証失敗");
-        assert_eq!(security_error.user_message(), "セキュリティエラーが発生しました");
+        assert_eq!(
+            security_error.user_message(),
+            "セキュリティエラーが発生しました"
+        );
     }
 
     #[test]

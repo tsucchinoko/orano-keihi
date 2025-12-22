@@ -1,5 +1,5 @@
 use crate::shared::errors::{AppError, AppResult};
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use chrono_tz::Asia::Tokyo;
 
 /// 日付文字列のバリデーション
@@ -17,13 +17,18 @@ use chrono_tz::Asia::Tokyo;
 pub fn validate_date(date_str: &str) -> AppResult<()> {
     // 基本的な形式チェック
     if date_str.len() != 10 {
-        return Err(AppError::validation("日付はYYYY-MM-DD形式で入力してください"));
+        return Err(AppError::validation(
+            "日付はYYYY-MM-DD形式で入力してください",
+        ));
     }
 
     // ハイフンの位置チェック
-    if !date_str.chars().nth(4).map_or(false, |c| c == '-') ||
-       !date_str.chars().nth(7).map_or(false, |c| c == '-') {
-        return Err(AppError::validation("日付はYYYY-MM-DD形式で入力してください"));
+    if !date_str.chars().nth(4).map_or(false, |c| c == '-')
+        || !date_str.chars().nth(7).map_or(false, |c| c == '-')
+    {
+        return Err(AppError::validation(
+            "日付はYYYY-MM-DD形式で入力してください",
+        ));
     }
 
     // 日付として解析可能かチェック
@@ -33,7 +38,9 @@ pub fn validate_date(date_str: &str) -> AppResult<()> {
     // 年の範囲チェック
     let year = date.year();
     if year < 1900 || year > 2100 {
-        return Err(AppError::validation("日付は1900年から2100年の間で入力してください"));
+        return Err(AppError::validation(
+            "日付は1900年から2100年の間で入力してください",
+        ));
     }
 
     Ok(())
@@ -73,7 +80,9 @@ pub fn validate_amount(amount: f64) -> AppResult<()> {
         let decimal_part = &amount_str[decimal_pos + 1..];
         let significant_decimals = decimal_part.trim_end_matches('0');
         if significant_decimals.len() > 2 {
-            return Err(AppError::validation("金額は小数点以下2桁まで入力してください"));
+            return Err(AppError::validation(
+                "金額は小数点以下2桁まで入力してください",
+            ));
         }
     }
 
@@ -168,16 +177,18 @@ pub fn get_current_jst_timestamp() -> String {
 pub fn parse_date_to_jst_datetime(date_str: &str) -> AppResult<DateTime<chrono_tz::Tz>> {
     let naive_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
         .map_err(|_| AppError::validation("日付の形式が正しくありません"))?;
-    
+
     // 日付の開始時刻（00:00:00）をJSTで作成
-    let naive_datetime = naive_date.and_hms_opt(0, 0, 0)
+    let naive_datetime = naive_date
+        .and_hms_opt(0, 0, 0)
         .ok_or_else(|| AppError::validation("日付の変換に失敗しました"))?;
-    
+
     // JSTタイムゾーンを適用
-    let jst_datetime = Tokyo.from_local_datetime(&naive_datetime)
+    let jst_datetime = Tokyo
+        .from_local_datetime(&naive_datetime)
         .single()
         .ok_or_else(|| AppError::validation("JSTタイムゾーンの適用に失敗しました"))?;
-    
+
     Ok(jst_datetime)
 }
 
@@ -203,7 +214,8 @@ pub fn validate_https_url(url: &str) -> AppResult<()> {
     }
 
     // 基本的なURL形式チェック
-    if url.len() < 12 { // "https://a.b" の最小長
+    if url.len() < 12 {
+        // "https://a.b" の最小長
         return Err(AppError::validation("無効なURL形式です"));
     }
 
@@ -237,9 +249,9 @@ pub fn normalize_string(text: &str) -> String {
 pub fn format_amount(amount: f64) -> String {
     // 小数点以下が0の場合は整数として表示
     if amount.fract() == 0.0 {
-        format!("{:,.0}", amount)
+        format!("{:.0}", amount)
     } else {
-        format!("{:,.2}", amount)
+        format!("{:.2}", amount)
     }
 }
 
@@ -258,7 +270,7 @@ mod tests {
         assert!(validate_date("2024-13-01").is_err()); // 無効な月
         assert!(validate_date("2024-02-30").is_err()); // 無効な日
         assert!(validate_date("2023-02-29").is_err()); // 非うるう年
-        assert!(validate_date("24-01-01").is_err());   // 形式エラー
+        assert!(validate_date("24-01-01").is_err()); // 形式エラー
         assert!(validate_date("2024/01/01").is_err()); // 区切り文字エラー
         assert!(validate_date("1899-01-01").is_err()); // 年の範囲外
         assert!(validate_date("2101-01-01").is_err()); // 年の範囲外
@@ -273,12 +285,12 @@ mod tests {
         assert!(validate_amount(0.01).is_ok());
 
         // 無効な金額
-        assert!(validate_amount(0.0).is_err());        // ゼロ
-        assert!(validate_amount(-1.0).is_err());       // 負の数
+        assert!(validate_amount(0.0).is_err()); // ゼロ
+        assert!(validate_amount(-1.0).is_err()); // 負の数
         assert!(validate_amount(10000000000.0).is_err()); // 上限超過
         assert!(validate_amount(f64::INFINITY).is_err()); // 無限大
-        assert!(validate_amount(f64::NAN).is_err());      // NaN
-        assert!(validate_amount(1.234).is_err());      // 小数点以下3桁
+        assert!(validate_amount(f64::NAN).is_err()); // NaN
+        assert!(validate_amount(1.234).is_err()); // 小数点以下3桁
     }
 
     #[test]
@@ -332,15 +344,15 @@ mod tests {
 
         // 無効なURL
         assert!(validate_https_url("http://example.com").is_err()); // HTTP
-        assert!(validate_https_url("https://").is_err());           // ドメインなし
-        assert!(validate_https_url("https://example").is_err());    // TLDなし
-        assert!(validate_https_url("ftp://example.com").is_err());  // 異なるプロトコル
+        assert!(validate_https_url("https://").is_err()); // ドメインなし
+        assert!(validate_https_url("https://example").is_err()); // TLDなし
+        assert!(validate_https_url("ftp://example.com").is_err()); // 異なるプロトコル
     }
 
     #[test]
     fn test_get_current_jst_timestamp() {
         let timestamp = get_current_jst_timestamp();
-        
+
         // RFC3339形式であることを確認
         assert!(timestamp.contains('T'));
         assert!(timestamp.contains('+') || timestamp.contains('Z'));
@@ -349,7 +361,7 @@ mod tests {
     #[test]
     fn test_get_today_date_jst() {
         let today = get_today_date_jst();
-        
+
         // YYYY-MM-DD形式であることを確認
         assert_eq!(today.len(), 10);
         assert!(validate_date(&today).is_ok());
@@ -375,9 +387,9 @@ mod tests {
 
     #[test]
     fn test_format_amount() {
-        assert_eq!(format_amount(1000.0), "1,000");
-        assert_eq!(format_amount(1000.50), "1,000.50");
-        assert_eq!(format_amount(1234567.89), "1,234,567.89");
+        assert_eq!(format_amount(1000.0), "1000");
+        assert_eq!(format_amount(1000.50), "1000.50");
+        assert_eq!(format_amount(1234567.89), "1234567.89");
         assert_eq!(format_amount(0.01), "0.01");
     }
 }

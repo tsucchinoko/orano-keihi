@@ -11,11 +11,10 @@ pub mod config;
 pub mod utils;
 
 // 便利な再エクスポート
-pub use errors::{AppError, AppResult, ErrorSeverity};
-pub use database::{initialize_database, get_database_path, create_tables};
 pub use config::{
-    Environment, EnvironmentConfig, 
-    get_environment, get_database_filename,
-    load_environment_variables, initialize_logging_system,
-    InitializationResult, initialize_application, log_initialization_complete
+    get_database_filename, get_environment, initialize_application, initialize_logging_system,
+    load_environment_variables, log_initialization_complete, Environment, EnvironmentConfig,
+    InitializationResult,
 };
+pub use database::{create_tables, get_database_path, initialize_database};
+pub use errors::{AppError, AppResult, ErrorSeverity};

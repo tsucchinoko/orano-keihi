@@ -26,14 +26,13 @@ impl EnvironmentConfig {
     pub fn from_env() -> Self {
         let environment = get_environment();
         let debug_mode = environment == Environment::Development;
-        let log_level = std::env::var("LOG_LEVEL")
-            .unwrap_or_else(|_| {
-                if debug_mode {
-                    "debug".to_string()
-                } else {
-                    "info".to_string()
-                }
-            });
+        let log_level = std::env::var("LOG_LEVEL").unwrap_or_else(|_| {
+            if debug_mode {
+                "debug".to_string()
+            } else {
+                "info".to_string()
+            }
+        });
 
         Self {
             environment: format!("{environment:?}").to_lowercase(),
@@ -202,7 +201,8 @@ pub fn initialize_logging_system() {
 
     log::info!(
         "ログシステムを初期化しました: level={}, environment={}",
-        env_config.log_level, env_config.environment
+        env_config.log_level,
+        env_config.environment
     );
 }
 

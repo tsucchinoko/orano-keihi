@@ -21,8 +21,7 @@ pub fn initialize_database(app_handle: &AppHandle) -> AppResult<Connection> {
     let database_path = get_database_path(app_handle)?;
 
     // データベース接続を開く
-    let conn = Connection::open(&database_path)
-        .map_err(|e| AppError::Database(e))?;
+    let conn = Connection::open(&database_path).map_err(|e| AppError::Database(e))?;
 
     // テーブルを作成
     create_tables(&conn)?;
@@ -41,16 +40,19 @@ pub fn initialize_database(app_handle: &AppHandle) -> AppResult<Connection> {
 /// データベースファイルのパス、または失敗時はエラー
 pub fn get_database_path(app_handle: &AppHandle) -> AppResult<PathBuf> {
     // アプリケーションデータディレクトリを取得
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::configuration(format!("アプリデータディレクトリの取得に失敗: {e}")))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|e| {
+        AppError::configuration(format!("アプリデータディレクトリの取得に失敗: {e}"))
+    })?;
 
     // ディレクトリが存在しない場合は作成
     if !app_data_dir.exists() {
-        std::fs::create_dir_all(&app_data_dir)
-            .map_err(|e| AppError::configuration(format!("アプリデータディレクトリの作成に失敗: {e}")))?;
-        log::info!("アプリケーションデータディレクトリを作成: {:?}", app_data_dir);
+        std::fs::create_dir_all(&app_data_dir).map_err(|e| {
+            AppError::configuration(format!("アプリデータディレクトリの作成に失敗: {e}"))
+        })?;
+        log::info!(
+            "アプリケーションデータディレクトリを作成: {:?}",
+            app_data_dir
+        );
     }
 
     // 環境に応じたデータベースファイル名を決定
@@ -71,7 +73,7 @@ pub fn get_database_path(app_handle: &AppHandle) -> AppResult<PathBuf> {
 fn get_database_filename() -> &'static str {
     // 環境判定
     let is_production = is_production_environment();
-    
+
     if is_production {
         "expenses.db"
     } else {
@@ -113,11 +115,13 @@ fn is_production_environment() -> bool {
 /// 成功時はOk(())、失敗時はエラー
 pub fn create_tables(conn: &Connection) -> AppResult<()> {
     // 既存のテーブル構造をチェック
-    let table_exists: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='expenses'",
-        [],
-        |row| row.get(0),
-    ).map_err(AppError::Database)?;
+    let table_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='expenses'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(AppError::Database)?;
 
     if table_exists == 0 {
         // 新規インストール: 最新のスキーマ（receipt_url）でテーブルを作成
@@ -154,7 +158,8 @@ fn create_expenses_table(conn: &Connection) -> AppResult<()> {
             updated_at TEXT NOT NULL
         )",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     Ok(())
 }
@@ -186,17 +191,20 @@ fn create_indexes(conn: &Connection) -> AppResult<()> {
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     Ok(())
 }
@@ -213,17 +221,20 @@ fn create_receipt_cache_table(conn: &Connection) -> AppResult<()> {
             last_accessed TEXT NOT NULL
         )",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_receipt_cache_url ON receipt_cache(receipt_url)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_receipt_cache_accessed ON receipt_cache(last_accessed)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     Ok(())
 }
@@ -244,7 +255,8 @@ fn create_subscriptions_table(conn: &Connection) -> AppResult<()> {
             updated_at TEXT NOT NULL
         )",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     // 既存のサブスクリプションテーブルにreceipt_pathカラムを追加（存在しない場合）
     let _ = conn.execute("ALTER TABLE subscriptions ADD COLUMN receipt_path TEXT", []);
@@ -253,7 +265,8 @@ fn create_subscriptions_table(conn: &Connection) -> AppResult<()> {
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_subscriptions_active ON subscriptions(is_active)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     Ok(())
 }
@@ -268,10 +281,12 @@ fn create_categories_table(conn: &Connection) -> AppResult<()> {
             icon TEXT
         )",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     // テーブルが空の場合、初期カテゴリデータを挿入
-    let count: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
         .map_err(AppError::Database)?;
 
     if count == 0 {
@@ -296,7 +311,8 @@ fn insert_default_categories(conn: &Connection) -> AppResult<()> {
         conn.execute(
             "INSERT INTO categories (name, color, icon) VALUES (?1, ?2, ?3)",
             [name, color, icon],
-        ).map_err(AppError::Database)?;
+        )
+        .map_err(AppError::Database)?;
     }
 
     Ok(())
@@ -312,8 +328,7 @@ fn drop_receipt_path_column(conn: &Connection) -> AppResult<()> {
     log::info!("receipt_pathカラムを削除します...");
 
     // トランザクション内でマイグレーションを実行
-    let tx = conn.unchecked_transaction()
-        .map_err(AppError::Database)?;
+    let tx = conn.unchecked_transaction().map_err(AppError::Database)?;
 
     // 既存のテーブル構造を確認
     let table_info: Vec<(String, String)> = tx
@@ -366,8 +381,7 @@ fn drop_receipt_path_column(conn: &Connection) -> AppResult<()> {
          FROM expenses"
     };
 
-    tx.execute(insert_sql, [])
-        .map_err(AppError::Database)?;
+    tx.execute(insert_sql, []).map_err(AppError::Database)?;
 
     // 古いテーブルを削除
     tx.execute("DROP TABLE expenses", [])
@@ -381,18 +395,21 @@ fn drop_receipt_path_column(conn: &Connection) -> AppResult<()> {
     tx.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     tx.execute(
         "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
         [],
-    ).map_err(AppError::Database)?;
+    )
+    .map_err(AppError::Database)?;
 
     if has_receipt_url {
         tx.execute(
             "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
             [],
-        ).map_err(AppError::Database)?;
+        )
+        .map_err(AppError::Database)?;
     }
 
     // コミット
@@ -444,7 +461,7 @@ mod tests {
     #[test]
     fn test_create_tables() {
         let conn = Connection::open_in_memory().unwrap();
-        
+
         // テーブル作成が成功することを確認
         let result = create_tables(&conn);
         assert!(result.is_ok());
@@ -452,11 +469,15 @@ mod tests {
         // 各テーブルが作成されていることを確認
         let tables = ["expenses", "receipt_cache", "subscriptions", "categories"];
         for table in &tables {
-            let count: i64 = conn.query_row(
-                &format!("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{table}'"),
-                [],
-                |row| row.get(0),
-            ).unwrap();
+            let count: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{table}'"
+                    ),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
             assert_eq!(count, 1, "テーブル {table} が作成されていません");
         }
     }
@@ -464,12 +485,13 @@ mod tests {
     #[test]
     fn test_check_column_exists() {
         let conn = Connection::open_in_memory().unwrap();
-        
+
         // テストテーブルを作成
         conn.execute(
             "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // 存在するカラムのテスト
         assert!(check_column_exists(&conn, "test_table", "id"));
@@ -486,7 +508,7 @@ mod tests {
     fn test_is_production_environment() {
         // 環境判定のテスト（実際の値はビルド設定に依存）
         let is_prod = is_production_environment();
-        
+
         // デバッグビルドかリリースビルドかのいずれかであることを確認
         if cfg!(debug_assertions) {
             // デバッグビルドの場合、環境変数が設定されていなければ開発環境
@@ -499,7 +521,7 @@ mod tests {
     #[test]
     fn test_get_database_filename() {
         let filename = get_database_filename();
-        
+
         // ファイル名が適切であることを確認
         assert!(filename == "dev_expenses.db" || filename == "expenses.db");
         assert!(filename.ends_with(".db"));

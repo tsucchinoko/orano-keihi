@@ -65,15 +65,15 @@ pub fn initialize_application(app_handle: &AppHandle) -> AppResult<Initializatio
 /// # 戻り値
 /// アプリケーションデータディレクトリのパス、または失敗時はエラー
 fn ensure_app_data_directory(app_handle: &AppHandle) -> AppResult<PathBuf> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::configuration(format!("アプリデータディレクトリの取得に失敗: {e}")))?;
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|e| {
+        AppError::configuration(format!("アプリデータディレクトリの取得に失敗: {e}"))
+    })?;
 
     // ディレクトリが存在しない場合は作成
     if !app_data_dir.exists() {
-        fs::create_dir_all(&app_data_dir)
-            .map_err(|e| AppError::configuration(format!("アプリデータディレクトリの作成に失敗: {e}")))?;
+        fs::create_dir_all(&app_data_dir).map_err(|e| {
+            AppError::configuration(format!("アプリデータディレクトリの作成に失敗: {e}"))
+        })?;
 
         log::info!("アプリケーションデータディレクトリを作成しました: {app_data_dir:?}");
     }
