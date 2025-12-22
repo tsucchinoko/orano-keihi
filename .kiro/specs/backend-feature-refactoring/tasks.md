@@ -146,27 +146,27 @@
   - 並列処理のテスト
   - _要件: 1.3, 3.1, 3.2_
 
-- [ ] 6. Security機能モジュールを作成する
+- [x] 6. Security機能モジュールを作成する
   - features/security/ディレクトリ構造を作成する
   - 既存のセキュリティ関連コードを機能モジュールに移行する
   - _要件: 1.4, 2.1, 2.2, 3.1, 3.4_
 
-- [ ] 6.1 features/security/models.rsを作成する
+- [x] 6.1 features/security/models.rsを作成する
   - セキュリティ関連のデータモデルを定義する
   - 診断情報とテスト結果の構造体を移行する
   - _要件: 1.4_
 
-- [ ] 6.2 features/security/service.rsを作成する
+- [x] 6.2 features/security/service.rsを作成する
   - 既存のservices/security.rsの内容を移行する
   - SecurityManagerとEnvironmentConfigを実装する
   - _要件: 1.4, 2.2_
 
-- [ ] 6.3 features/security/commands.rsを作成する
+- [x] 6.3 features/security/commands.rsを作成する
   - 既存のcommands/security_commands.rsの内容を移行する
   - セキュリティ関連のTauriコマンドを実装する
   - _要件: 1.4, 2.1, 3.1_
 
-- [ ] 6.4 features/security/mod.rsを作成する
+- [x] 6.4 features/security/mod.rsを作成する
   - セキュリティ機能の公開インターフェースを定義する
   - モジュール境界を明確にする
   - _要件: 2.1, 2.3_

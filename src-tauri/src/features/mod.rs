@@ -5,9 +5,9 @@
 /// を含む自己完結型のユニットです。
 // 機能モジュールの宣言
 pub mod expenses;
+pub mod receipts;
+pub mod security;
 pub mod subscriptions;
 
 // 将来追加予定の機能モジュール
-// pub mod receipts;
-// pub mod security;
 // pub mod migrations;
