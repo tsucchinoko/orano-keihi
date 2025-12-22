@@ -105,33 +105,33 @@
 - [ ] 4. チェックポイント - 基本機能の動作確認
   - すべてのテストが成功することを確認し、ユーザーに質問があれば尋ねる
 
-- [ ] 5. Receipts機能モジュールを作成する
+- [x] 5. Receipts機能モジュールを作成する
   - features/receipts/ディレクトリ構造を作成する
   - 既存の領収書関連コードを機能モジュールに移行する
   - R2クライアントとキャッシュマネージャーを統合する
   - _要件: 1.3, 2.1, 2.2, 3.1, 3.2_
 
-- [ ] 5.1 features/receipts/models.rsを作成する
+- [x] 5.1 features/receipts/models.rsを作成する
   - 領収書関連のデータモデルとDTOを定義する
   - ReceiptCacheモデルを移行する
   - _要件: 1.3_
 
-- [ ] 5.2 features/receipts/service.rsを作成する
+- [x] 5.2 features/receipts/service.rsを作成する
   - 既存のservices/r2_client.rsの内容を移行する
   - R2との連携機能を実装する
   - _要件: 1.3, 2.2_
 
-- [ ] 5.3 features/receipts/cache.rsを作成する
+- [x] 5.3 features/receipts/cache.rsを作成する
   - 既存のservices/cache_manager.rsの内容を移行する
   - オフライン対応とキャッシュ管理を実装する
   - _要件: 1.3, 2.2_
 
-- [ ] 5.4 features/receipts/commands.rsを作成する
+- [x] 5.4 features/receipts/commands.rsを作成する
   - 既存のcommands/receipt_commands.rsの内容を移行する
   - 統一されたエラーハンドリングを使用するよう修正する
   - _要件: 1.3, 2.1, 3.1_
 
-- [ ] 5.5 features/receipts/mod.rsを作成する
+- [x] 5.5 features/receipts/mod.rsを作成する
   - 領収書機能の公開インターフェースを定義する
   - モジュール境界を明確にする
   - _要件: 2.1, 2.3_
