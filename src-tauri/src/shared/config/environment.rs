@@ -230,8 +230,17 @@ impl R2Config {
         let access_key_id = std::env::var("R2_ACCESS_KEY_ID").ok()?;
         let secret_access_key = std::env::var("R2_SECRET_ACCESS_KEY").ok()?;
         let bucket_name = std::env::var("R2_BUCKET_NAME").ok()?;
-        let endpoint_url = std::env::var("R2_ENDPOINT_URL").ok()?;
         let region = std::env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string());
+
+        // エンドポイントURLが設定されていない場合は、アカウントIDから自動構築
+        let endpoint_url = std::env::var("R2_ENDPOINT_URL").unwrap_or_else(|_| {
+            if let Ok(account_id) = std::env::var("R2_ACCOUNT_ID") {
+                format!("https://{}.r2.cloudflarestorage.com", account_id)
+            } else {
+                // アカウントIDも設定されていない場合はデフォルト
+                "https://r2.cloudflarestorage.com".to_string()
+            }
+        });
 
         Some(Self {
             access_key_id,

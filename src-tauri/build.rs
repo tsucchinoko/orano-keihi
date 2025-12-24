@@ -24,11 +24,11 @@ fn main() {
         if let Ok(account_id) = env::var("R2_ACCOUNT_ID") {
             println!("cargo:rustc-env=EMBEDDED_R2_ACCOUNT_ID={account_id}");
         }
-        if let Ok(access_key) = env::var("R2_ACCESS_KEY") {
-            println!("cargo:rustc-env=EMBEDDED_R2_ACCESS_KEY={access_key}");
+        if let Ok(access_key) = env::var("R2_ACCESS_KEY_ID") {
+            println!("cargo:rustc-env=EMBEDDED_R2_ACCESS_KEY_ID={access_key}");
         }
-        if let Ok(secret_key) = env::var("R2_SECRET_KEY") {
-            println!("cargo:rustc-env=EMBEDDED_R2_SECRET_KEY={secret_key}");
+        if let Ok(secret_key) = env::var("R2_SECRET_ACCESS_KEY") {
+            println!("cargo:rustc-env=EMBEDDED_R2_SECRET_ACCESS_KEY={secret_key}");
         }
         if let Ok(bucket_name) = env::var("R2_BUCKET_NAME") {
             println!("cargo:rustc-env=EMBEDDED_R2_BUCKET_NAME={bucket_name}");
