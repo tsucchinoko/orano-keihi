@@ -227,12 +227,111 @@ impl R2Config {
     /// # 戻り値
     /// R2設定、または設定が不完全な場合はNone
     pub fn from_env() -> Option<Self> {
-        let access_key_id = std::env::var("R2_ACCESS_KEY_ID").ok()?;
-        let secret_access_key = std::env::var("R2_SECRET_ACCESS_KEY").ok()?;
-        let bucket_name = std::env::var("R2_BUCKET_NAME").ok()?;
-        let endpoint_url = std::env::var("R2_ENDPOINT_URL").ok()?;
-        let region = std::env::var("R2_REGION").unwrap_or_else(|_| "auto".to_string());
+        log::debug!("R2Config::from_env() - 環境変数の読み込みを開始");
 
+        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
+        let access_key_id = option_env!("EMBEDDED_R2_ACCESS_KEY_ID")
+            .map(|s| {
+                log::debug!(
+                    "コンパイル時埋め込みR2_ACCESS_KEY_ID を使用: {}****",
+                    &s[..4.min(s.len())]
+                );
+                s.to_string()
+            })
+            .or_else(|| {
+                std::env::var("R2_ACCESS_KEY_ID").ok().map(|val| {
+                    log::debug!(
+                        "実行時R2_ACCESS_KEY_ID が見つかりました: {}****",
+                        &val[..4.min(val.len())]
+                    );
+                    val
+                })
+            });
+
+        let access_key_id = match access_key_id {
+            Some(val) => val,
+            None => {
+                log::error!("R2_ACCESS_KEY_ID が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
+                return None;
+            }
+        };
+
+        let secret_access_key = option_env!("EMBEDDED_R2_SECRET_ACCESS_KEY")
+            .map(|s| {
+                log::debug!(
+                    "コンパイル時埋め込みR2_SECRET_ACCESS_KEY を使用: {}****",
+                    &s[..4.min(s.len())]
+                );
+                s.to_string()
+            })
+            .or_else(|| {
+                std::env::var("R2_SECRET_ACCESS_KEY").ok().map(|val| {
+                    log::debug!(
+                        "実行時R2_SECRET_ACCESS_KEY が見つかりました: {}****",
+                        &val[..4.min(val.len())]
+                    );
+                    val
+                })
+            });
+
+        let secret_access_key = match secret_access_key {
+            Some(val) => val,
+            None => {
+                log::error!("R2_SECRET_ACCESS_KEY が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
+                return None;
+            }
+        };
+
+        let bucket_name = option_env!("EMBEDDED_R2_BUCKET_NAME")
+            .map(|s| {
+                log::debug!("コンパイル時埋め込みR2_BUCKET_NAME を使用: {s}");
+                s.to_string()
+            })
+            .or_else(|| {
+                std::env::var("R2_BUCKET_NAME").ok().map(|val| {
+                    log::debug!("実行時R2_BUCKET_NAME が見つかりました: {val}");
+                    val
+                })
+            });
+
+        let bucket_name = match bucket_name {
+            Some(val) => val,
+            None => {
+                log::error!("R2_BUCKET_NAME が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
+                return None;
+            }
+        };
+
+        let region = option_env!("EMBEDDED_R2_REGION")
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("R2_REGION").ok())
+            .unwrap_or_else(|| {
+                log::debug!("R2_REGION が設定されていないため、デフォルト値 'auto' を使用");
+                "auto".to_string()
+            });
+
+        // エンドポイントURLが設定されていない場合は、アカウントIDから自動構築
+        let endpoint_url = option_env!("EMBEDDED_R2_ENDPOINT_URL")
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("R2_ENDPOINT_URL").ok())
+            .unwrap_or_else(|| {
+                let account_id = option_env!("EMBEDDED_R2_ACCOUNT_ID")
+                    .map(|s| s.to_string())
+                    .or_else(|| std::env::var("R2_ACCOUNT_ID").ok());
+
+                if let Some(account_id) = account_id {
+                    let url = format!("https://{account_id}.r2.cloudflarestorage.com");
+                    log::debug!("R2_ACCOUNT_ID からエンドポイントURLを構築: {url}");
+                    url
+                } else {
+                    log::warn!(
+                        "R2_ACCOUNT_ID が設定されていないため、デフォルトエンドポイントを使用"
+                    );
+                    "https://r2.cloudflarestorage.com".to_string()
+                }
+            });
+
+        log::debug!("R2Config::from_env() - 設定の読み込みが完了しました");
         Some(Self {
             access_key_id,
             secret_access_key,

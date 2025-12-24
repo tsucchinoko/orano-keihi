@@ -74,8 +74,8 @@ impl SecureCredentials {
     pub fn validate_all(&self) -> Result<ValidationResult, AppError> {
         let required_keys = [
             "R2_ACCOUNT_ID",
-            "R2_ACCESS_KEY",
-            "R2_SECRET_KEY",
+            "R2_ACCESS_KEY_ID",
+            "R2_SECRET_ACCESS_KEY",
             "R2_BUCKET_NAME",
         ];
 
@@ -248,22 +248,22 @@ impl SecurityManager {
             credentials.add_credential("R2_ACCOUNT_ID", &account_id);
         }
 
-        // R2_ACCESS_KEY
-        let access_key = option_env!("EMBEDDED_R2_ACCESS_KEY")
+        // R2_ACCESS_KEY_ID
+        let access_key = option_env!("EMBEDDED_R2_ACCESS_KEY_ID")
             .map(|s| s.to_string())
-            .or_else(|| env::var("R2_ACCESS_KEY").ok())
+            .or_else(|| env::var("R2_ACCESS_KEY_ID").ok())
             .unwrap_or_default();
         if !access_key.is_empty() {
-            credentials.add_credential("R2_ACCESS_KEY", &access_key);
+            credentials.add_credential("R2_ACCESS_KEY_ID", &access_key);
         }
 
-        // R2_SECRET_KEY
-        let secret_key = option_env!("EMBEDDED_R2_SECRET_KEY")
+        // R2_SECRET_ACCESS_KEY
+        let secret_key = option_env!("EMBEDDED_R2_SECRET_ACCESS_KEY")
             .map(|s| s.to_string())
-            .or_else(|| env::var("R2_SECRET_KEY").ok())
+            .or_else(|| env::var("R2_SECRET_ACCESS_KEY").ok())
             .unwrap_or_default();
         if !secret_key.is_empty() {
-            credentials.add_credential("R2_SECRET_KEY", &secret_key);
+            credentials.add_credential("R2_SECRET_ACCESS_KEY", &secret_key);
         }
 
         // R2_BUCKET_NAME
@@ -497,8 +497,8 @@ mod tests {
     fn test_credential_validation() {
         let mut credentials = SecureCredentials::new();
         credentials.add_credential("R2_ACCOUNT_ID", "test_account");
-        credentials.add_credential("R2_ACCESS_KEY", "test_key");
-        credentials.add_credential("R2_SECRET_KEY", "test_secret");
+        credentials.add_credential("R2_ACCESS_KEY_ID", "test_key");
+        credentials.add_credential("R2_SECRET_ACCESS_KEY", "test_secret");
         credentials.add_credential("R2_BUCKET_NAME", "test_bucket");
 
         let result = credentials.validate_all().unwrap();

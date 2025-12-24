@@ -101,7 +101,7 @@ pub async fn test_r2_connection_secure() -> Result<ConnectionTestResult, String>
             .unwrap_or(&"****".to_string())
             .clone(),
         access_key: credentials
-            .get_masked_credential("R2_ACCESS_KEY")
+            .get_masked_credential("R2_ACCESS_KEY_ID")
             .unwrap_or(&"****".to_string())
             .clone(),
     };
