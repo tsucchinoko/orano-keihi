@@ -74,13 +74,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // ログシステムを初期化
+            // 環境に応じた.envファイルを読み込み（ログシステム初期化前に実行）
+            load_environment_variables();
+
+            // ログシステムを初期化（.envファイル読み込み後）
             initialize_logging_system();
 
             info!("アプリケーション初期化を開始します...");
-
-            // 環境に応じた.envファイルを読み込み
-            load_environment_variables();
 
             // セキュリティマネージャーを初期化（.envファイル読み込み後）
             let mut security_manager = SecurityManager::new();
