@@ -1,0 +1,112 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "orano-keihi",
+	"version": "0.1.0",
+	"identifier": "com.tsucchinoko.orano-keihi",
+	"build": {
+		"beforeDevCommand": "pnpm dev",
+		"devUrl": "http://localhost:1420",
+		"beforeBuildCommand": "pnpm build",
+		"frontendDist": "../build"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "オラの経費だゾ",
+				"width": 1200,
+				"height": 800,
+				"minWidth": 800,
+				"minHeight": 600,
+				"resizable": true,
+				"fullscreen": false,
+				"maximized": false,
+				"visible": true,
+				"decorations": true,
+				"alwaysOnTop": false,
+				"skipTaskbar": false,
+				"transparent": false,
+				"backgroundColor": "#f9fafb"
+			}
+		],
+		"security": {
+			"csp": "default-src 'self' tauri: asset: https: data:; img-src 'self' tauri: asset: https: data: blob:; style-src 'self' 'unsafe-inline' tauri: asset:; font-src 'self' data: tauri: asset:; script-src 'self' 'unsafe-inline' tauri: asset:; connect-src 'self' https: tauri: asset:;",
+			"assetProtocol": {
+				"enable": true,
+				"scope": ["$APPDATA/**", "$RESOURCE/**"]
+			}
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": "all",
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		],
+		"publisher": "tsucchinoko",
+		"category": "Productivity",
+		"shortDescription": "Personal expense tracking application",
+		"longDescription": "A comprehensive personal expense tracking application built with Tauri and SvelteKit",
+		"copyright": "Copyright © 2025 tsucchinoko. All rights reserved.",
+		"licenseFile": null,
+		"macOS": {
+			"frameworks": [],
+			"minimumSystemVersion": "10.15",
+			"exceptionDomain": "",
+			"signingIdentity": null,
+			"providerShortName": null,
+			"entitlements": null,
+			"hardenedRuntime": false,
+			"dmg": {
+				"appPosition": {
+					"x": 180,
+					"y": 170
+				},
+				"applicationFolderPosition": {
+					"x": 480,
+					"y": 170
+				},
+				"windowSize": {
+					"width": 660,
+					"height": 400
+				}
+			}
+		},
+		"windows": {
+			"certificateThumbprint": null,
+			"digestAlgorithm": "sha256",
+			"timestampUrl": "$WINDOWS_TIMESTAMP_URL",
+			"tsp": false,
+			"signCommand": null,
+			"wix": {
+				"language": "ja-JP",
+				"template": null,
+				"fragmentPaths": [],
+				"componentGroupRefs": [],
+				"componentRefs": [],
+				"featureGroupRefs": [],
+				"featureRefs": [],
+				"mergeRefs": [],
+				"enableElevatedUpdateTask": false,
+				"bannerPath": null,
+				"dialogImagePath": null,
+				"fipsCompliant": false
+			},
+			"nsis": {
+				"template": null,
+				"headerImage": null,
+				"sidebarImage": null,
+				"installerIcon": null,
+				"installMode": "currentUser",
+				"languages": ["Japanese"],
+				"displayLanguageSelector": false,
+				"customLanguageFiles": {}
+			}
+		},
+		"resources": [],
+		"externalBin": []
+	}
+}
