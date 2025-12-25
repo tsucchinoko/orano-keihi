@@ -317,3 +317,51 @@ export interface R2DebugInfo {
 	recent_errors: string[];
 	timestamp: string;
 }
+
+// ========================================
+// 認証関連型
+// ========================================
+
+// ユーザー情報型
+export interface User {
+	id: number;
+	google_id: string;
+	email: string;
+	name: string;
+	picture_url?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+// 認証状態型
+export interface AuthState {
+	user: User | null;
+	is_authenticated: boolean;
+	is_loading: boolean;
+}
+
+// OAuth認証開始レスポンス型
+export interface StartAuthResponse {
+	auth_url: string;
+	code_verifier: string;
+	state: string;
+}
+
+// 認証コールバック処理リクエスト型
+export interface HandleCallbackRequest {
+	code: string;
+	state: string;
+	code_verifier: string;
+}
+
+// 認証コールバック処理レスポンス型
+export interface HandleCallbackResponse {
+	user: User;
+	session_token: string;
+}
+
+// セッション検証レスポンス型
+export interface ValidateSessionResponse {
+	user: User;
+	is_authenticated: boolean;
+}

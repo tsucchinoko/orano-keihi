@@ -434,3 +434,76 @@ export async function getR2DebugInfo(): Promise<
 		invoke<import("../types").R2DebugInfo>("get_r2_debug_info"),
 	);
 }
+
+// ========================================
+// 認証関連のコマンド
+// ========================================
+
+/**
+ * OAuth認証フローを開始する
+ *
+ * @returns 認証開始情報またはエラー
+ */
+export async function startOAuthFlow(): Promise<
+	TauriResult<import("../types").StartAuthResponse>
+> {
+	return handleTauriCommand(
+		invoke<import("../types").StartAuthResponse>("start_oauth_flow"),
+	);
+}
+
+/**
+ * 認証コールバックを処理する
+ *
+ * @param request - コールバック処理リクエスト
+ * @returns 認証結果またはエラー
+ */
+export async function handleAuthCallback(
+	request: import("../types").HandleCallbackRequest,
+): Promise<TauriResult<import("../types").HandleCallbackResponse>> {
+	return handleTauriCommand(
+		invoke<import("../types").HandleCallbackResponse>("handle_auth_callback", {
+			request,
+		}),
+	);
+}
+
+/**
+ * セッションを検証する
+ *
+ * @param sessionToken - セッショントークン
+ * @returns セッション検証結果またはエラー
+ */
+export async function validateSession(
+	sessionToken: string,
+): Promise<TauriResult<import("../types").ValidateSessionResponse>> {
+	return handleTauriCommand(
+		invoke<import("../types").ValidateSessionResponse>("validate_session", {
+			sessionToken,
+		}),
+	);
+}
+
+/**
+ * ログアウト処理を行う
+ *
+ * @param sessionToken - セッショントークン
+ * @returns ログアウト結果またはエラー
+ */
+export async function logout(sessionToken: string): Promise<TauriResult<void>> {
+	return handleTauriCommand(invoke<void>("logout", { sessionToken }));
+}
+
+/**
+ * 現在の認証状態を取得する
+ *
+ * @param sessionToken - セッショントークン（オプション）
+ * @returns 認証状態またはエラー
+ */
+export async function getAuthState(
+	sessionToken?: string,
+): Promise<TauriResult<import("../types").AuthState>> {
+	return handleTauriCommand(
+		invoke<import("../types").AuthState>("get_auth_state", { sessionToken }),
+	);
+}
