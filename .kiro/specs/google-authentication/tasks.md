@@ -21,8 +21,8 @@
   - **プロパティ14: マイグレーション失敗時のロールバック**
   - **検証対象: 要件 4.5**
 
-- [ ] 2. Rustバックエンド認証サービスの実装
-  - [ ] 2.1 OAuth2クライアントの設定と初期化
+- [x] 2. Rustバックエンド認証サービスの実装
+  - [x] 2.1 OAuth2クライアントの設定と初期化
     - Google OAuth 2.0設定の追加
     - 環境変数の設定（CLIENT_ID、CLIENT_SECRET）
     - oauth2クレートとtauri-plugin-oauthの統合
@@ -32,7 +32,7 @@
     - **プロパティ1: 認証フロー開始**
     - **検証対象: 要件 1.2**
 
-  - [ ] 2.3 認証サービス（AuthService）の実装
+  - [x] 2.3 認証サービス（AuthService）の実装
     - OAuth認証フローの開始処理
     - 認証コールバックの処理
     - PKCE（Proof Key for Code Exchange）の実装

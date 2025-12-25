@@ -3,15 +3,16 @@ pub mod features;
 pub mod shared;
 
 // 新しい機能モジュールからコマンドをインポート
+use features::auth::service::AuthService;
 use features::security::service::SecurityManager;
 use features::{
-    expenses::commands as expense_commands, migrations::commands as migration_commands,
-    receipts::commands as receipt_commands, security::commands as security_commands,
-    subscriptions::commands as subscription_commands,
+    auth::commands as auth_commands, expenses::commands as expense_commands,
+    migrations::commands as migration_commands, receipts::commands as receipt_commands,
+    security::commands as security_commands, subscriptions::commands as subscription_commands,
 };
 use log::{error, info, warn};
 use rusqlite::Connection;
-use shared::config::environment::EnvironmentConfig;
+use shared::config::environment::{EnvironmentConfig, GoogleOAuthConfig};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -66,6 +67,7 @@ pub struct AppState {
     pub db: Mutex<Connection>,
     pub security_manager: SecurityManager,
     pub r2_connection_cache: Arc<Mutex<R2ConnectionCache>>,
+    pub auth_service: Option<AuthService>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -116,12 +118,58 @@ pub fn run() {
             info!("データベースの初期化が完了しました");
             security_manager.log_security_event("database_init_success", "データベース初期化完了");
 
+            // 認証サービスを初期化
+            let auth_service = match GoogleOAuthConfig::from_env() {
+                Some(oauth_config) => match oauth_config.validate() {
+                    Ok(_) => {
+                        info!("Google OAuth設定を検証しました");
+                        match AuthService::new(oauth_config, Arc::new(Mutex::new(db_conn))) {
+                            Ok(service) => {
+                                info!("認証サービスを初期化しました");
+                                Some(service)
+                            }
+                            Err(e) => {
+                                error!("認証サービスの初期化に失敗しました: {e}");
+                                security_manager
+                                    .log_security_event("auth_service_init_failed", &e.to_string());
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Google OAuth設定が無効です: {e}");
+                        security_manager.log_security_event("oauth_config_invalid", &e);
+                        None
+                    }
+                },
+                None => {
+                    warn!("Google OAuth設定が見つかりません。認証機能は無効になります。");
+                    security_manager
+                        .log_security_event("oauth_config_missing", "Google OAuth設定なし");
+                    None
+                }
+            };
+
+            // データベース接続を再作成（AuthServiceで使用されたため）
+            let db_conn =
+                shared::database::connection::initialize_database(app.handle()).map_err(|e| {
+                    error!("データベース接続の再作成に失敗しました: {e}");
+                    e
+                })?;
+
             // データベース接続とセキュリティマネージャーをアプリ状態に保存
             let mut security_manager_clone = security_manager.clone();
+
+            // 認証サービスが利用可能な場合は、個別に管理
+            if let Some(auth_service) = &auth_service {
+                app.manage(auth_service.clone());
+            }
+
             app.manage(AppState {
                 db: Mutex::new(db_conn),
                 security_manager,
                 r2_connection_cache: Arc::new(Mutex::new(R2ConnectionCache::new())),
+                auth_service,
             });
 
             info!("アプリケーション初期化が完了しました");
@@ -131,6 +179,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // 認証コマンド
+            auth_commands::start_oauth_flow,
+            auth_commands::handle_auth_callback,
+            auth_commands::validate_session,
+            auth_commands::logout,
+            auth_commands::get_auth_state,
+            auth_commands::cleanup_expired_sessions,
             // 経費コマンド
             expense_commands::create_expense,
             expense_commands::get_expenses,

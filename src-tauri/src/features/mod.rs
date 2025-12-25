@@ -4,6 +4,7 @@
 /// 各機能モジュールは、その機能に関連するすべてのコード（モデル、コマンド、データベース操作、サービス）
 /// を含む自己完結型のユニットです。
 // 機能モジュールの宣言
+pub mod auth;
 pub mod expenses;
 pub mod migrations;
 pub mod receipts;

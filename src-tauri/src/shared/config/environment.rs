@@ -221,6 +221,152 @@ pub struct R2Config {
     pub region: String,
 }
 
+/// Google OAuth 2.0の設定を管理する構造体
+#[derive(Debug, Clone)]
+pub struct GoogleOAuthConfig {
+    /// GoogleクライアントID
+    pub client_id: String,
+    /// Googleクライアントシークレット
+    pub client_secret: String,
+    /// OAuth2リダイレクトURI
+    pub redirect_uri: String,
+    /// セッション暗号化キー
+    pub session_encryption_key: String,
+}
+
+impl GoogleOAuthConfig {
+    /// 環境変数からGoogle OAuth設定を読み込む
+    ///
+    /// # 戻り値
+    /// Google OAuth設定、または設定が不完全な場合はNone
+    pub fn from_env() -> Option<Self> {
+        log::debug!("GoogleOAuthConfig::from_env() - 環境変数の読み込みを開始");
+
+        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
+        let client_id = option_env!("EMBEDDED_GOOGLE_CLIENT_ID")
+            .map(|s| {
+                log::debug!(
+                    "コンパイル時埋め込みGOOGLE_CLIENT_ID を使用: {}****",
+                    &s[..8.min(s.len())]
+                );
+                s.to_string()
+            })
+            .or_else(|| {
+                std::env::var("GOOGLE_CLIENT_ID").ok().map(|val| {
+                    log::debug!(
+                        "実行時GOOGLE_CLIENT_ID が見つかりました: {}****",
+                        &val[..8.min(val.len())]
+                    );
+                    val
+                })
+            });
+
+        let client_id = match client_id {
+            Some(val) => val,
+            None => {
+                log::error!("GOOGLE_CLIENT_ID が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
+                return None;
+            }
+        };
+
+        let client_secret = option_env!("EMBEDDED_GOOGLE_CLIENT_SECRET")
+            .map(|s| {
+                log::debug!(
+                    "コンパイル時埋め込みGOOGLE_CLIENT_SECRET を使用: {}****",
+                    &s[..8.min(s.len())]
+                );
+                s.to_string()
+            })
+            .or_else(|| {
+                std::env::var("GOOGLE_CLIENT_SECRET").ok().map(|val| {
+                    log::debug!(
+                        "実行時GOOGLE_CLIENT_SECRET が見つかりました: {}****",
+                        &val[..8.min(val.len())]
+                    );
+                    val
+                })
+            });
+
+        let client_secret = match client_secret {
+            Some(val) => val,
+            None => {
+                log::error!("GOOGLE_CLIENT_SECRET が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
+                return None;
+            }
+        };
+
+        let redirect_uri = option_env!("EMBEDDED_GOOGLE_REDIRECT_URI")
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("GOOGLE_REDIRECT_URI").ok())
+            .unwrap_or_else(|| {
+                log::debug!("GOOGLE_REDIRECT_URI が設定されていないため、デフォルト値を使用");
+                "http://localhost:3000/auth/callback".to_string()
+            });
+
+        let session_encryption_key = option_env!("EMBEDDED_SESSION_ENCRYPTION_KEY")
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("SESSION_ENCRYPTION_KEY").ok())
+            .unwrap_or_else(|| {
+                log::warn!("SESSION_ENCRYPTION_KEY が設定されていないため、デフォルト値を使用（本番環境では必ず設定してください）");
+                "default_32_byte_encryption_key_123".to_string()
+            });
+
+        log::debug!("GoogleOAuthConfig::from_env() - 設定の読み込みが完了しました");
+        Some(Self {
+            client_id,
+            client_secret,
+            redirect_uri,
+            session_encryption_key,
+        })
+    }
+
+    /// Google OAuth設定が有効かどうかを判定
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はtrue
+    pub fn is_valid(&self) -> bool {
+        !self.client_id.is_empty()
+            && !self.client_secret.is_empty()
+            && !self.redirect_uri.is_empty()
+            && !self.session_encryption_key.is_empty()
+    }
+
+    /// 設定を検証する
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はOk(())、無効な場合はErr
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.is_valid() {
+            return Err("Google OAuth設定が不完全です".to_string());
+        }
+
+        // セッション暗号化キーの長さをチェック（最低16バイト）
+        if self.session_encryption_key.len() < 16 {
+            return Err("セッション暗号化キーは最低16文字以上である必要があります".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// デバッグ情報を取得
+    ///
+    /// # 戻り値
+    /// デバッグ情報のマップ
+    pub fn get_debug_info(&self) -> std::collections::HashMap<String, String> {
+        let mut info = std::collections::HashMap::new();
+        info.insert(
+            "client_id".to_string(),
+            format!("{}****", &self.client_id[..8.min(self.client_id.len())]),
+        );
+        info.insert("redirect_uri".to_string(), self.redirect_uri.clone());
+        info.insert(
+            "session_encryption_key_length".to_string(),
+            self.session_encryption_key.len().to_string(),
+        );
+        info
+    }
+}
+
 impl R2Config {
     /// 環境変数からR2設定を読み込む
     ///
