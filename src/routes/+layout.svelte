@@ -141,7 +141,7 @@ let isLoginPage = $derived(currentPath.startsWith("/login"));
 						現在のパス: {currentPath} | 認証状態: {isAuthenticated ? '認証済み' : '未認証'}
 					</div>
 				{/if}
-				<slot />
+				{@render children()}
 			</main>
 
 			<!-- トースト通知コンテナ -->

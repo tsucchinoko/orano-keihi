@@ -4,7 +4,6 @@ import {
 	handleAuthCallback,
 	validateSession,
 	logout as logoutCommand,
-	getAuthState,
 } from "../utils/tauri";
 import { toastStore } from "./toast.svelte";
 
@@ -231,7 +230,7 @@ class AuthStore {
 				return;
 			}
 
-			if (result.data && result.data.is_authenticated) {
+			if (result.data?.is_authenticated) {
 				// セッションが有効な場合
 				this.user = result.data.user;
 				this.isAuthenticated = true;

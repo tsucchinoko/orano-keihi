@@ -67,7 +67,7 @@ function clearError() {
 					</svg>
 					<span>{error}</span>
 				</div>
-				<button type="button" class="error-close" onclick={clearError}>
+				<button type="button" class="error-close" onclick={clearError} aria-label="エラーメッセージを閉じる">
 					<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 					</svg>
