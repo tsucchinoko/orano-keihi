@@ -268,6 +268,24 @@ pub struct DatabaseStats {
     pub page_size: i64,
 }
 
+/// 包括的なデータ移行を実行する
+///
+/// # 引数
+/// * `app_handle` - Tauriアプリケーションハンドル
+///
+/// # 戻り値
+/// データ移行結果
+#[tauri::command]
+pub async fn execute_comprehensive_data_migration_command(
+    app_handle: AppHandle,
+) -> Result<super::service::DataMigrationResult, String> {
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
+
+    super::service::execute_comprehensive_data_migration(&conn)
+        .map_err(|e| format!("包括的データ移行実行エラー: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     // use super::*;

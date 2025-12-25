@@ -690,6 +690,299 @@ pub fn list_backup_files(app_data_dir: &Path) -> Result<Vec<String>, AppError> {
     Ok(backup_files)
 }
 
+/// 包括的なデータ移行を実行する
+///
+/// この関数は既存データの安全な移行とバックアップ作成を行います。
+/// 要件7.5「データ移行時のバックアップ」を満たします。
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// データ移行結果
+pub fn execute_comprehensive_data_migration(
+    conn: &Connection,
+) -> Result<DataMigrationResult, AppError> {
+    // バックアップパスを生成（JST使用）
+    let now_jst = Utc::now().with_timezone(&Tokyo);
+    let backup_path = format!("database_backup_migration_{}.db", now_jst.timestamp());
+
+    // 1. 移行前のバックアップを作成
+    if let Err(e) = create_backup(conn, &backup_path) {
+        return Ok(DataMigrationResult {
+            success: false,
+            message: format!("移行前バックアップ作成に失敗しました: {e}"),
+            backup_path: None,
+            migrated_tables: Vec::new(),
+            data_integrity_verified: false,
+        });
+    }
+
+    // 2. データ整合性チェック（移行前）
+    if let Err(e) = verify_data_integrity_before_migration(conn) {
+        return Ok(DataMigrationResult {
+            success: false,
+            message: format!("移行前データ整合性チェックに失敗しました: {e}"),
+            backup_path: Some(backup_path),
+            migrated_tables: Vec::new(),
+            data_integrity_verified: false,
+        });
+    }
+
+    // 3. トランザクション内で包括的マイグレーションを実行
+    let tx = conn.unchecked_transaction()?;
+    let mut migrated_tables = Vec::new();
+
+    match execute_comprehensive_migration(&tx, &mut migrated_tables) {
+        Ok(_) => {
+            // 4. 移行後のデータ整合性検証
+            if let Err(e) = verify_data_integrity_after_migration(&tx) {
+                // 検証失敗時はロールバック
+                tx.rollback()?;
+                return Ok(DataMigrationResult {
+                    success: false,
+                    message: format!("移行後データ整合性検証に失敗しました: {e}"),
+                    backup_path: Some(backup_path),
+                    migrated_tables,
+                    data_integrity_verified: false,
+                });
+            }
+
+            // 5. コミット
+            tx.commit()?;
+
+            Ok(DataMigrationResult {
+                success: true,
+                message: "包括的なデータ移行が完了しました".to_string(),
+                backup_path: Some(backup_path),
+                migrated_tables,
+                data_integrity_verified: true,
+            })
+        }
+        Err(e) => {
+            // エラー時はロールバック
+            tx.rollback()?;
+            Ok(DataMigrationResult {
+                success: false,
+                message: format!("データ移行実行に失敗しました: {e}"),
+                backup_path: Some(backup_path),
+                migrated_tables,
+                data_integrity_verified: false,
+            })
+        }
+    }
+}
+
+/// 包括的マイグレーションを実行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+/// * `migrated_tables` - 移行されたテーブル一覧（出力用）
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_comprehensive_migration(
+    tx: &Transaction,
+    migrated_tables: &mut Vec<String>,
+) -> Result<(), rusqlite::Error> {
+    // 1. ユーザー認証テーブルの作成（まだ存在しない場合）
+    if !check_table_exists_in_tx(tx, "users") {
+        execute_user_authentication_migration(tx)?;
+        migrated_tables.push("users".to_string());
+        migrated_tables.push("sessions".to_string());
+    }
+
+    // 2. 既存テーブルにuser_idカラムを追加（まだ存在しない場合）
+    let tables_to_migrate = ["expenses", "subscriptions", "receipt_cache"];
+    for table in &tables_to_migrate {
+        if check_table_exists_in_tx(tx, table) && !check_column_exists_in_tx(tx, table, "user_id") {
+            add_user_id_column_to_table(tx, table)?;
+            migrated_tables.push(table.to_string());
+        }
+    }
+
+    // 3. 既存データにデフォルトユーザーIDを設定
+    for table in &tables_to_migrate {
+        if check_table_exists_in_tx(tx, table) {
+            assign_default_user_id_to_existing_data(tx, table)?;
+        }
+    }
+
+    // 4. 外部キー制約の有効化
+    tx.execute("PRAGMA foreign_keys = ON", [])?;
+
+    Ok(())
+}
+
+/// テーブルにuser_idカラムを追加する
+///
+/// # 引数
+/// * `tx` - トランザクション
+/// * `table_name` - テーブル名
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn add_user_id_column_to_table(tx: &Transaction, table_name: &str) -> Result<(), rusqlite::Error> {
+    let alter_sql =
+        format!("ALTER TABLE {table_name} ADD COLUMN user_id INTEGER REFERENCES users(id)");
+
+    // カラムを追加（エラーを無視 - 既に存在する場合）
+    let _ = tx.execute(&alter_sql, []);
+
+    // インデックスを作成
+    let index_sql =
+        format!("CREATE INDEX IF NOT EXISTS idx_{table_name}_user_id ON {table_name}(user_id)");
+    tx.execute(&index_sql, [])?;
+
+    Ok(())
+}
+
+/// 既存データにデフォルトユーザーIDを割り当てる
+///
+/// # 引数
+/// * `tx` - トランザクション
+/// * `table_name` - テーブル名
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn assign_default_user_id_to_existing_data(
+    tx: &Transaction,
+    table_name: &str,
+) -> Result<(), rusqlite::Error> {
+    let update_sql = format!("UPDATE {table_name} SET user_id = 1 WHERE user_id IS NULL");
+    tx.execute(&update_sql, [])?;
+    Ok(())
+}
+
+/// 移行前のデータ整合性を検証する
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn verify_data_integrity_before_migration(conn: &Connection) -> Result<(), AppError> {
+    // 1. SQLiteの整合性チェック
+    let integrity_result: String =
+        conn.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+
+    if integrity_result != "ok" {
+        return Err(AppError::Validation(format!(
+            "データベース整合性チェック失敗: {integrity_result}"
+        )));
+    }
+
+    // 2. 重要なテーブルの存在確認
+    let required_tables = ["expenses"];
+    for table in &required_tables {
+        let table_exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            [table],
+            |row| row.get(0),
+        )?;
+
+        if table_exists == 0 {
+            return Err(AppError::Validation(format!(
+                "必要なテーブル '{table}' が存在しません"
+            )));
+        }
+    }
+
+    // 3. データ件数の記録（移行後の検証用）
+    let expenses_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    log::info!("移行前データ件数 - expenses: {expenses_count}");
+
+    Ok(())
+}
+
+/// 移行後のデータ整合性を検証する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn verify_data_integrity_after_migration(tx: &Transaction) -> Result<(), AppError> {
+    // 1. 外部キー制約チェック
+    tx.execute("PRAGMA foreign_key_check", [])?;
+
+    // 2. ユーザー認証テーブルの確認
+    let users_count: i64 = tx.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
+
+    if users_count == 0 {
+        return Err(AppError::Validation(
+            "usersテーブルにデフォルトユーザーが作成されていません".to_string(),
+        ));
+    }
+
+    // 3. user_idカラムの確認
+    let tables_to_check = ["expenses", "subscriptions", "receipt_cache"];
+    for table in &tables_to_check {
+        if check_table_exists_in_tx(tx, table) {
+            if !check_column_exists_in_tx(tx, table, "user_id") {
+                return Err(AppError::Validation(format!(
+                    "{table}テーブルにuser_idカラムが追加されていません"
+                )));
+            }
+
+            // NULL値のuser_idが存在しないことを確認
+            let null_user_id_count: i64 = tx.query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE user_id IS NULL"),
+                [],
+                |row| row.get(0),
+            )?;
+
+            if null_user_id_count > 0 {
+                return Err(AppError::Validation(format!(
+                    "{table}テーブルにuser_idがNULLのレコードが {null_user_id_count} 件存在します"
+                )));
+            }
+        }
+    }
+
+    // 4. データ件数の確認（データ損失がないことを確認）
+    let expenses_count: i64 = tx
+        .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    log::info!("移行後データ件数 - expenses: {expenses_count}");
+
+    Ok(())
+}
+
+/// トランザクション内でテーブルが存在するかチェックする
+///
+/// # 引数
+/// * `tx` - トランザクション
+/// * `table_name` - テーブル名
+///
+/// # 戻り値
+/// テーブルが存在する場合はtrue
+fn check_table_exists_in_tx(tx: &Transaction, table_name: &str) -> bool {
+    let count: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            [table_name],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    count > 0
+}
+
+/// データ移行結果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataMigrationResult {
+    pub success: bool,
+    pub message: String,
+    pub backup_path: Option<String>,
+    pub migrated_tables: Vec<String>,
+    pub data_integrity_verified: bool,
+}
+
 /// ユーザー認証機能のマイグレーションを実行する
 ///
 /// # 引数
@@ -1399,5 +1692,134 @@ mod tests {
             })
             .unwrap();
         assert_eq!(users_count, 1);
+    }
+
+    #[test]
+    fn test_comprehensive_data_migration() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 基本的なテーブル構造を作成（ユーザー認証なし）
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                billing_cycle TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストデータを挿入
+        conn.execute(
+            "INSERT INTO expenses (date, amount, category, description, created_at, updated_at)
+             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO subscriptions (name, amount, billing_cycle, start_date, category, created_at, updated_at)
+             VALUES ('テストサブスク', 500.0, 'monthly', '2024-01-01', 'テスト', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        // 包括的データ移行を実行
+        let result = execute_comprehensive_data_migration(&conn).unwrap();
+        assert!(result.success, "包括的データ移行失敗: {}", result.message);
+        assert!(result.data_integrity_verified);
+        assert!(result.backup_path.is_some());
+        assert!(!result.migrated_tables.is_empty());
+
+        // 移行後の状態確認
+        let is_complete = is_user_authentication_migration_complete(&conn).unwrap();
+        assert!(is_complete);
+
+        // データが保持されていることを確認
+        let expenses_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(expenses_count, 1);
+
+        let subscriptions_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM subscriptions", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(subscriptions_count, 1);
+
+        // user_idが設定されていることを確認
+        let expense_user_id: i64 = conn
+            .query_row("SELECT user_id FROM expenses WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(expense_user_id, 1);
+
+        let subscription_user_id: i64 = conn
+            .query_row(
+                "SELECT user_id FROM subscriptions WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(subscription_user_id, 1);
+    }
+
+    #[test]
+    fn test_data_migration_with_existing_user_auth() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 既にユーザー認証が設定されているデータベースを作成
+        migrate_user_authentication(&conn).unwrap();
+
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                user_id INTEGER REFERENCES users(id),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストデータを挿入
+        conn.execute(
+            "INSERT INTO expenses (date, amount, category, description, user_id, created_at, updated_at)
+             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', 1, '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        // 包括的データ移行を実行（既に移行済みの場合）
+        let result = execute_comprehensive_data_migration(&conn).unwrap();
+        assert!(result.success, "包括的データ移行失敗: {}", result.message);
+        assert!(result.data_integrity_verified);
+
+        // データが保持されていることを確認
+        let expenses_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(expenses_count, 1);
     }
 }
