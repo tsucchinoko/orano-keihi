@@ -1,375 +1,358 @@
-// セキュリティ機能のTauriコマンド
-
-use super::models::*;
-use super::service::SecurityManager;
-use log::{debug, info, warn};
+use crate::features::security::service::SecurityService;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Instant;
+use tauri::State;
 
-/// システム診断情報を取得
-#[tauri::command]
-pub async fn get_system_diagnostic_info() -> Result<DiagnosticInfo, String> {
-    info!("システム診断情報の取得要求を受信しました");
-
-    let security_manager = SecurityManager::new();
-    let diagnostic_info = security_manager.get_diagnostic_info();
-
-    debug!("診断情報を返却します: {diagnostic_info:?}");
-    Ok(diagnostic_info)
+/// トークン暗号化リクエスト
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EncryptTokenRequest {
+    /// トークンID
+    pub token_id: String,
+    /// 暗号化するトークン
+    pub token: String,
 }
 
-/// セキュリティ設定の検証
-#[tauri::command]
-pub async fn validate_security_configuration() -> Result<ValidationResult, String> {
-    info!("セキュリティ設定の検証要求を受信しました");
-
-    let security_manager = SecurityManager::new();
-
-    match security_manager.validate_configuration() {
-        Ok(validation_result) => {
-            if validation_result.is_valid {
-                info!("セキュリティ設定の検証が成功しました");
-            } else {
-                warn!(
-                    "セキュリティ設定の検証で問題が見つかりました: {}",
-                    validation_result.message
-                );
-            }
-            Ok(validation_result)
-        }
-        Err(e) => {
-            let error_msg = format!("セキュリティ設定の検証でエラーが発生しました: {e}");
-            warn!("{error_msg}");
-            Err(error_msg)
-        }
-    }
+/// トークン暗号化レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EncryptTokenResponse {
+    /// 暗号化されたトークン
+    pub encrypted_token: String,
 }
 
-/// R2接続テスト（セキュリティログ付き）
-#[tauri::command]
-pub async fn test_r2_connection_secure() -> Result<ConnectionTestResult, String> {
-    info!("セキュアなR2接続テストを開始します");
+/// トークン復号化リクエスト
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DecryptTokenRequest {
+    /// トークンID
+    pub token_id: String,
+    /// 暗号化されたトークン
+    pub encrypted_token: String,
+}
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "r2_connection_test_requested",
-        "フロントエンドからの接続テスト要求",
+/// トークン復号化レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DecryptTokenResponse {
+    /// 復号化されたトークン
+    pub decrypted_token: String,
+}
+
+/// 複数トークン暗号化リクエスト
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EncryptMultipleTokensRequest {
+    /// 暗号化するトークンのマップ
+    pub tokens: HashMap<String, String>,
+}
+
+/// 複数トークン暗号化レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EncryptMultipleTokensResponse {
+    /// 暗号化されたトークンのマップ
+    pub encrypted_tokens: HashMap<String, String>,
+}
+
+/// API認証検証リクエスト
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerifyApiRequestRequest {
+    /// 認証トークン
+    pub token: String,
+}
+
+/// API認証検証レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerifyApiRequestResponse {
+    /// 認証が有効かどうか
+    pub is_valid: bool,
+}
+
+/// セキュリティ統計レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SecurityStatsResponse {
+    /// 統計情報
+    pub stats: HashMap<String, serde_json::Value>,
+}
+
+/// 認証トークンを暗号化して保存する
+///
+/// # 引数
+/// * `request` - 暗号化リクエスト
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 暗号化されたトークン
+#[tauri::command]
+pub async fn encrypt_and_store_token(
+    request: EncryptTokenRequest,
+    security_service: State<'_, SecurityService>,
+) -> Result<EncryptTokenResponse, String> {
+    log::debug!(
+        "トークン暗号化コマンドを実行: token_id={}",
+        request.token_id
     );
 
-    let start_time = Instant::now();
+    let encrypted_token = security_service
+        .encrypt_and_store_token(&request.token_id, &request.token)
+        .map_err(|e| {
+            log::error!("トークン暗号化エラー: {e}");
+            format!("トークンの暗号化に失敗しました: {e}")
+        })?;
 
-    // R2設定を取得
-    let config = match crate::shared::config::environment::R2Config::from_env() {
-        Some(config) => config,
-        None => {
-            let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
-            security_manager.log_security_event_with_severity(
-                "r2_config_load_failed",
-                error_msg,
-                EventSeverity::Error,
-            );
-
-            let connection_details = ConnectionDetails {
-                endpoint: "設定読み込み失敗".to_string(),
-                bucket_name: "****".to_string(),
-                account_id: "****".to_string(),
-                access_key: "****".to_string(),
-            };
-
-            return Ok(ConnectionTestResult::failure(
-                error_msg.to_string(),
-                connection_details,
-            ));
-        }
-    };
-
-    // 接続詳細情報を作成（マスク済み）
-    let credentials = security_manager.get_credentials();
-    let connection_details = ConnectionDetails {
-        endpoint: format!(
-            "https://{}.r2.cloudflarestorage.com",
-            credentials
-                .get_masked_credential("R2_ACCOUNT_ID")
-                .unwrap_or(&"****".to_string())
-        ),
-        bucket_name: credentials
-            .get_masked_credential("R2_BUCKET_NAME")
-            .unwrap_or(&"****".to_string())
-            .clone(),
-        account_id: credentials
-            .get_masked_credential("R2_ACCOUNT_ID")
-            .unwrap_or(&"****".to_string())
-            .clone(),
-        access_key: credentials
-            .get_masked_credential("R2_ACCESS_KEY_ID")
-            .unwrap_or(&"****".to_string())
-            .clone(),
-    };
-
-    // R2クライアントを作成
-    let client = match crate::features::receipts::service::R2Client::new(config).await {
-        Ok(client) => client,
-        Err(e) => {
-            let error_msg = format!("R2クライアントの作成に失敗しました: {e}");
-            security_manager.log_security_event_with_severity(
-                "r2_client_creation_failed",
-                &error_msg,
-                EventSeverity::Error,
-            );
-            return Ok(ConnectionTestResult::failure(error_msg, connection_details));
-        }
-    };
-
-    // 接続テストを実行
-    match client.test_connection().await {
-        Ok(()) => {
-            let response_time = start_time.elapsed().as_millis() as u64;
-            info!("R2接続テストが成功しました（応答時間: {response_time}ms）");
-            security_manager.log_security_event("r2_connection_test_success", "接続テスト成功");
-            Ok(ConnectionTestResult::success(
-                response_time,
-                connection_details,
-            ))
-        }
-        Err(e) => {
-            let error_msg = format!("R2接続テストに失敗しました: {e}");
-            warn!("{error_msg}");
-            security_manager.log_security_event_with_severity(
-                "r2_connection_test_failed",
-                &error_msg,
-                EventSeverity::Warning,
-            );
-            Ok(ConnectionTestResult::failure(error_msg, connection_details))
-        }
-    }
+    log::info!(
+        "トークン暗号化コマンドが完了しました: token_id={}",
+        request.token_id
+    );
+    Ok(EncryptTokenResponse { encrypted_token })
 }
 
-/// 環境情報を取得
+/// 暗号化されたトークンを復号化する
+///
+/// # 引数
+/// * `request` - 復号化リクエスト
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 復号化されたトークン
 #[tauri::command]
-pub async fn get_environment_info() -> Result<EnvironmentInfo, String> {
-    info!("環境情報の取得要求を受信しました");
+pub async fn decrypt_token(
+    request: DecryptTokenRequest,
+    security_service: State<'_, SecurityService>,
+) -> Result<DecryptTokenResponse, String> {
+    log::debug!(
+        "トークン復号化コマンドを実行: token_id={}",
+        request.token_id
+    );
 
-    let security_manager = SecurityManager::new();
-    let env_info = security_manager.get_environment_info();
+    let decrypted_token = security_service
+        .decrypt_token(&request.token_id, &request.encrypted_token)
+        .map_err(|e| {
+            log::error!("トークン復号化エラー: {e}");
+            format!("トークンの復号化に失敗しました: {e}")
+        })?;
 
-    debug!("環境情報を返却します: {env_info:?}");
-    Ok(env_info)
+    log::debug!(
+        "トークン復号化コマンドが完了しました: token_id={}",
+        request.token_id
+    );
+    Ok(DecryptTokenResponse { decrypted_token })
 }
 
-/// セキュリティイベントをログに記録
+/// 複数のトークンを一括暗号化する
+///
+/// # 引数
+/// * `request` - 複数トークン暗号化リクエスト
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 暗号化されたトークンのマップ
 #[tauri::command]
-pub async fn log_security_event(event_type: String, details: String) -> Result<(), String> {
-    info!("セキュリティイベントのログ記録要求: type={event_type}, details={details}");
+pub async fn encrypt_multiple_tokens(
+    request: EncryptMultipleTokensRequest,
+    security_service: State<'_, SecurityService>,
+) -> Result<EncryptMultipleTokensResponse, String> {
+    log::debug!(
+        "複数トークン暗号化コマンドを実行: count={}",
+        request.tokens.len()
+    );
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(&event_type, &details);
+    let encrypted_tokens = security_service
+        .encrypt_multiple_tokens(&request.tokens)
+        .map_err(|e| {
+            log::error!("複数トークン暗号化エラー: {e}");
+            format!("複数トークンの暗号化に失敗しました: {e}")
+        })?;
 
-    Ok(())
+    log::info!(
+        "複数トークン暗号化コマンドが完了しました: count={}",
+        encrypted_tokens.len()
+    );
+    Ok(EncryptMultipleTokensResponse { encrypted_tokens })
 }
 
-/// セキュリティイベントをログに記録（重要度指定）
+/// APIリクエストの認証を検証する
+///
+/// # 引数
+/// * `request` - API認証検証リクエスト
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 認証検証結果
 #[tauri::command]
-pub async fn log_security_event_with_severity(
-    event_type: String,
-    details: String,
-    severity: EventSeverity,
+pub async fn verify_api_request(
+    request: VerifyApiRequestRequest,
+    security_service: State<'_, SecurityService>,
+) -> Result<VerifyApiRequestResponse, String> {
+    log::debug!("API認証検証コマンドを実行");
+
+    let is_valid = security_service
+        .verify_api_request(&request.token)
+        .map_err(|e| {
+            log::error!("API認証検証エラー: {e}");
+            format!("API認証の検証に失敗しました: {e}")
+        })?;
+
+    log::debug!("API認証検証コマンドが完了しました: is_valid={is_valid}");
+    Ok(VerifyApiRequestResponse { is_valid })
+}
+
+/// トークンを無効化する
+///
+/// # 引数
+/// * `token_id` - 無効化するトークンID
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 処理結果
+#[tauri::command]
+pub async fn invalidate_token(
+    token_id: String,
+    security_service: State<'_, SecurityService>,
 ) -> Result<(), String> {
-    info!("セキュリティイベントのログ記録要求（重要度指定）: type={event_type}, details={details}, severity={severity:?}");
+    log::debug!("トークン無効化コマンドを実行: token_id={token_id}");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event_with_severity(&event_type, &details, severity);
+    security_service.invalidate_token(&token_id).map_err(|e| {
+        log::error!("トークン無効化エラー: {e}");
+        format!("トークンの無効化に失敗しました: {e}")
+    })?;
 
+    log::info!("トークン無効化コマンドが完了しました: token_id={token_id}");
     Ok(())
 }
 
-/// 最近のセキュリティイベントを取得
+/// すべてのトークンを無効化する
+///
+/// # 引数
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 無効化されたトークン数
 #[tauri::command]
-pub async fn get_recent_security_events(
-    limit: Option<usize>,
-) -> Result<Vec<SecurityEvent>, String> {
-    info!("最近のセキュリティイベント取得要求: limit={limit:?}");
+pub async fn invalidate_all_tokens(
+    security_service: State<'_, SecurityService>,
+) -> Result<usize, String> {
+    log::debug!("全トークン無効化コマンドを実行");
 
-    let security_manager = SecurityManager::new();
-    let events = security_manager.get_recent_security_events(limit.unwrap_or(50));
+    let count = security_service.invalidate_all_tokens().map_err(|e| {
+        log::error!("全トークン無効化エラー: {e}");
+        format!("全トークンの無効化に失敗しました: {e}")
+    })?;
 
-    debug!("セキュリティイベントを返却します: {} 件", events.len());
-    Ok(events)
+    log::info!("全トークン無効化コマンドが完了しました: count={count}");
+    Ok(count)
 }
 
-/// セキュリティ監査ログを生成
+/// セキュリティ統計情報を取得する
+///
+/// # 引数
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// セキュリティ統計情報
 #[tauri::command]
-pub async fn generate_security_audit_log(
-    period_start: String,
-    period_end: String,
-) -> Result<SecurityAuditLog, String> {
-    info!("セキュリティ監査ログ生成要求: period_start={period_start}, period_end={period_end}");
+pub async fn get_security_stats(
+    security_service: State<'_, SecurityService>,
+) -> Result<SecurityStatsResponse, String> {
+    log::debug!("セキュリティ統計取得コマンドを実行");
 
-    let security_manager = SecurityManager::new();
-    let audit_log = security_manager.generate_audit_log(period_start, period_end);
+    let stats = security_service.get_security_stats().map_err(|e| {
+        log::error!("セキュリティ統計取得エラー: {e}");
+        format!("セキュリティ統計の取得に失敗しました: {e}")
+    })?;
 
-    debug!(
-        "監査ログを生成しました: {} 件のイベント",
-        audit_log.total_events
+    log::debug!("セキュリティ統計取得コマンドが完了しました");
+    Ok(SecurityStatsResponse { stats })
+}
+
+/// 期限切れトークンをクリーンアップする
+///
+/// # 引数
+/// * `max_age_hours` - 最大保持時間（時間）
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 削除されたトークン数
+#[tauri::command]
+pub async fn cleanup_expired_tokens(
+    max_age_hours: i64,
+    security_service: State<'_, SecurityService>,
+) -> Result<usize, String> {
+    log::debug!("期限切れトークンクリーンアップコマンドを実行: max_age_hours={max_age_hours}");
+
+    let removed_count = security_service
+        .cleanup_expired_tokens(max_age_hours)
+        .map_err(|e| {
+            log::error!("期限切れトークンクリーンアップエラー: {e}");
+            format!("期限切れトークンのクリーンアップに失敗しました: {e}")
+        })?;
+
+    log::info!(
+        "期限切れトークンクリーンアップコマンドが完了しました: removed_count={removed_count}"
     );
-    Ok(audit_log)
+    Ok(removed_count)
 }
 
-/// R2クライアントの診断情報を取得
+/// 不正アクセスを検出して処理する
+///
+/// # 引数
+/// * `request_info` - リクエスト情報
+/// * `token` - 認証トークン（オプション）
+/// * `security_service` - セキュリティサービス
+///
+/// # 戻り値
+/// 処理結果
 #[tauri::command]
-pub async fn get_r2_diagnostic_info() -> Result<HashMap<String, String>, String> {
-    info!("R2診断情報の取得要求を受信しました");
+pub async fn detect_unauthorized_access(
+    request_info: String,
+    token: Option<String>,
+    security_service: State<'_, SecurityService>,
+) -> Result<(), String> {
+    log::debug!("不正アクセス検出コマンドを実行: request_info={request_info}");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event("r2_diagnostic_requested", "R2診断情報の取得要求");
+    security_service
+        .detect_unauthorized_access(&request_info, token.as_deref())
+        .map_err(|e| {
+            log::error!("不正アクセス検出エラー: {e}");
+            format!("不正アクセスの検出処理に失敗しました: {e}")
+        })?;
 
-    // R2設定を取得
-    let config = match crate::shared::config::environment::R2Config::from_env() {
-        Some(config) => config,
-        None => {
-            let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
-            security_manager.log_security_event_with_severity(
-                "r2_config_load_failed",
-                error_msg,
-                EventSeverity::Error,
-            );
-            return Err(error_msg.to_string());
-        }
-    };
-
-    // R2クライアントを作成
-    let client = match crate::features::receipts::service::R2Client::new(config).await {
-        Ok(client) => client,
-        Err(e) => {
-            let error_msg = format!("R2クライアントの作成に失敗しました: {e}");
-            security_manager.log_security_event_with_severity(
-                "r2_client_creation_failed",
-                &error_msg,
-                EventSeverity::Error,
-            );
-            return Err(error_msg);
-        }
-    };
-
-    let diagnostic_info = client.get_diagnostic_info();
-
-    debug!("R2診断情報を返却します: {diagnostic_info:?}");
-    Ok(diagnostic_info)
-}
-
-/// アプリケーション初期化時のセキュリティチェック
-#[tauri::command]
-pub async fn perform_security_initialization_check() -> Result<ValidationResult, String> {
-    info!("アプリケーション初期化時のセキュリティチェックを開始します");
-
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "security_initialization_check_started",
-        "アプリケーション初期化時のセキュリティチェック開始",
-    );
-
-    match security_manager.validate_configuration() {
-        Ok(validation_result) => {
-            if validation_result.is_valid {
-                security_manager.log_security_event(
-                    "security_initialization_check_success",
-                    "セキュリティ初期化チェック成功",
-                );
-                info!("セキュリティ初期化チェックが成功しました");
-            } else {
-                security_manager.log_security_event_with_severity(
-                    "security_initialization_check_warning",
-                    &format!(
-                        "セキュリティ初期化チェックで警告: {}",
-                        validation_result.message
-                    ),
-                    EventSeverity::Warning,
-                );
-                warn!(
-                    "セキュリティ初期化チェックで警告が発生しました: {}",
-                    validation_result.message
-                );
-            }
-            Ok(validation_result)
-        }
-        Err(e) => {
-            let error_msg = format!("セキュリティ初期化チェックでエラーが発生しました: {e}");
-            security_manager.log_security_event_with_severity(
-                "security_initialization_check_failed",
-                &error_msg,
-                EventSeverity::Error,
-            );
-            warn!("{error_msg}");
-            Err(error_msg)
-        }
-    }
+    log::info!("不正アクセス検出コマンドが完了しました");
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::security::models::SecurityConfig;
 
-    #[tokio::test]
-    async fn test_get_environment_info() {
-        let result = get_environment_info().await;
-        assert!(result.is_ok());
+    fn setup_test_security_service() -> SecurityService {
+        let config = SecurityConfig {
+            encryption_key: "test_encryption_key_32_bytes_long".to_string(),
+            max_token_age_hours: 24,
+            enable_audit_logging: true,
+        };
 
-        let info = result.unwrap();
-        assert!(!info.environment.is_empty());
+        SecurityService::new(config).unwrap()
     }
 
     #[tokio::test]
-    async fn test_log_security_event() {
-        let result =
-            log_security_event("test_event".to_string(), "テストイベントの詳細".to_string()).await;
-        assert!(result.is_ok());
-    }
+    async fn test_encrypt_and_store_token_command() {
+        let service = setup_test_security_service();
+        let request = EncryptTokenRequest {
+            token_id: "test_token".to_string(),
+            token: "test_value".to_string(),
+        };
 
-    #[tokio::test]
-    async fn test_get_system_diagnostic_info() {
-        let result = get_system_diagnostic_info().await;
-        assert!(result.is_ok());
-
-        let info = result.unwrap();
-        assert!(!info.environment.is_empty());
-        assert!(!info.system_info.app_version.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_validate_security_configuration() {
-        let result = validate_security_configuration().await;
-        assert!(result.is_ok());
-
-        let validation_result = result.unwrap();
-        assert!(!validation_result.details.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_log_security_event_with_severity() {
-        let result = log_security_event_with_severity(
-            "test_event".to_string(),
-            "テストイベント".to_string(),
-            EventSeverity::Warning,
-        )
-        .await;
+        // Stateをモックするのは複雑なので、直接サービスメソッドをテスト
+        let result = service.encrypt_and_store_token(&request.token_id, &request.token);
         assert!(result.is_ok());
     }
 
     #[tokio::test]
-    async fn test_get_recent_security_events() {
-        let result = get_recent_security_events(Some(10)).await;
+    async fn test_verify_api_request_command() {
+        let service = setup_test_security_service();
+        let token = "test_token";
+
+        let encrypted_token = service.token_encryption.encrypt_token(token).unwrap();
+        let result = service.verify_api_request(&encrypted_token);
+
         assert!(result.is_ok());
-
-        let events = result.unwrap();
-        // 新しいSecurityManagerなので、イベントは空のはず
-        assert!(events.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_perform_security_initialization_check() {
-        let result = perform_security_initialization_check().await;
-        assert!(result.is_ok());
-
-        let validation_result = result.unwrap();
-        assert!(!validation_result.details.is_empty());
+        assert!(result.unwrap());
     }
 }

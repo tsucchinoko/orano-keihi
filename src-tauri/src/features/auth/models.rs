@@ -107,6 +107,18 @@ pub enum AuthError {
     /// 認証が必要エラー
     #[error("認証が必要です")]
     AuthenticationRequired,
+
+    /// セキュリティエラー
+    #[error("セキュリティエラー: {0}")]
+    SecurityError(String),
+
+    /// 権限が不足しています
+    #[error("権限が不足しています")]
+    InsufficientPermissions,
+
+    /// 機能が実装されていません
+    #[error("機能が実装されていません: {0}")]
+    NotImplemented(String),
 }
 
 impl From<rusqlite::Error> for AuthError {

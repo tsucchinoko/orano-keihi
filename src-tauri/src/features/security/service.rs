@@ -1,465 +1,388 @@
-// セキュリティサービス
-
-use super::models::*;
-use crate::shared::errors::AppError;
-use log::{debug, error, info, warn};
+use crate::features::security::encryption::{EncryptionError, TokenEncryption};
+use crate::features::security::models::{SecurityConfig, SecurityError, TokenInfo};
 use std::collections::HashMap;
-use std::env;
+use std::sync::{Arc, Mutex};
 
-/// 認証情報を安全に管理するための構造体
-#[derive(Debug, Clone)]
-pub struct SecureCredentials {
-    /// マスクされた認証情報（ログ出力用）
-    masked_credentials: HashMap<String, String>,
-    /// 実際の認証情報（内部使用のみ）
-    actual_credentials: HashMap<String, String>,
-}
-
-impl Default for SecureCredentials {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SecureCredentials {
-    /// 新しいSecureCredentialsインスタンスを作成
-    pub fn new() -> Self {
-        Self {
-            masked_credentials: HashMap::new(),
-            actual_credentials: HashMap::new(),
-        }
-    }
-
-    /// 認証情報を追加（自動的にマスク処理）
-    pub fn add_credential(&mut self, key: &str, value: &str) {
-        // 実際の値を保存
-        self.actual_credentials
-            .insert(key.to_string(), value.to_string());
-
-        // マスクされた値を保存（最初の4文字と最後の4文字のみ表示）
-        let masked_value = if value.len() > 8 {
-            format!("{}****{}", &value[..4], &value[value.len() - 4..])
-        } else if value.len() > 4 {
-            format!("{}****", &value[..2])
-        } else {
-            "****".to_string()
-        };
-
-        self.masked_credentials
-            .insert(key.to_string(), masked_value);
-
-        info!(
-            "認証情報を追加しました: {} = {}",
-            key,
-            self.masked_credentials.get(key).unwrap()
-        );
-    }
-
-    /// 実際の認証情報を取得
-    pub fn get_credential(&self, key: &str) -> Option<&String> {
-        self.actual_credentials.get(key)
-    }
-
-    /// マスクされた認証情報を取得（ログ出力用）
-    pub fn get_masked_credential(&self, key: &str) -> Option<&String> {
-        self.masked_credentials.get(key)
-    }
-
-    /// すべてのマスクされた認証情報を取得
-    pub fn get_all_masked(&self) -> &HashMap<String, String> {
-        &self.masked_credentials
-    }
-
-    /// 認証情報の検証
-    pub fn validate_all(&self) -> Result<ValidationResult, AppError> {
-        let required_keys = [
-            "R2_ACCOUNT_ID",
-            "R2_ACCESS_KEY_ID",
-            "R2_SECRET_ACCESS_KEY",
-            "R2_BUCKET_NAME",
-        ];
-
-        let mut details = Vec::new();
-        let mut has_errors = false;
-
-        for key in &required_keys {
-            if let Some(value) = self.actual_credentials.get(*key) {
-                if value.is_empty() {
-                    let message = format!("必須の認証情報が空です: {key}");
-                    error!("{message}");
-                    details.push(ValidationDetail::new(
-                        key.to_string(),
-                        ValidationStatus::Error,
-                        message,
-                    ));
-                    has_errors = true;
-                } else {
-                    details.push(ValidationDetail::new(
-                        key.to_string(),
-                        ValidationStatus::Success,
-                        "認証情報が正常に設定されています".to_string(),
-                    ));
-                }
-            } else {
-                let message = format!("必須の認証情報が見つかりません: {key}");
-                error!("{message}");
-                details.push(ValidationDetail::new(
-                    key.to_string(),
-                    ValidationStatus::Error,
-                    message,
-                ));
-                has_errors = true;
-            }
-        }
-
-        if has_errors {
-            Ok(ValidationResult::failure(
-                "認証情報の検証に失敗しました".to_string(),
-                details,
-            ))
-        } else {
-            info!("すべての認証情報の検証が完了しました");
-            Ok(ValidationResult::success(
-                "すべての認証情報が正常に設定されています".to_string(),
-                details,
-            ))
-        }
-    }
-}
-
-/// 環境別設定管理
-#[derive(Debug, Clone)]
-pub struct EnvironmentConfig {
-    pub environment: String,
-    pub debug_mode: bool,
-    pub log_level: String,
-    pub config_source: ConfigSource,
-}
-
-impl EnvironmentConfig {
-    /// 環境変数から設定を読み込み
-    pub fn from_env() -> Self {
-        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
-        let (environment, env_source) = option_env!("EMBEDDED_ENVIRONMENT")
-            .map(|s| {
-                info!("コンパイル時埋め込み環境設定を使用: {s}");
-                (s.to_string(), ConfigSource::Embedded)
-            })
-            .or_else(|| {
-                env::var("ENVIRONMENT").ok().map(|s| {
-                    info!("実行時環境変数を使用: ENVIRONMENT={s}");
-                    (s, ConfigSource::Environment)
-                })
-            })
-            .unwrap_or_else(|| {
-                info!("デフォルト環境設定を使用: development");
-                ("development".to_string(), ConfigSource::Default)
-            });
-
-        let debug_mode = if environment == "production" {
-            // 本番環境では強制的にデバッグモードを無効化
-            false
-        } else {
-            env::var("DEBUG")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse()
-                .unwrap_or(false)
-        };
-
-        let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| {
-            if environment == "production" {
-                "info".to_string()
-            } else {
-                "debug".to_string()
-            }
-        });
-
-        info!(
-            "環境設定を読み込みました: environment={environment}, debug_mode={debug_mode}, log_level={log_level}"
-        );
-
-        Self {
-            environment,
-            debug_mode,
-            log_level,
-            config_source: env_source,
-        }
-    }
-
-    /// 本番環境かどうかを判定
-    pub fn is_production(&self) -> bool {
-        self.environment == "production"
-    }
-
-    /// 開発環境かどうかを判定
-    pub fn is_development(&self) -> bool {
-        self.environment == "development"
-    }
-
-    /// デバッグモードが有効かどうかを判定
-    pub fn is_debug_enabled(&self) -> bool {
-        self.debug_mode
-    }
-
-    /// 環境情報を取得
-    pub fn to_environment_info(&self) -> EnvironmentInfo {
-        EnvironmentInfo {
-            environment: self.environment.clone(),
-            debug_mode: self.debug_mode,
-            log_level: self.log_level.clone(),
-            is_production: self.is_production(),
-            is_development: self.is_development(),
-            config_source: self.config_source.clone(),
-        }
-    }
-}
-
-/// セキュリティマネージャー
+/// セキュリティサービス
+/// 認証トークンの暗号化、セキュアな保存、アクセス制御を管理する
 #[derive(Clone)]
-pub struct SecurityManager {
-    credentials: SecureCredentials,
-    env_config: EnvironmentConfig,
-    security_events: Vec<SecurityEvent>,
+pub struct SecurityService {
+    /// トークン暗号化サービス
+    token_encryption: TokenEncryption,
+    /// セキュリティ設定
+    config: SecurityConfig,
+    /// アクティブなトークンのキャッシュ
+    token_cache: Arc<Mutex<HashMap<String, TokenInfo>>>,
 }
 
-impl Default for SecurityManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+impl SecurityService {
+    /// 新しいSecurityServiceを作成する
+    ///
+    /// # 引数
+    /// * `config` - セキュリティ設定
+    ///
+    /// # 戻り値
+    /// SecurityServiceインスタンス
+    pub fn new(config: SecurityConfig) -> Result<Self, SecurityError> {
+        let token_encryption = TokenEncryption::new(config.encryption_key.clone())
+            .map_err(|e| SecurityError::EncryptionError(e.to_string()))?;
 
-impl SecurityManager {
-    /// 新しいSecurityManagerインスタンスを作成
-    pub fn new() -> Self {
-        info!("セキュリティマネージャーを初期化しています...");
-
-        let mut credentials = SecureCredentials::new();
-        let env_config = EnvironmentConfig::from_env();
-
-        // 環境変数から認証情報を読み込み
-        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
-
-        // R2_ACCOUNT_ID
-        let account_id = option_env!("EMBEDDED_R2_ACCOUNT_ID")
-            .map(|s| s.to_string())
-            .or_else(|| env::var("R2_ACCOUNT_ID").ok())
-            .unwrap_or_default();
-        if !account_id.is_empty() {
-            credentials.add_credential("R2_ACCOUNT_ID", &account_id);
-        }
-
-        // R2_ACCESS_KEY_ID
-        let access_key = option_env!("EMBEDDED_R2_ACCESS_KEY_ID")
-            .map(|s| s.to_string())
-            .or_else(|| env::var("R2_ACCESS_KEY_ID").ok())
-            .unwrap_or_default();
-        if !access_key.is_empty() {
-            credentials.add_credential("R2_ACCESS_KEY_ID", &access_key);
-        }
-
-        // R2_SECRET_ACCESS_KEY
-        let secret_key = option_env!("EMBEDDED_R2_SECRET_ACCESS_KEY")
-            .map(|s| s.to_string())
-            .or_else(|| env::var("R2_SECRET_ACCESS_KEY").ok())
-            .unwrap_or_default();
-        if !secret_key.is_empty() {
-            credentials.add_credential("R2_SECRET_ACCESS_KEY", &secret_key);
-        }
-
-        // R2_BUCKET_NAME
-        let bucket_name = option_env!("EMBEDDED_R2_BUCKET_NAME")
-            .map(|s| s.to_string())
-            .or_else(|| env::var("R2_BUCKET_NAME").ok())
-            .unwrap_or_default();
-        if !bucket_name.is_empty() {
-            credentials.add_credential("R2_BUCKET_NAME", &bucket_name);
-        }
-
-        info!("セキュリティマネージャーの初期化が完了しました");
-
-        Self {
-            credentials,
-            env_config,
-            security_events: Vec::new(),
-        }
+        Ok(Self {
+            token_encryption,
+            config,
+            token_cache: Arc::new(Mutex::new(HashMap::new())),
+        })
     }
 
-    /// 認証情報を取得
-    pub fn get_credentials(&self) -> &SecureCredentials {
-        &self.credentials
+    /// 認証トークンを暗号化して保存する
+    ///
+    /// # 引数
+    /// * `token_id` - トークンID
+    /// * `token` - 暗号化するトークン
+    ///
+    /// # 戻り値
+    /// 暗号化されたトークン
+    pub fn encrypt_and_store_token(
+        &self,
+        token_id: &str,
+        token: &str,
+    ) -> Result<String, SecurityError> {
+        log::debug!("トークンを暗号化して保存: token_id={token_id}");
+
+        // トークンを暗号化
+        let encrypted_token = self
+            .token_encryption
+            .encrypt_token(token)
+            .map_err(|e| SecurityError::EncryptionError(e.to_string()))?;
+
+        // トークン情報をキャッシュに保存
+        let token_info = TokenInfo {
+            token_id: token_id.to_string(),
+            encrypted_token: encrypted_token.clone(),
+            created_at: chrono::Utc::now(),
+            last_accessed: chrono::Utc::now(),
+            access_count: 0,
+        };
+
+        {
+            let mut cache = self.token_cache.lock().unwrap();
+            cache.insert(token_id.to_string(), token_info);
+        }
+
+        log::info!("トークンを暗号化して保存しました: token_id={token_id}");
+        Ok(encrypted_token)
     }
 
-    /// 環境設定を取得
-    pub fn get_env_config(&self) -> &EnvironmentConfig {
-        &self.env_config
+    /// 暗号化されたトークンを復号化する
+    ///
+    /// # 引数
+    /// * `token_id` - トークンID
+    /// * `encrypted_token` - 暗号化されたトークン
+    ///
+    /// # 戻り値
+    /// 復号化されたトークン
+    pub fn decrypt_token(
+        &self,
+        token_id: &str,
+        encrypted_token: &str,
+    ) -> Result<String, SecurityError> {
+        log::debug!("トークンを復号化: token_id={token_id}");
+
+        // トークンを復号化
+        let decrypted_token = self
+            .token_encryption
+            .decrypt_token(encrypted_token)
+            .map_err(|e| SecurityError::DecryptionError(e.to_string()))?;
+
+        // アクセス情報を更新
+        {
+            let mut cache = self.token_cache.lock().unwrap();
+            if let Some(token_info) = cache.get_mut(token_id) {
+                token_info.last_accessed = chrono::Utc::now();
+                token_info.access_count += 1;
+            }
+        }
+
+        log::debug!("トークンを復号化しました: token_id={token_id}");
+        Ok(decrypted_token)
     }
 
-    /// システム診断情報を取得
-    pub fn get_diagnostic_info(&self) -> DiagnosticInfo {
-        let system_info = SystemInfo::new(
-            env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string()),
-            env::consts::ARCH.to_string(),
-            env::consts::OS.to_string(),
-            env!("CARGO_PKG_VERSION").to_string(),
+    /// 複数のトークンを一括暗号化する
+    ///
+    /// # 引数
+    /// * `tokens` - 暗号化するトークンのマップ
+    ///
+    /// # 戻り値
+    /// 暗号化されたトークンのマップ
+    pub fn encrypt_multiple_tokens(
+        &self,
+        tokens: &HashMap<String, String>,
+    ) -> Result<HashMap<String, String>, SecurityError> {
+        log::debug!("複数のトークンを一括暗号化: count={}", tokens.len());
+
+        let encrypted_tokens = self
+            .token_encryption
+            .encrypt_tokens(tokens)
+            .map_err(|e| SecurityError::EncryptionError(e.to_string()))?;
+
+        // キャッシュに保存
+        {
+            let mut cache = self.token_cache.lock().unwrap();
+            for (token_id, encrypted_token) in &encrypted_tokens {
+                let token_info = TokenInfo {
+                    token_id: token_id.clone(),
+                    encrypted_token: encrypted_token.clone(),
+                    created_at: chrono::Utc::now(),
+                    last_accessed: chrono::Utc::now(),
+                    access_count: 0,
+                };
+                cache.insert(token_id.clone(), token_info);
+            }
+        }
+
+        log::info!(
+            "複数のトークンを一括暗号化しました: count={}",
+            encrypted_tokens.len()
+        );
+        Ok(encrypted_tokens)
+    }
+
+    /// 複数のトークンを一括復号化する
+    ///
+    /// # 引数
+    /// * `encrypted_tokens` - 暗号化されたトークンのマップ
+    ///
+    /// # 戻り値
+    /// 復号化されたトークンのマップ
+    pub fn decrypt_multiple_tokens(
+        &self,
+        encrypted_tokens: &HashMap<String, String>,
+    ) -> Result<HashMap<String, String>, SecurityError> {
+        log::debug!(
+            "複数のトークンを一括復号化: count={}",
+            encrypted_tokens.len()
         );
 
-        let mut diagnostic_info = DiagnosticInfo::new(
-            self.env_config.environment.clone(),
-            self.env_config.debug_mode,
-            self.env_config.log_level.clone(),
-            self.credentials.get_all_masked().clone(),
-            system_info,
-        );
+        let decrypted_tokens = self
+            .token_encryption
+            .decrypt_tokens(encrypted_tokens)
+            .map_err(|e| SecurityError::DecryptionError(e.to_string()))?;
 
-        // 設定検証を実行
-        match self.credentials.validate_all() {
-            Ok(validation_result) => {
-                if validation_result.is_valid {
-                    diagnostic_info.set_validation_status(ValidationStatus::Success);
-                } else {
-                    diagnostic_info.set_validation_status(ValidationStatus::Error);
+        // アクセス情報を更新
+        {
+            let mut cache = self.token_cache.lock().unwrap();
+            for token_id in encrypted_tokens.keys() {
+                if let Some(token_info) = cache.get_mut(token_id) {
+                    token_info.last_accessed = chrono::Utc::now();
+                    token_info.access_count += 1;
                 }
             }
-            Err(_) => {
-                diagnostic_info.set_validation_status(ValidationStatus::Error);
-            }
         }
 
-        debug!("診断情報を生成しました: {diagnostic_info:?}");
-        diagnostic_info
+        log::info!(
+            "複数のトークンを一括復号化しました: count={}",
+            decrypted_tokens.len()
+        );
+        Ok(decrypted_tokens)
     }
 
-    /// 設定の検証
-    pub fn validate_configuration(&self) -> Result<ValidationResult, AppError> {
-        info!("設定の検証を開始します...");
+    /// APIリクエストの認証を検証する
+    ///
+    /// # 引数
+    /// * `token` - 認証トークン
+    ///
+    /// # 戻り値
+    /// 検証結果
+    pub fn verify_api_request(&self, token: &str) -> Result<bool, SecurityError> {
+        log::debug!("APIリクエストの認証を検証");
 
-        // 認証情報の検証
-        let credential_result = self.credentials.validate_all()?;
+        if token.is_empty() {
+            log::warn!("空のトークンでAPIリクエスト認証を試行");
+            return Ok(false);
+        }
 
-        // 環境設定の検証
-        let mut env_details = Vec::new();
-        if self.env_config.environment.is_empty() {
-            env_details.push(ValidationDetail::new(
-                "environment".to_string(),
-                ValidationStatus::Error,
-                "環境設定が空です".to_string(),
-            ));
+        // トークンの形式を検証（Base64エンコードされた暗号化トークンかチェック）
+        match self.token_encryption.decrypt_token(token) {
+            Ok(_) => {
+                log::debug!("APIリクエストの認証が成功しました");
+                Ok(true)
+            }
+            Err(e) => {
+                log::warn!("APIリクエストの認証に失敗しました: {e}");
+                Ok(false)
+            }
+        }
+    }
+
+    /// 不正アクセスを検出して処理する
+    ///
+    /// # 引数
+    /// * `request_info` - リクエスト情報
+    /// * `token` - 認証トークン（オプション）
+    ///
+    /// # 戻り値
+    /// 処理結果
+    pub fn detect_unauthorized_access(
+        &self,
+        request_info: &str,
+        token: Option<&str>,
+    ) -> Result<(), SecurityError> {
+        log::warn!("不正アクセスを検出しました: {request_info}");
+
+        // 不正アクセスの詳細をログに記録
+        if let Some(token) = token {
+            if !token.is_empty() {
+                // トークンが提供されている場合、その有効性をチェック
+                match self.verify_api_request(token) {
+                    Ok(true) => {
+                        log::info!("有効なトークンでの不正アクセス試行: {request_info}");
+                    }
+                    Ok(false) => {
+                        log::warn!("無効なトークンでの不正アクセス試行: {request_info}");
+                    }
+                    Err(e) => {
+                        log::error!("トークン検証エラー during 不正アクセス検出: {e}");
+                    }
+                }
+            } else {
+                log::warn!("空のトークンでの不正アクセス試行: {request_info}");
+            }
         } else {
-            env_details.push(ValidationDetail::new(
-                "environment".to_string(),
-                ValidationStatus::Success,
-                format!("環境設定: {}", self.env_config.environment),
-            ));
+            log::warn!("トークンなしでの不正アクセス試行: {request_info}");
         }
 
-        // 結果をマージ
-        let mut all_details = credential_result.details;
-        all_details.extend(env_details);
+        // セキュリティイベントとして記録（実装は後で追加）
+        // TODO: セキュリティイベントログシステムとの統合
 
-        let has_errors = all_details
-            .iter()
-            .any(|d| d.status == ValidationStatus::Error);
-
-        if has_errors {
-            let result =
-                ValidationResult::failure("設定の検証に失敗しました".to_string(), all_details);
-            warn!("設定の検証に失敗しました: {result:?}");
-            Ok(result)
-        } else {
-            info!("設定の検証が完了しました");
-            Ok(ValidationResult::success(
-                "すべての設定が正常です".to_string(),
-                all_details,
-            ))
-        }
+        Ok(())
     }
 
-    /// セキュリティイベントをログに記録
-    pub fn log_security_event(&mut self, event_type: &str, details: &str) {
-        let event = SecurityEvent::new(
-            event_type.to_string(),
-            details.to_string(),
-            EventSeverity::Info,
-            None,
+    /// トークンを無効化する
+    ///
+    /// # 引数
+    /// * `token_id` - 無効化するトークンID
+    ///
+    /// # 戻り値
+    /// 処理結果
+    pub fn invalidate_token(&self, token_id: &str) -> Result<(), SecurityError> {
+        log::debug!("トークンを無効化: token_id={token_id}");
+
+        {
+            let mut cache = self.token_cache.lock().unwrap();
+            cache.remove(token_id);
+        }
+
+        log::info!("トークンを無効化しました: token_id={token_id}");
+        Ok(())
+    }
+
+    /// すべてのトークンを無効化する
+    ///
+    /// # 戻り値
+    /// 無効化されたトークン数
+    pub fn invalidate_all_tokens(&self) -> Result<usize, SecurityError> {
+        log::debug!("すべてのトークンを無効化");
+
+        let count = {
+            let mut cache = self.token_cache.lock().unwrap();
+            let count = cache.len();
+            cache.clear();
+            count
+        };
+
+        log::info!("すべてのトークンを無効化しました: count={count}");
+        Ok(count)
+    }
+
+    /// トークン情報を取得する
+    ///
+    /// # 引数
+    /// * `token_id` - トークンID
+    ///
+    /// # 戻り値
+    /// トークン情報
+    pub fn get_token_info(&self, token_id: &str) -> Result<Option<TokenInfo>, SecurityError> {
+        let cache = self.token_cache.lock().unwrap();
+        Ok(cache.get(token_id).cloned())
+    }
+
+    /// アクティブなトークン数を取得する
+    ///
+    /// # 戻り値
+    /// アクティブなトークン数
+    pub fn get_active_token_count(&self) -> usize {
+        let cache = self.token_cache.lock().unwrap();
+        cache.len()
+    }
+
+    /// セキュリティ統計情報を取得する
+    ///
+    /// # 戻り値
+    /// セキュリティ統計情報
+    pub fn get_security_stats(&self) -> Result<HashMap<String, serde_json::Value>, SecurityError> {
+        let cache = self.token_cache.lock().unwrap();
+
+        let mut stats = HashMap::new();
+        stats.insert(
+            "active_tokens".to_string(),
+            serde_json::Value::Number(cache.len().into()),
         );
 
-        warn!(
-            "セキュリティイベント: type={event_type}, details={details}, credentials={:?}",
-            self.credentials.get_all_masked()
+        let total_access_count: u64 = cache.values().map(|info| info.access_count).sum();
+        stats.insert(
+            "total_access_count".to_string(),
+            serde_json::Value::Number(total_access_count.into()),
         );
 
-        self.security_events.push(event);
-    }
-
-    /// セキュリティイベントをログに記録（重要度指定）
-    pub fn log_security_event_with_severity(
-        &mut self,
-        event_type: &str,
-        details: &str,
-        severity: EventSeverity,
-    ) {
-        let event = SecurityEvent::new(
-            event_type.to_string(),
-            details.to_string(),
-            severity.clone(),
-            None,
-        );
-
-        match severity {
-            EventSeverity::Info => {
-                info!("セキュリティイベント: type={event_type}, details={details}")
-            }
-            EventSeverity::Warning => {
-                warn!("セキュリティイベント: type={event_type}, details={details}")
-            }
-            EventSeverity::Error | EventSeverity::Critical => {
-                error!("セキュリティイベント: type={event_type}, details={details}")
-            }
+        if let Some(oldest_token) = cache.values().min_by_key(|info| info.created_at) {
+            stats.insert(
+                "oldest_token_age_seconds".to_string(),
+                serde_json::Value::Number(
+                    (chrono::Utc::now() - oldest_token.created_at)
+                        .num_seconds()
+                        .into(),
+                ),
+            );
         }
 
-        self.security_events.push(event);
+        Ok(stats)
     }
 
-    /// 最近のセキュリティイベントを取得
-    pub fn get_recent_security_events(&self, limit: usize) -> Vec<SecurityEvent> {
-        self.security_events
-            .iter()
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect()
-    }
+    /// 期限切れトークンをクリーンアップする
+    ///
+    /// # 引数
+    /// * `max_age_hours` - 最大保持時間（時間）
+    ///
+    /// # 戻り値
+    /// 削除されたトークン数
+    pub fn cleanup_expired_tokens(&self, max_age_hours: i64) -> Result<usize, SecurityError> {
+        log::debug!("期限切れトークンをクリーンアップ: max_age_hours={max_age_hours}");
 
-    /// セキュリティ監査ログを生成
-    pub fn generate_audit_log(&self, period_start: String, period_end: String) -> SecurityAuditLog {
-        use chrono::Utc;
-        use chrono_tz::Asia::Tokyo;
+        let cutoff_time = chrono::Utc::now() - chrono::Duration::hours(max_age_hours);
+        let mut removed_count = 0;
 
-        let now_jst = Utc::now().with_timezone(&Tokyo);
-        let generated_at = now_jst.to_rfc3339();
-
-        SecurityAuditLog {
-            entries: self.security_events.clone(),
-            generated_at,
-            period_start,
-            period_end,
-            total_events: self.security_events.len(),
+        {
+            let mut cache = self.token_cache.lock().unwrap();
+            cache.retain(|_token_id, token_info| {
+                if token_info.created_at < cutoff_time {
+                    removed_count += 1;
+                    false
+                } else {
+                    true
+                }
+            });
         }
+
+        log::info!("期限切れトークンをクリーンアップしました: removed_count={removed_count}");
+        Ok(removed_count)
     }
 
-    /// 本番環境かどうかを判定
-    pub fn is_production(&self) -> bool {
-        self.env_config.is_production()
-    }
-
-    /// 開発環境かどうかを判定
-    pub fn is_development(&self) -> bool {
-        self.env_config.is_development()
-    }
-
-    /// 環境情報を取得
-    pub fn get_environment_info(&self) -> EnvironmentInfo {
-        self.env_config.to_environment_info()
+    /// セキュリティ設定を取得する
+    ///
+    /// # 戻り値
+    /// セキュリティ設定
+    pub fn get_config(&self) -> &SecurityConfig {
+        &self.config
     }
 }
 
@@ -467,80 +390,105 @@ impl SecurityManager {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_secure_credentials_masking() {
-        let mut credentials = SecureCredentials::new();
-        credentials.add_credential("TEST_KEY", "abcdefghijklmnop");
+    fn setup_test_security_service() -> SecurityService {
+        let config = SecurityConfig {
+            encryption_key: "test_encryption_key_32_bytes_long".to_string(),
+            max_token_age_hours: 24,
+            enable_audit_logging: true,
+        };
 
-        assert_eq!(
-            credentials.get_credential("TEST_KEY"),
-            Some(&"abcdefghijklmnop".to_string())
-        );
-        assert_eq!(
-            credentials.get_masked_credential("TEST_KEY"),
-            Some(&"abcd****mnop".to_string())
-        );
+        SecurityService::new(config).unwrap()
     }
 
     #[test]
-    fn test_short_credential_masking() {
-        let mut credentials = SecureCredentials::new();
-        credentials.add_credential("SHORT", "abc");
+    fn test_encrypt_and_store_token() {
+        let service = setup_test_security_service();
+        let token_id = "test_token_id";
+        let token = "test_session_token";
 
-        assert_eq!(
-            credentials.get_masked_credential("SHORT"),
-            Some(&"****".to_string())
-        );
+        let encrypted_token = service.encrypt_and_store_token(token_id, token).unwrap();
+        assert!(!encrypted_token.is_empty());
+
+        let token_info = service.get_token_info(token_id).unwrap();
+        assert!(token_info.is_some());
+        assert_eq!(token_info.unwrap().token_id, token_id);
     }
 
     #[test]
-    fn test_credential_validation() {
-        let mut credentials = SecureCredentials::new();
-        credentials.add_credential("R2_ACCOUNT_ID", "test_account");
-        credentials.add_credential("R2_ACCESS_KEY_ID", "test_key");
-        credentials.add_credential("R2_SECRET_ACCESS_KEY", "test_secret");
-        credentials.add_credential("R2_BUCKET_NAME", "test_bucket");
+    fn test_decrypt_token() {
+        let service = setup_test_security_service();
+        let token_id = "test_token_id";
+        let original_token = "test_session_token";
 
-        let result = credentials.validate_all().unwrap();
-        assert!(result.is_valid);
+        let encrypted_token = service
+            .encrypt_and_store_token(token_id, original_token)
+            .unwrap();
+        let decrypted_token = service.decrypt_token(token_id, &encrypted_token).unwrap();
+
+        assert_eq!(original_token, decrypted_token);
     }
 
     #[test]
-    fn test_missing_credential_validation() {
-        let credentials = SecureCredentials::new();
-        let result = credentials.validate_all().unwrap();
-        assert!(!result.is_valid);
+    fn test_verify_api_request() {
+        let service = setup_test_security_service();
+        let token = "test_session_token";
+
+        let encrypted_token = service.token_encryption.encrypt_token(token).unwrap();
+        let is_valid = service.verify_api_request(&encrypted_token).unwrap();
+
+        assert!(is_valid);
     }
 
     #[test]
-    fn test_environment_config() {
-        let config = EnvironmentConfig::from_env();
-        assert!(!config.environment.is_empty());
+    fn test_verify_invalid_api_request() {
+        let service = setup_test_security_service();
+        let invalid_token = "invalid_token";
+
+        let is_valid = service.verify_api_request(invalid_token).unwrap();
+        assert!(!is_valid);
     }
 
     #[test]
-    fn test_security_manager_creation() {
-        let manager = SecurityManager::new();
-        assert!(!manager.env_config.environment.is_empty());
+    fn test_invalidate_token() {
+        let service = setup_test_security_service();
+        let token_id = "test_token_id";
+        let token = "test_session_token";
+
+        service.encrypt_and_store_token(token_id, token).unwrap();
+        assert!(service.get_token_info(token_id).unwrap().is_some());
+
+        service.invalidate_token(token_id).unwrap();
+        assert!(service.get_token_info(token_id).unwrap().is_none());
     }
 
     #[test]
-    fn test_security_event_logging() {
-        let mut manager = SecurityManager::new();
-        manager.log_security_event("test_event", "テストイベントの詳細");
+    fn test_encrypt_multiple_tokens() {
+        let service = setup_test_security_service();
 
-        let events = manager.get_recent_security_events(10);
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].event_type, "test_event");
-        assert_eq!(events[0].details, "テストイベントの詳細");
+        let mut tokens = HashMap::new();
+        tokens.insert("session".to_string(), "session_token_123".to_string());
+        tokens.insert("access".to_string(), "access_token_456".to_string());
+
+        let encrypted_tokens = service.encrypt_multiple_tokens(&tokens).unwrap();
+        assert_eq!(encrypted_tokens.len(), 2);
+
+        let decrypted_tokens = service.decrypt_multiple_tokens(&encrypted_tokens).unwrap();
+        assert_eq!(tokens, decrypted_tokens);
     }
 
     #[test]
-    fn test_diagnostic_info_generation() {
-        let manager = SecurityManager::new();
-        let diagnostic_info = manager.get_diagnostic_info();
+    fn test_get_security_stats() {
+        let service = setup_test_security_service();
 
-        assert!(!diagnostic_info.environment.is_empty());
-        assert!(!diagnostic_info.system_info.app_version.is_empty());
+        service.encrypt_and_store_token("token1", "value1").unwrap();
+        service.encrypt_and_store_token("token2", "value2").unwrap();
+
+        let stats = service.get_security_stats().unwrap();
+
+        if let Some(serde_json::Value::Number(count)) = stats.get("active_tokens") {
+            assert_eq!(count.as_u64().unwrap(), 2);
+        } else {
+            panic!("active_tokens stat not found or wrong type");
+        }
     }
 }

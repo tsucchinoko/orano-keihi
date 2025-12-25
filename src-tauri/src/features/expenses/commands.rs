@@ -1,3 +1,4 @@
+use crate::features::auth::middleware::AuthMiddleware;
 use crate::features::expenses::{models::*, repository};
 use crate::shared::errors::AppError;
 use crate::AppState;
@@ -9,15 +10,25 @@ use tauri::{Manager, State};
 ///
 /// # 引数
 /// * `dto` - 経費作成用DTO
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 作成された経費、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn create_expense(
     dto: CreateExpenseDto,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Expense, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/expenses/create")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // バリデーション
     validate_expense_dto(&dto)?;
 
@@ -27,8 +38,12 @@ pub async fn create_expense(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
+    // ユーザーIDを含む経費DTOを作成
+    let mut user_dto = dto;
+    user_dto.user_id = Some(user.id);
+
     // 経費を作成
-    repository::create(&db, dto).map_err(|e| e.into())
+    repository::create(&db, user_dto).map_err(|e| e.into())
 }
 
 /// 経費一覧を取得する（月とカテゴリでフィルタリング可能）
@@ -36,7 +51,9 @@ pub async fn create_expense(
 /// # 引数
 /// * `month` - 月フィルター（YYYY-MM形式、オプション）
 /// * `category` - カテゴリフィルター（オプション）
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 経費のリスト、または失敗時はエラーメッセージ
@@ -44,8 +61,16 @@ pub async fn create_expense(
 pub async fn get_expenses(
     month: Option<String>,
     category: Option<String>,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Vec<Expense>, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/expenses/list")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // データベース接続を取得
     let db = state
         .db

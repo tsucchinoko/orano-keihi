@@ -8,6 +8,7 @@ import type {
 	UpdateSubscriptionDto,
 	TauriResult,
 } from "../types";
+import { authStore } from "../stores/auth.svelte";
 
 /**
  * エラーメッセージをユーザーフレンドリーな形式にフォーマットする
@@ -55,6 +56,15 @@ export async function handleTauriCommand<T>(
 	}
 }
 
+/**
+ * 認証トークンを取得する
+ *
+ * @returns セッショントークンまたはnull
+ */
+function getAuthToken(): string | null {
+	return authStore.getSessionToken();
+}
+
 // ========================================
 // 経費関連のコマンド
 // ========================================
@@ -68,8 +78,12 @@ export async function handleTauriCommand<T>(
 export async function createExpense(
 	expense: CreateExpenseDto,
 ): Promise<TauriResult<Expense>> {
+	const sessionToken = getAuthToken();
 	return handleTauriCommand(
-		invoke<Expense>("create_expense", { dto: expense }),
+		invoke<Expense>("create_expense", {
+			dto: expense,
+			sessionToken,
+		}),
 	);
 }
 
@@ -84,8 +98,13 @@ export async function getExpenses(
 	month?: string,
 	category?: string,
 ): Promise<TauriResult<Expense[]>> {
+	const sessionToken = getAuthToken();
 	return handleTauriCommand(
-		invoke<Expense[]>("get_expenses", { month, category }),
+		invoke<Expense[]>("get_expenses", {
+			month,
+			category,
+			sessionToken,
+		}),
 	);
 }
 
@@ -100,8 +119,13 @@ export async function updateExpense(
 	id: number,
 	expense: UpdateExpenseDto,
 ): Promise<TauriResult<Expense>> {
+	const sessionToken = getAuthToken();
 	return handleTauriCommand(
-		invoke<Expense>("update_expense", { id, dto: expense }),
+		invoke<Expense>("update_expense", {
+			id,
+			dto: expense,
+			sessionToken,
+		}),
 	);
 }
 
@@ -112,7 +136,13 @@ export async function updateExpense(
  * @returns 成功またはエラー
  */
 export async function deleteExpense(id: number): Promise<TauriResult<void>> {
-	return handleTauriCommand(invoke<void>("delete_expense", { id }));
+	const sessionToken = getAuthToken();
+	return handleTauriCommand(
+		invoke<void>("delete_expense", {
+			id,
+			sessionToken,
+		}),
+	);
 }
 
 /**
