@@ -1,13 +1,13 @@
 use crate::features::auth::models::{AuthError, GoogleUser, Session, User};
+use crate::features::auth::repository::UserRepository;
 use crate::features::auth::session::SessionManager;
 use crate::shared::config::environment::GoogleOAuthConfig;
-use chrono::{DateTime, Utc};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
     TokenResponse, TokenUrl,
 };
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
@@ -29,8 +29,8 @@ pub struct AuthService {
     oauth_client: BasicClient,
     /// セッション管理
     session_manager: SessionManager,
-    /// データベース接続
-    db_connection: Arc<Mutex<Connection>>,
+    /// ユーザーリポジトリ
+    user_repository: UserRepository,
     /// HTTPクライアント
     http_client: reqwest::Client,
 }
@@ -66,6 +66,9 @@ impl AuthService {
         let session_manager =
             SessionManager::new(Arc::clone(&db_connection), config.session_encryption_key);
 
+        // ユーザーリポジトリを初期化
+        let user_repository = UserRepository::new(Arc::clone(&db_connection));
+
         // HTTPクライアントを作成
         let http_client = reqwest::Client::new();
 
@@ -74,7 +77,7 @@ impl AuthService {
         Ok(Self {
             oauth_client,
             session_manager,
-            db_connection,
+            user_repository,
             http_client,
         })
     }
@@ -146,7 +149,10 @@ impl AuthService {
         );
 
         // ユーザーを作成または取得
-        let user = self.find_or_create_user(google_user).await?;
+        let user = self
+            .user_repository
+            .find_or_create_user(google_user)
+            .await?;
 
         // セッションを作成
         let session = self.session_manager.create_session(user.id)?;
@@ -175,7 +181,11 @@ impl AuthService {
             })?;
 
         // ユーザー情報を取得
-        let user = self.get_user_by_id(session.user_id).await?;
+        let user = self
+            .user_repository
+            .get_user_by_id(session.user_id)
+            .await?
+            .ok_or_else(|| AuthError::DatabaseError("ユーザーが見つかりません".to_string()))?;
 
         Ok(user)
     }
@@ -232,168 +242,6 @@ impl AuthService {
         Ok(google_user)
     }
 
-    /// ユーザーを作成または取得する
-    ///
-    /// # 引数
-    /// * `google_user` - Googleユーザー情報
-    ///
-    /// # 戻り値
-    /// ユーザー情報
-    async fn find_or_create_user(&self, google_user: GoogleUser) -> Result<User, AuthError> {
-        let conn = self.db_connection.lock().unwrap();
-
-        // 既存ユーザーを検索
-        let mut stmt = conn.prepare(
-            "SELECT id, google_id, email, name, picture_url, created_at, updated_at 
-             FROM users WHERE google_id = ?1",
-        )?;
-
-        let existing_user = stmt.query_row(params![google_user.id], |row| {
-            let created_at_str: String = row.get(5)?;
-            let updated_at_str: String = row.get(6)?;
-
-            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                .map_err(|_| {
-                    rusqlite::Error::InvalidColumnType(
-                        5,
-                        "created_at".to_string(),
-                        rusqlite::types::Type::Text,
-                    )
-                })?
-                .with_timezone(&Utc);
-
-            let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
-                .map_err(|_| {
-                    rusqlite::Error::InvalidColumnType(
-                        6,
-                        "updated_at".to_string(),
-                        rusqlite::types::Type::Text,
-                    )
-                })?
-                .with_timezone(&Utc);
-
-            Ok(User {
-                id: row.get(0)?,
-                google_id: row.get(1)?,
-                email: row.get(2)?,
-                name: row.get(3)?,
-                picture_url: row.get(4)?,
-                created_at,
-                updated_at,
-            })
-        });
-
-        match existing_user {
-            Ok(mut user) => {
-                // 既存ユーザーの情報を更新
-                let now = Utc::now();
-                user.email = google_user.email;
-                user.name = google_user.name;
-                user.picture_url = google_user.picture;
-                user.updated_at = now;
-
-                conn.execute(
-                    "UPDATE users SET email = ?1, name = ?2, picture_url = ?3, updated_at = ?4 WHERE id = ?5",
-                    params![
-                        user.email,
-                        user.name,
-                        user.picture_url,
-                        now.to_rfc3339(),
-                        user.id
-                    ],
-                )?;
-
-                log::info!("既存ユーザー情報を更新しました: user_id={}", user.id);
-                Ok(user)
-            }
-            Err(rusqlite::Error::QueryReturnedNoRows) => {
-                // 新規ユーザーを作成
-                let now = Utc::now();
-
-                conn.execute(
-                    "INSERT INTO users (google_id, email, name, picture_url, created_at, updated_at) 
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        google_user.id,
-                        google_user.email,
-                        google_user.name,
-                        google_user.picture,
-                        now.to_rfc3339(),
-                        now.to_rfc3339()
-                    ],
-                )?;
-
-                let user_id = conn.last_insert_rowid();
-                let user = User {
-                    id: user_id,
-                    google_id: google_user.id,
-                    email: google_user.email,
-                    name: google_user.name,
-                    picture_url: google_user.picture,
-                    created_at: now,
-                    updated_at: now,
-                };
-
-                log::info!("新規ユーザーを作成しました: user_id={user_id}");
-                Ok(user)
-            }
-            Err(e) => Err(AuthError::DatabaseError(e.to_string())),
-        }
-    }
-
-    /// ユーザーIDでユーザーを取得する
-    ///
-    /// # 引数
-    /// * `user_id` - ユーザーID
-    ///
-    /// # 戻り値
-    /// ユーザー情報
-    async fn get_user_by_id(&self, user_id: i64) -> Result<User, AuthError> {
-        let conn = self.db_connection.lock().unwrap();
-
-        let mut stmt = conn.prepare(
-            "SELECT id, google_id, email, name, picture_url, created_at, updated_at 
-             FROM users WHERE id = ?1",
-        )?;
-
-        let user = stmt.query_row(params![user_id], |row| {
-            let created_at_str: String = row.get(5)?;
-            let updated_at_str: String = row.get(6)?;
-
-            let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-                .map_err(|_| {
-                    rusqlite::Error::InvalidColumnType(
-                        5,
-                        "created_at".to_string(),
-                        rusqlite::types::Type::Text,
-                    )
-                })?
-                .with_timezone(&Utc);
-
-            let updated_at = DateTime::parse_from_rfc3339(&updated_at_str)
-                .map_err(|_| {
-                    rusqlite::Error::InvalidColumnType(
-                        6,
-                        "updated_at".to_string(),
-                        rusqlite::types::Type::Text,
-                    )
-                })?
-                .with_timezone(&Utc);
-
-            Ok(User {
-                id: row.get(0)?,
-                google_id: row.get(1)?,
-                email: row.get(2)?,
-                name: row.get(3)?,
-                picture_url: row.get(4)?,
-                created_at,
-                updated_at,
-            })
-        })?;
-
-        Ok(user)
-    }
-
     /// セッション暗号化トークンを生成する
     ///
     /// # 引数
@@ -416,6 +264,12 @@ impl AuthService {
             .cleanup_expired_sessions()
             .map_err(|e| AuthError::SessionError(e.to_string()))
     }
+
+    /// UserRepositoryへの参照を取得する（テスト用）
+    #[cfg(test)]
+    pub fn user_repository(&self) -> &UserRepository {
+        &self.user_repository
+    }
 }
 
 #[cfg(test)]
@@ -426,33 +280,6 @@ mod tests {
 
     fn setup_test_auth_service() -> AuthService {
         let conn = create_in_memory_connection().unwrap();
-
-        // テスト用のテーブルを作成
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                google_id TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL,
-                name TEXT NOT NULL,
-                picture_url TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                expires_at TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )",
-            [],
-        )
-        .unwrap();
 
         let config = GoogleOAuthConfig {
             client_id: "test_client_id".to_string(),
