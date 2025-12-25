@@ -690,6 +690,351 @@ pub fn list_backup_files(app_data_dir: &Path) -> Result<Vec<String>, AppError> {
     Ok(backup_files)
 }
 
+/// ユーザー認証機能のマイグレーションを実行する
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// マイグレーション結果
+pub fn migrate_user_authentication(conn: &Connection) -> Result<MigrationResult, AppError> {
+    // バックアップパスを生成（JST使用）
+    let now_jst = Utc::now().with_timezone(&Tokyo);
+    let backup_path = format!("database_backup_auth_{}.db", now_jst.timestamp());
+
+    // 1. バックアップを作成
+    if let Err(e) = create_backup(conn, &backup_path) {
+        return Ok(MigrationResult {
+            success: false,
+            message: format!("バックアップ作成に失敗しました: {e}"),
+            backup_path: None,
+        });
+    }
+
+    // 2. トランザクション内でマイグレーションを実行
+    let tx = conn.unchecked_transaction()?;
+
+    match execute_user_authentication_migration(&tx) {
+        Ok(_) => {
+            // 3. マイグレーション検証
+            if let Err(e) = validate_user_authentication_migration(&tx) {
+                // 検証失敗時はロールバック
+                tx.rollback()?;
+                return Ok(MigrationResult {
+                    success: false,
+                    message: format!("マイグレーション検証に失敗しました: {e}"),
+                    backup_path: Some(backup_path),
+                });
+            }
+
+            // 4. コミット
+            tx.commit()?;
+
+            Ok(MigrationResult {
+                success: true,
+                message: "ユーザー認証機能のマイグレーションが完了しました".to_string(),
+                backup_path: Some(backup_path),
+            })
+        }
+        Err(e) => {
+            // エラー時はロールバック
+            tx.rollback()?;
+            Ok(MigrationResult {
+                success: false,
+                message: format!("マイグレーション実行に失敗しました: {e}"),
+                backup_path: Some(backup_path),
+            })
+        }
+    }
+}
+
+/// ユーザー認証マイグレーションを実行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_user_authentication_migration(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    // 1. usersテーブルを作成
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            google_id TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL,
+            name TEXT NOT NULL,
+            picture_url TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // usersテーブルのインデックスを作成
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)",
+        [],
+    )?;
+
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+        [],
+    )?;
+
+    // 2. sessionsテーブルを作成
+    tx.execute(
+        "CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // sessionsテーブルのインデックスを作成
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+        [],
+    )?;
+
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+        [],
+    )?;
+
+    // 3. デフォルトユーザーを作成（既存データ用）
+    let default_user_exists: i64 =
+        tx.query_row("SELECT COUNT(*) FROM users WHERE id = 1", [], |row| {
+            row.get(0)
+        })?;
+
+    if default_user_exists == 0 {
+        let now_jst = Utc::now().with_timezone(&Tokyo);
+        let timestamp = now_jst.to_rfc3339();
+
+        // INSERT OR IGNOREを使用して重複を回避
+        tx.execute(
+            "INSERT OR IGNORE INTO users (id, google_id, email, name, picture_url, created_at, updated_at)
+             VALUES (1, 'default_user', 'default@example.com', 'デフォルトユーザー', NULL, ?1, ?2)",
+            [&timestamp, &timestamp],
+        )?;
+    }
+
+    // 4. 既存テーブルにuser_idカラムを追加
+    add_user_id_to_existing_tables(tx)?;
+
+    Ok(())
+}
+
+/// 既存テーブルにuser_idカラムを追加する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn add_user_id_to_existing_tables(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    // expensesテーブルにuser_idを追加
+    if !check_column_exists_in_tx(tx, "expenses", "user_id") {
+        // カラムを追加（エラーを無視）
+        let _ = tx.execute(
+            "ALTER TABLE expenses ADD COLUMN user_id INTEGER REFERENCES users(id)",
+            [],
+        );
+
+        // 既存データにデフォルトユーザーIDを設定
+        tx.execute("UPDATE expenses SET user_id = 1 WHERE user_id IS NULL", [])?;
+
+        // インデックスを作成
+        tx.execute(
+            "CREATE INDEX IF NOT EXISTS idx_expenses_user_id ON expenses(user_id)",
+            [],
+        )?;
+    }
+
+    // subscriptionsテーブルにuser_idを追加
+    if !check_column_exists_in_tx(tx, "subscriptions", "user_id") {
+        // カラムを追加（エラーを無視）
+        let _ = tx.execute(
+            "ALTER TABLE subscriptions ADD COLUMN user_id INTEGER REFERENCES users(id)",
+            [],
+        );
+
+        // 既存データにデフォルトユーザーIDを設定
+        tx.execute(
+            "UPDATE subscriptions SET user_id = 1 WHERE user_id IS NULL",
+            [],
+        )?;
+
+        // インデックスを作成
+        tx.execute(
+            "CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)",
+            [],
+        )?;
+    }
+
+    // receipt_cacheテーブルにuser_idを追加
+    if !check_column_exists_in_tx(tx, "receipt_cache", "user_id") {
+        // カラムを追加（エラーを無視）
+        let _ = tx.execute(
+            "ALTER TABLE receipt_cache ADD COLUMN user_id INTEGER REFERENCES users(id)",
+            [],
+        );
+
+        // 既存データにデフォルトユーザーIDを設定
+        tx.execute(
+            "UPDATE receipt_cache SET user_id = 1 WHERE user_id IS NULL",
+            [],
+        )?;
+
+        // インデックスを作成
+        tx.execute(
+            "CREATE INDEX IF NOT EXISTS idx_receipt_cache_user_id ON receipt_cache(user_id)",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// トランザクション内でテーブルに指定されたカラムが存在するかチェックする
+///
+/// # 引数
+/// * `tx` - トランザクション
+/// * `table_name` - テーブル名
+/// * `column_name` - カラム名
+///
+/// # 戻り値
+/// カラムが存在する場合はtrue、存在しないかエラーの場合はfalse
+fn check_column_exists_in_tx(tx: &Transaction, table_name: &str, column_name: &str) -> bool {
+    let query = format!("PRAGMA table_info({table_name})");
+
+    match tx.prepare(&query) {
+        Ok(mut stmt) => {
+            match stmt.query_map([], |row| {
+                let col_name: String = row.get(1)?;
+                Ok(col_name)
+            }) {
+                Ok(rows) => {
+                    for col_name in rows.flatten() {
+                        if col_name == column_name {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
+    }
+}
+
+/// ユーザー認証マイグレーション後の検証を実行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn validate_user_authentication_migration(tx: &Transaction) -> Result<(), AppError> {
+    // 1. usersテーブルの確認
+    let users_table_exists: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if users_table_exists == 0 {
+        return Err(AppError::Validation(
+            "usersテーブルが作成されていません".to_string(),
+        ));
+    }
+
+    // 2. sessionsテーブルの確認
+    let sessions_table_exists: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if sessions_table_exists == 0 {
+        return Err(AppError::Validation(
+            "sessionsテーブルが作成されていません".to_string(),
+        ));
+    }
+
+    // 3. デフォルトユーザーの確認
+    let default_user_exists: i64 =
+        tx.query_row("SELECT COUNT(*) FROM users WHERE id = 1", [], |row| {
+            row.get(0)
+        })?;
+
+    if default_user_exists == 0 {
+        return Err(AppError::Validation(
+            "デフォルトユーザーが作成されていません".to_string(),
+        ));
+    }
+
+    // 4. 既存テーブルのuser_idカラムの確認
+    let tables_to_check = ["expenses", "subscriptions", "receipt_cache"];
+    for table in &tables_to_check {
+        if !check_column_exists_in_tx(tx, table, "user_id") {
+            return Err(AppError::Validation(format!(
+                "{table}テーブルにuser_idカラムが追加されていません"
+            )));
+        }
+    }
+
+    // 5. 外部キー制約の確認（SQLiteでは実行時に確認）
+    tx.execute("PRAGMA foreign_key_check", [])?;
+
+    Ok(())
+}
+
+/// ユーザー認証マイグレーションが完了しているかチェックする
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// ユーザー認証マイグレーションが完了している場合はtrue
+pub fn is_user_authentication_migration_complete(conn: &Connection) -> Result<bool, AppError> {
+    // usersテーブルの存在確認
+    let users_table_exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if users_table_exists == 0 {
+        return Ok(false);
+    }
+
+    // sessionsテーブルの存在確認
+    let sessions_table_exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if sessions_table_exists == 0 {
+        return Ok(false);
+    }
+
+    // 既存テーブルのuser_idカラムの確認
+    let tables_to_check = ["expenses", "subscriptions", "receipt_cache"];
+    for table in &tables_to_check {
+        if !check_column_exists(conn, table, "user_id") {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -878,5 +1223,181 @@ mod tests {
 
         // 存在しないテーブルのテスト
         assert!(!check_column_exists(&conn, "nonexistent_table", "id"));
+    }
+
+    #[test]
+    fn test_user_authentication_migration() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 基本的なテーブル構造を作成
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                billing_cycle TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE receipt_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_url TEXT NOT NULL UNIQUE,
+                local_path TEXT NOT NULL,
+                cached_at TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_accessed TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストデータを挿入
+        conn.execute(
+            "INSERT INTO expenses (date, amount, category, description, created_at, updated_at)
+             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        // マイグレーション前の状態確認
+        let is_complete_before = is_user_authentication_migration_complete(&conn).unwrap();
+        assert!(!is_complete_before);
+
+        // マイグレーションを実行
+        let result = migrate_user_authentication(&conn).unwrap();
+        assert!(result.success, "マイグレーション失敗: {}", result.message);
+
+        // マイグレーション後の状態確認
+        let is_complete_after = is_user_authentication_migration_complete(&conn).unwrap();
+        assert!(is_complete_after);
+
+        // usersテーブルが作成されていることを確認
+        let users_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(users_count, 1); // デフォルトユーザーが作成されている
+
+        // sessionsテーブルが作成されていることを確認
+        let sessions_table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(sessions_table_exists, 1);
+
+        // 既存テーブルにuser_idカラムが追加されていることを確認
+        assert!(check_column_exists(&conn, "expenses", "user_id"));
+        assert!(check_column_exists(&conn, "subscriptions", "user_id"));
+        assert!(check_column_exists(&conn, "receipt_cache", "user_id"));
+
+        // 既存データにデフォルトユーザーIDが設定されていることを確認
+        let expense_user_id: i64 = conn
+            .query_row("SELECT user_id FROM expenses WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(expense_user_id, 1);
+    }
+
+    #[test]
+    fn test_user_authentication_migration_idempotent() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 基本的なテーブル構造を作成
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                billing_cycle TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE receipt_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_url TEXT NOT NULL UNIQUE,
+                local_path TEXT NOT NULL,
+                cached_at TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_accessed TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // 最初のマイグレーション
+        let result1 = migrate_user_authentication(&conn).unwrap();
+        if !result1.success {
+            println!("最初のマイグレーション失敗: {}", result1.message);
+        }
+        assert!(
+            result1.success,
+            "最初のマイグレーション失敗: {}",
+            result1.message
+        );
+
+        // 2回目のマイグレーション（冪等性のテスト）
+        let result2 = migrate_user_authentication(&conn).unwrap();
+        if !result2.success {
+            println!("2回目のマイグレーション失敗: {}", result2.message);
+        }
+        assert!(
+            result2.success,
+            "2回目のマイグレーション失敗: {}",
+            result2.message
+        );
+
+        // デフォルトユーザーが重複していないことを確認
+        let users_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(users_count, 1);
     }
 }

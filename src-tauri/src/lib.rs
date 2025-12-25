@@ -158,6 +158,7 @@ pub fn run() {
             // マイグレーションコマンド
             migration_commands::check_migration_status,
             migration_commands::execute_receipt_url_migration,
+            migration_commands::execute_user_authentication_migration,
             migration_commands::restore_database_from_backup,
             migration_commands::drop_receipt_path_column_command,
             // セキュリティコマンド
