@@ -275,14 +275,15 @@ impl SessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::database::connection::create_in_memory_connection;
+    use rusqlite::Connection;
+    use std::sync::{Arc, Mutex};
 
     fn setup_test_session_manager() -> SessionManager {
-        let conn = create_in_memory_connection().unwrap();
+        let conn = Connection::open_in_memory().unwrap();
 
         // テスト用のセッションテーブルを作成
         conn.execute(
-            "CREATE TABLE sessions (
+            "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 expires_at TEXT NOT NULL,

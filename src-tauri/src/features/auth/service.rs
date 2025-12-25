@@ -429,7 +429,7 @@ mod tests {
 
         // テスト用のテーブルを作成
         conn.execute(
-            "CREATE TABLE users (
+            "CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 google_id TEXT NOT NULL UNIQUE,
                 email TEXT NOT NULL,
@@ -443,7 +443,7 @@ mod tests {
         .unwrap();
 
         conn.execute(
-            "CREATE TABLE sessions (
+            "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 expires_at TEXT NOT NULL,

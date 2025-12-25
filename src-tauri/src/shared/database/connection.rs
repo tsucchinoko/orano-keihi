@@ -497,6 +497,20 @@ fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -
     }
 }
 
+/// テスト用のインメモリデータベース接続を作成する
+///
+/// # 戻り値
+/// インメモリデータベース接続、または失敗時はエラー
+#[cfg(test)]
+pub fn create_in_memory_connection() -> AppResult<Connection> {
+    let conn = Connection::open_in_memory().map_err(|e| AppError::Database(e.to_string()))?;
+
+    // テスト用の基本テーブルを作成
+    create_tables(&conn)?;
+
+    Ok(conn)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
