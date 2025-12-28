@@ -1,14 +1,16 @@
 <script lang="ts">
 import { onMount } from "svelte";
 import { goto } from "$app/navigation";
-import { SubscriptionForm, SubscriptionList } from "$features/subscriptions";
-import { ExpenseForm } from "$features/expenses";
+// 一時的にコンポーネントのインポートをコメントアウト
+// import { SubscriptionForm, SubscriptionList } from "$features/subscriptions";
+// import { ExpenseForm } from "$features/expenses";
 import type { Expense, Subscription } from "$lib/types";
 import {
 	getExpenses,
 	getSubscriptions,
 	getMonthlySubscriptionTotal,
 } from "$lib/utils/tauri";
+import { authStore } from "$lib/stores";
 
 // 状態管理
 let expenses = $state<Expense[]>([]);
@@ -16,6 +18,11 @@ let subscriptions = $state<Subscription[]>([]);
 let monthlySubscriptionTotal = $state<number>(0);
 let loading = $state(true);
 let error = $state<string | null>(null);
+
+// 認証状態のリアクティブな値
+let isAuthenticated = $derived(authStore.isAuthenticated);
+let isLoading = $derived(authStore.isLoading);
+let authError = $derived(authStore.error);
 
 // モーダル表示状態（サブスクリプション編集）
 let showEditModal = $state(false);
@@ -134,14 +141,14 @@ function formatCurrency(amount: number): string {
 // カテゴリカラー取得
 function getCategoryColor(category: string): string {
 	const colorMap: Record<string, string> = {
-		交通費: "var(--color-transport)",
-		飲食費: "var(--color-meals)",
-		通信費: "var(--color-communication)",
-		消耗品費: "var(--color-supplies)",
-		接待交際費: "var(--color-entertainment)",
-		その他: "var(--color-other)",
+		交通費: "var(--color-category-transport)",
+		飲食費: "var(--color-category-meals)",
+		通信費: "var(--color-category-communication)",
+		消耗品費: "var(--color-category-supplies)",
+		接待交際費: "var(--color-category-entertainment)",
+		その他: "var(--color-category-other)",
 	};
-	return colorMap[category] || "var(--color-other)";
+	return colorMap[category] || "var(--color-category-other)";
 }
 </script>
 
@@ -150,6 +157,15 @@ function getCategoryColor(category: string): string {
 	<div class="dashboard-header">
 		<h1 class="page-title">ダッシュボード</h1>
 		<p class="page-subtitle">今月の経費とサブスクリプションの概要</p>
+		
+		<!-- デバッグ情報（開発環境のみ） -->
+		{#if import.meta.env.DEV}
+			<div class="debug-auth-info">
+				<p>認証状態: {isAuthenticated ? '認証済み' : '未認証'}</p>
+				<p>ローディング: {isLoading ? 'はい' : 'いいえ'}</p>
+				<p>エラー: {authError || 'なし'}</p>
+			</div>
+		{/if}
 	</div>
 
 	{#if loading}
@@ -236,9 +252,11 @@ function getCategoryColor(category: string): string {
 						<span class="total-amount">{formatCurrency(monthlySubscriptionTotal)}</span>
 					</div>
 				</div>
-				<SubscriptionList 
+				<!-- 一時的にコンポーネントをコメントアウト -->
+				<p>サブスクリプション一覧（開発中）</p>
+				<!-- <SubscriptionList 
 					onEdit={handleEditSubscription}
-				/>
+				/> -->
 			</div>
 		</div>
 	{/if}
@@ -247,10 +265,12 @@ function getCategoryColor(category: string): string {
 	{#if showExpenseModal}
 		<div class="modal-overlay" onclick={handleExpenseFormCancel}>
 			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
-				<ExpenseForm
+				<!-- 一時的にコンポーネントをコメントアウト -->
+				<p>経費フォーム（開発中）</p>
+				<!-- <ExpenseForm
 					onSuccess={handleExpenseFormSuccess}
 					onCancel={handleExpenseFormCancel}
-				/>
+				/> -->
 			</div>
 		</div>
 	{/if}
@@ -259,11 +279,13 @@ function getCategoryColor(category: string): string {
 	{#if showEditModal}
 		<div class="modal-overlay" onclick={handleSubscriptionFormCancel}>
 			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
-				<SubscriptionForm
+				<!-- 一時的にコンポーネントをコメントアウト -->
+				<p>サブスクリプションフォーム（開発中）</p>
+				<!-- <SubscriptionForm
 					subscription={editingSubscription}
 					onSuccess={handleSubscriptionFormSuccess}
 					onCancel={handleSubscriptionFormCancel}
-				/>
+				/> -->
 			</div>
 		</div>
 	{/if}
@@ -563,5 +585,20 @@ function getCategoryColor(category: string): string {
 			padding: 1.5rem;
 			max-height: 95vh;
 		}
+	}
+
+	/* デバッグ情報スタイル */
+	.debug-auth-info {
+		background: #f3f4f6;
+		border: 1px solid #d1d5db;
+		border-radius: 8px;
+		padding: 1rem;
+		margin-top: 1rem;
+		font-size: 0.875rem;
+		color: #374151;
+	}
+
+	.debug-auth-info p {
+		margin: 0.25rem 0;
 	}
 </style>

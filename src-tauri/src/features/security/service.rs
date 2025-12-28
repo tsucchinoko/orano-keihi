@@ -1,4 +1,4 @@
-use crate::features::security::encryption::{EncryptionError, TokenEncryption};
+use crate::features::security::encryption::TokenEncryption;
 use crate::features::security::models::{SecurityConfig, SecurityError, TokenInfo};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -492,3 +492,6 @@ mod tests {
         }
     }
 }
+
+/// SecurityManagerのエイリアス（後方互換性のため）
+pub type SecurityManager = SecurityService;

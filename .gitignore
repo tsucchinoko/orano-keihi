@@ -11,3 +11,6 @@ vite.config.ts.timestamp-*
 
 *.log
 *.db
+
+.secret
+oauth_client.json

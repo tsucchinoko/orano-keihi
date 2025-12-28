@@ -240,7 +240,7 @@ impl AuthMiddleware {
     /// 認証されたユーザー情報
     pub async fn authenticate_api_key(
         &self,
-        api_key: &str,
+        _api_key: &str,
         request_path: &str,
     ) -> Result<User, AuthError> {
         // TODO: APIキーベースの認証実装
@@ -253,7 +253,6 @@ impl AuthMiddleware {
 
 /// 認証ヘルパー関数
 pub mod auth_helpers {
-    use super::*;
 
     /// リクエストヘッダーから認証トークンを抽出する
     ///
@@ -315,7 +314,6 @@ pub mod auth_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::auth::models::GoogleUser;
     use crate::features::security::models::SecurityConfig;
     use crate::shared::config::environment::GoogleOAuthConfig;
     use crate::shared::database::connection::create_in_memory_connection;

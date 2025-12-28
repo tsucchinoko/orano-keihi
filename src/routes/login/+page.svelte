@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount } from "svelte";
 import { goto } from "$app/navigation";
-import { page } from "$app/stores";
+import { page } from "$app/state";
 import { authStore } from "$lib/stores";
 
 // ローディング状態とエラー状態を取得
@@ -21,7 +21,7 @@ onMount(async () => {
 	}
 
 	// URLパラメータから認証コードと状態を取得
-	const urlParams = new URLSearchParams($page.url.search);
+	const urlParams = new URLSearchParams(page.url.search);
 	const code = urlParams.get("code");
 	const state = urlParams.get("state");
 

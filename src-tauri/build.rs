@@ -37,8 +37,22 @@ fn main() {
             println!("cargo:rustc-env=EMBEDDED_R2_REGION={region}");
         }
 
-        // 環境設定も埋め込み
-        println!("cargo:rustc-env=EMBEDDED_ENVIRONMENT={environment}");
+        // Google OAuth設定も埋め込み
+        if let Ok(client_id) = env::var("GOOGLE_CLIENT_ID") {
+            println!("cargo:rustc-env=EMBEDDED_GOOGLE_CLIENT_ID={client_id}");
+        }
+        if let Ok(client_secret) = env::var("GOOGLE_CLIENT_SECRET") {
+            println!("cargo:rustc-env=EMBEDDED_GOOGLE_CLIENT_SECRET={client_secret}");
+        }
+        if let Ok(redirect_uri) = env::var("GOOGLE_REDIRECT_URI") {
+            println!("cargo:rustc-env=EMBEDDED_GOOGLE_REDIRECT_URI={redirect_uri}");
+        }
+        if let Ok(encryption_key) = env::var("SESSION_ENCRYPTION_KEY") {
+            println!("cargo:rustc-env=EMBEDDED_SESSION_ENCRYPTION_KEY={encryption_key}");
+        }
+
+        // 注意: EMBEDDED_ENVIRONMENTは設定しない
+        // 実行時に.envファイルから環境変数を読み込むため
     } else {
         println!("cargo:warning={env_file}ファイルが見つかりません");
     }

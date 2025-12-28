@@ -1,14 +1,14 @@
 <script lang="ts">
 import "../app.css";
-import ErrorBoundary from "$lib/components/ErrorBoundary.svelte";
-import ToastContainer from "$lib/components/ToastContainer.svelte";
+// import ErrorBoundary from "$lib/components/ErrorBoundary.svelte";
+// import ToastContainer from "$lib/components/ToastContainer.svelte";
 import { goto } from "$app/navigation";
-import { page } from "$app/stores";
+import { page } from "$app/state";
 import { authStore } from "$lib/stores";
 import { onMount } from "svelte";
 
 // 現在のパスを取得
-let currentPath = $derived($page.url.pathname);
+let currentPath = $derived(page.url.pathname);
 
 // 認証状態を取得
 let isAuthenticated = $derived(authStore.isAuthenticated);
@@ -44,9 +44,9 @@ async function handleLogout() {
 let isLoginPage = $derived(currentPath.startsWith("/login"));
 </script>
 
-<!-- エラーバウンダリでアプリ全体をラップ -->
-<ErrorBoundary>
-	{#snippet children()}
+<!-- 簡素化されたレイアウト（ErrorBoundaryとToastContainerは一時的にコメントアウト） -->
+<!-- <ErrorBoundary> -->
+	<!-- {#snippet children()} -->
 		<!-- グローバルレイアウト: グラデーション背景とナビゲーション構造 -->
 		<div class="app-container">
 			<!-- ナビゲーションヘッダー（ログインページ以外で表示） -->
@@ -141,14 +141,14 @@ let isLoginPage = $derived(currentPath.startsWith("/login"));
 						現在のパス: {currentPath} | 認証状態: {isAuthenticated ? '認証済み' : '未認証'}
 					</div>
 				{/if}
-				{@render children()}
+				<slot />
 			</main>
 
 			<!-- トースト通知コンテナ -->
-			<ToastContainer />
+			<!-- <ToastContainer /> -->
 		</div>
-	{/snippet}
-</ErrorBoundary>
+	<!-- {/snippet} -->
+<!-- </ErrorBoundary> -->
 
 <style>
 	/* アプリケーション全体のコンテナ */

@@ -131,42 +131,21 @@ pub fn load_environment_variables() {
     let embedded_env = option_env!("EMBEDDED_ENVIRONMENT");
 
     if let Some(env) = embedded_env {
-        log::info!("コンパイル時埋め込み環境設定を使用: {env}");
+        // ログシステムが初期化されていないため、eprintlnを使用
+        eprintln!("コンパイル時埋め込み環境設定を使用: {env}");
         // コンパイル時に埋め込まれた環境変数がある場合は、実行時読み込みをスキップ
         return;
     }
 
-    // まず、ENVIRONMENTが設定されているかチェック
-    let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
-
-    // 環境に応じた.envファイルのパスを決定
-    let env_file = match environment.as_str() {
-        "production" => ".env.production",
-        "development" => ".env",
-        _ => ".env", // デフォルトは開発環境
-    };
-
-    log::info!("環境: {environment}, 読み込み対象: {env_file}");
-
-    // 指定された.envファイルを読み込み
-    match dotenv::from_filename(env_file) {
-        Ok(_) => {
-            log::info!("{env_file}ファイルを読み込みました");
+    // dotenv::dotenv()を使用して、カレントディレクトリから.envファイルを自動的に探す
+    // これは複数の場所を自動的に検索する
+    match dotenv::dotenv() {
+        Ok(path) => {
+            eprintln!(".envファイルを読み込みました: {}", path.display());
         }
-        Err(_) => {
-            // 環境固有のファイルがない場合は、デフォルトの.envを試行
-            if env_file != ".env" {
-                match dotenv::dotenv() {
-                    Ok(_) => {
-                        log::warn!("{env_file}が見つからないため、デフォルトの.envファイルを読み込みました");
-                    }
-                    Err(_) => {
-                        log::warn!("環境変数ファイルが見つかりません。コンパイル時埋め込み値または直接設定された環境変数を使用します。");
-                    }
-                }
-            } else {
-                log::warn!(".envファイルが見つかりません。コンパイル時埋め込み値または直接設定された環境変数を使用します。");
-            }
+        Err(e) => {
+            eprintln!(".envファイルの読み込みに失敗しました: {e}");
+            eprintln!("コンパイル時埋め込み値または直接設定された環境変数を使用します。");
         }
     }
 }

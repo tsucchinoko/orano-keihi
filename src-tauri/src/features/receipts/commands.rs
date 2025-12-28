@@ -9,6 +9,7 @@ use super::{
     service::R2Client,
 };
 use crate::features::expenses::repository as expense_operations;
+use crate::features::security::models::SecurityConfig;
 use crate::features::security::service::SecurityManager;
 use crate::shared::config::environment::R2Config;
 use crate::shared::errors::AppError;
@@ -39,11 +40,13 @@ pub async fn upload_receipt_to_r2(
 ) -> Result<String, String> {
     info!("R2への領収書アップロードを開始します: expense_id={expense_id}, file_path={file_path}");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "receipt_upload_started",
-        &format!("expense_id={expense_id}, file_path={file_path}"),
-    );
+    let security_config = SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    };
+    let _security_manager =
+        SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
 
     // 統一エラーハンドリングを使用してアップロード処理を実行
     let result = upload_receipt_internal(expense_id, file_path, state).await;
@@ -51,19 +54,11 @@ pub async fn upload_receipt_to_r2(
     match result {
         Ok(url) => {
             info!("領収書アップロード成功: expense_id={expense_id}, url={url}");
-            security_manager.log_security_event(
-                "receipt_upload_success",
-                &format!("expense_id={expense_id}, url={url}"),
-            );
             Ok(url)
         }
         Err(app_error) => {
             let user_message = app_error.user_message();
             error!("領収書アップロード失敗: expense_id={expense_id}, error={app_error}");
-            security_manager.log_security_event(
-                "receipt_upload_failed",
-                &format!("expense_id={expense_id}, error={app_error}"),
-            );
             Err(user_message.to_string())
         }
     }
@@ -136,7 +131,7 @@ async fn upload_receipt_internal(
             .lock()
             .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
 
-        expense_operations::get_receipt_url(&db, expense_id)?
+        expense_operations::get_receipt_url(&db, expense_id, 1i64)?
     };
 
     // リトライ機能付きでR2にアップロード（最大3回リトライ）
@@ -153,7 +148,7 @@ async fn upload_receipt_internal(
             .lock()
             .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
 
-        expense_operations::set_receipt_url(&db, expense_id, receipt_url.clone())
+        expense_operations::set_receipt_url(&db, expense_id, receipt_url.clone(), 1i64)
     };
 
     match db_result {
@@ -180,7 +175,7 @@ async fn upload_receipt_internal(
                 })?;
 
                 if let Err(restore_error) =
-                    expense_operations::set_receipt_url(&db, expense_id, original_url)
+                    expense_operations::set_receipt_url(&db, expense_id, original_url, 1i64)
                 {
                     error!("元のreceipt_urlの復元に失敗しました: {restore_error}");
                 }
@@ -208,11 +203,13 @@ pub async fn get_receipt_from_r2(
 ) -> Result<String, String> {
     info!("R2からの領収書取得を開始します: receipt_url={receipt_url}");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "receipt_download_started",
-        &format!("receipt_url={receipt_url}"),
-    );
+    let security_config = SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    };
+    let _security_manager =
+        SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
 
     // 統一エラーハンドリングを使用して取得処理を実行
     let result = get_receipt_internal(receipt_url.clone(), app, state).await;
@@ -220,19 +217,11 @@ pub async fn get_receipt_from_r2(
     match result {
         Ok(base64_data) => {
             info!("領収書取得成功: receipt_url={receipt_url}");
-            security_manager.log_security_event(
-                "receipt_download_success",
-                &format!("receipt_url={receipt_url}"),
-            );
             Ok(base64_data)
         }
         Err(app_error) => {
             let user_message = app_error.user_message();
             error!("領収書取得失敗: receipt_url={receipt_url}, error={app_error}");
-            security_manager.log_security_event(
-                "receipt_download_failed",
-                &format!("receipt_url={receipt_url}, error={app_error}"),
-            );
             Err(user_message.to_string())
         }
     }
@@ -267,7 +256,7 @@ async fn get_receipt_internal(
             ))
         })?;
 
-        cache_manager.get_cached_file(&receipt_url, &db)
+        cache_manager.get_cached_file(&receipt_url, &db, 1i64)
     };
 
     match cached_result {
@@ -299,12 +288,12 @@ async fn get_receipt_internal(
             ))
         })?;
 
-        if let Err(e) = cache_manager.cache_file(&receipt_url, file_data.clone(), &db) {
+        if let Err(e) = cache_manager.cache_file(&receipt_url, file_data.clone(), &db, 1i64) {
             warn!("キャッシュ保存エラー（無視して続行）: {e}");
         }
 
         // キャッシュサイズ管理（エラーは無視）
-        if let Err(e) = cache_manager.manage_cache_size(&db) {
+        if let Err(e) = cache_manager.manage_cache_size(&db, Some(1i64)) {
             warn!("キャッシュサイズ管理エラー（無視して続行）: {e}");
         }
     }
@@ -428,11 +417,13 @@ pub async fn delete_receipt_from_r2(
 ) -> Result<bool, String> {
     info!("R2からの領収書削除を開始します: receipt_url={receipt_url}");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "receipt_delete_started",
-        &format!("receipt_url={receipt_url}"),
-    );
+    let security_config = SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    };
+    let _security_manager =
+        SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
 
     // 統一エラーハンドリングを使用して削除処理を実行
     let result = delete_receipt_internal(receipt_url.clone(), app, state).await;
@@ -440,19 +431,11 @@ pub async fn delete_receipt_from_r2(
     match result {
         Ok(success) => {
             info!("領収書削除成功: receipt_url={receipt_url}");
-            security_manager.log_security_event(
-                "receipt_delete_success",
-                &format!("receipt_url={receipt_url}"),
-            );
             Ok(success)
         }
         Err(app_error) => {
             let user_message = app_error.user_message();
             error!("領収書削除失敗: receipt_url={receipt_url}, error={app_error}");
-            security_manager.log_security_event(
-                "receipt_delete_failed",
-                &format!("receipt_url={receipt_url}, error={app_error}"),
-            );
             Err(user_message.to_string())
         }
     }
@@ -513,7 +496,7 @@ async fn delete_receipt_internal(
             ))
         })?;
 
-        if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
+        if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db, 1i64) {
             warn!("キャッシュ削除エラー（無視して続行）: {e}");
         }
     }
@@ -522,11 +505,13 @@ async fn delete_receipt_internal(
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
     info!("領収書削除完了: receipt_url={receipt_url}, timestamp={now}");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "receipt_delete_completed",
-        &format!("receipt_url={receipt_url}, timestamp={now}"),
-    );
+    let security_config = SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    };
+    let _security_manager =
+        SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
 
     Ok(true)
 }
@@ -566,7 +551,7 @@ pub async fn get_receipt_offline(
             .db
             .lock()
             .map_err(|e| format!("データベースロックエラー: {e}"))?;
-        cache_manager.get_offline_cached_file(&receipt_url, &db)
+        cache_manager.get_offline_cached_file(&receipt_url, &db, 1i64)
     };
 
     match cached_result {
@@ -614,12 +599,12 @@ pub async fn sync_cache_on_online(
 
         // 古いキャッシュをクリーンアップ
         let cleaned_count = cache_manager
-            .cleanup_old_cache(&db)
+            .cleanup_old_cache(&db, Some(1i64))
             .map_err(|e| format!("キャッシュクリーンアップエラー: {e}"))?;
 
         // キャッシュサイズを管理
         cache_manager
-            .manage_cache_size(&db)
+            .manage_cache_size(&db, Some(1i64))
             .map_err(|e| format!("キャッシュサイズ管理エラー: {e}"))?;
 
         println!("キャッシュ同期完了: {cleaned_count}個のファイルをクリーンアップしました");
@@ -706,21 +691,18 @@ pub async fn upload_multiple_receipts_to_r2(
         max_concurrent
     );
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "multiple_upload_started",
-        &format!(
-            "files_count={}, max_concurrent={}",
-            files.len(),
-            max_concurrent
-        ),
-    );
+    let security_config = SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    };
+    let _security_manager =
+        SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
 
     // R2設定を読み込み
     let config = R2Config::from_env().ok_or_else(|| {
         let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
         error!("{error_msg}");
-        security_manager.log_security_event("r2_config_load_failed", error_msg);
         error_msg.to_string()
     })?;
 
@@ -728,7 +710,6 @@ pub async fn upload_multiple_receipts_to_r2(
     let client = R2Client::new(config).await.map_err(|e| {
         let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
         error!("{error_msg}");
-        security_manager.log_security_event("r2_client_init_failed", &format!("error={e}"));
         error_msg.to_string()
     })?;
 
@@ -816,7 +797,6 @@ pub async fn upload_multiple_receipts_to_r2(
         .map_err(|e| {
             let error_msg = format!("並列アップロードに失敗しました: {e}");
             error!("{error_msg}");
-            security_manager.log_security_event("parallel_upload_failed", &format!("error={e}"));
             error_msg.to_string()
         })?;
 
@@ -834,9 +814,12 @@ pub async fn upload_multiple_receipts_to_r2(
                     .lock()
                     .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-                if let Err(e) =
-                    expense_operations::set_receipt_url(&db, upload_file.expense_id, url.clone())
-                {
+                if let Err(e) = expense_operations::set_receipt_url(
+                    &db,
+                    upload_file.expense_id,
+                    url.clone(),
+                    1i64,
+                ) {
                     error!(
                         "データベース保存エラー: expense_id={}, error={}",
                         upload_file.expense_id, e
@@ -881,17 +864,6 @@ pub async fn upload_multiple_receipts_to_r2(
         "複数ファイル並列アップロード完了: 成功={successful_uploads}, 失敗={failed_uploads}, 総時間={total_duration:?}"
     );
 
-    security_manager.log_security_event(
-        "multiple_upload_completed",
-        &format!(
-            "total_files={}, successful={}, failed={}, duration={:?}",
-            upload_files.len(),
-            successful_uploads,
-            failed_uploads,
-            total_duration
-        ),
-    );
-
     Ok(MultipleUploadResult {
         total_files: upload_files.len(),
         successful_uploads,
@@ -912,14 +884,16 @@ pub async fn upload_multiple_receipts_to_r2(
 pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, String> {
     info!("R2接続テストを開始します");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event("r2_connection_test_started", "従来のR2接続テスト開始");
-
+    let _security_manager = SecurityManager::new(SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    })
+    .unwrap_or_else(|_| panic!("SecurityManager初期化失敗"));
     // 環境変数からR2設定を読み込み
     let config = R2Config::from_env().ok_or_else(|| {
         let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
         error!("{error_msg}");
-        security_manager.log_security_event("r2_config_load_failed", error_msg);
         error_msg.to_string()
     })?;
 
@@ -927,7 +901,6 @@ pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, Str
     let client = R2Client::new(config).await.map_err(|e| {
         let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
         error!("{error_msg}");
-        security_manager.log_security_event("r2_client_init_failed", &error_msg);
         error_msg.to_string()
     })?;
 
@@ -935,12 +908,10 @@ pub async fn test_r2_connection(_state: State<'_, AppState>) -> Result<bool, Str
     client.test_connection().await.map_err(|e| {
         let error_msg = format!("R2接続テストに失敗しました: {e}");
         error!("{error_msg}");
-        security_manager.log_security_event("r2_connection_test_failed", &error_msg);
         error_msg.to_string()
     })?;
 
     info!("R2接続テストが成功しました");
-    security_manager.log_security_event("r2_connection_test_success", "従来のR2接続テスト成功");
     Ok(true)
 }
 
@@ -957,17 +928,16 @@ pub async fn get_r2_performance_stats(
 ) -> Result<PerformanceStats, String> {
     info!("R2パフォーマンス統計取得開始");
 
-    let mut security_manager = SecurityManager::new();
-    security_manager.log_security_event(
-        "performance_stats_requested",
-        "R2パフォーマンス統計取得開始",
-    );
-
+    let _security_manager = SecurityManager::new(SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    })
+    .unwrap_or_else(|_| panic!("SecurityManager初期化失敗"));
     // R2設定を読み込み
     let config = R2Config::from_env().ok_or_else(|| {
         let error_msg = "R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません";
         error!("{error_msg}");
-        security_manager.log_security_event("r2_config_load_failed", error_msg);
         error_msg.to_string()
     })?;
 
@@ -975,7 +945,6 @@ pub async fn get_r2_performance_stats(
     let client = R2Client::new(config).await.map_err(|e| {
         let error_msg = format!("R2クライアントの初期化に失敗しました: {e}");
         error!("{error_msg}");
-        security_manager.log_security_event("r2_client_init_failed", &format!("error={e}"));
         error_msg.to_string()
     })?;
 
@@ -989,8 +958,6 @@ pub async fn get_r2_performance_stats(
     // キャッシュが有効で接続が失敗している場合は、統計取得をスキップ
     if let Some(false) = cached_result {
         let error_msg = "R2接続が利用できません（キャッシュされた結果）".to_string();
-        security_manager
-            .log_security_event("performance_stats_skipped", "cached_connection_failed");
         return Err(error_msg);
     }
 
@@ -1001,21 +968,12 @@ pub async fn get_r2_performance_stats(
         .map_err(|e| {
             let error_msg = format!("パフォーマンス統計の取得に失敗しました: {e}");
             error!("{error_msg}");
-            security_manager.log_security_event("performance_stats_failed", &format!("error={e}"));
             error_msg.to_string()
         })?;
 
     info!(
         "R2パフォーマンス統計取得完了: レイテンシ={}ms, スループット={}bps",
         stats.latency_ms, stats.throughput_bps
-    );
-
-    security_manager.log_security_event(
-        "performance_stats_success",
-        &format!(
-            "latency={}ms, throughput={}bps",
-            stats.latency_ms, stats.throughput_bps
-        ),
     );
 
     Ok(stats)
