@@ -27,6 +27,9 @@ class AuthStore {
 	// セッショントークン（ローカルストレージに保存）
 	private sessionToken = $state<string | null>(null);
 
+	// 初期化フラグ
+	private initialized = $state<boolean>(false);
+
 	// セッショントークンのローカルストレージキー
 	private readonly SESSION_TOKEN_KEY = "auth_session_token";
 
@@ -35,12 +38,23 @@ class AuthStore {
 	 * アプリケーション起動時に呼び出される
 	 */
 	async initialize(): Promise<void> {
+		// 既に初期化済みの場合はスキップ
+		if (this.initialized) {
+			console.log("認証ストアは既に初期化済みです");
+			return;
+		}
+
+		console.log("認証ストアの初期化を開始します");
 		this.isLoading = true;
 		this.error = null;
 
 		try {
 			// ローカルストレージからセッショントークンを取得
 			const storedToken = localStorage.getItem(this.SESSION_TOKEN_KEY);
+			console.log(
+				"保存されたセッショントークン:",
+				storedToken ? "存在" : "なし",
+			);
 
 			if (storedToken) {
 				this.sessionToken = storedToken;
@@ -48,12 +62,17 @@ class AuthStore {
 				await this.checkSession();
 			} else {
 				// セッショントークンがない場合は未認証状態
+				console.log("セッショントークンがないため、未認証状態に設定します");
 				this.setUnauthenticatedState();
 			}
+
+			this.initialized = true;
+			console.log("認証ストアの初期化が完了しました");
 		} catch (err) {
 			console.error("認証状態の初期化エラー:", err);
 			this.error = `認証状態の初期化に失敗しました: ${err}`;
 			this.setUnauthenticatedState();
+			this.initialized = true; // エラーでも初期化完了とする
 		} finally {
 			this.isLoading = false;
 		}
@@ -215,12 +234,16 @@ class AuthStore {
 	 * アプリケーション起動時や定期的な確認で使用
 	 */
 	async checkSession(): Promise<void> {
+		console.log("セッション状態を確認します");
+
 		if (!this.sessionToken) {
+			console.log("セッショントークンがないため、未認証状態に設定します");
 			this.setUnauthenticatedState();
 			return;
 		}
 
 		try {
+			console.log("セッション検証を実行します");
 			const result = await validateSession(this.sessionToken);
 
 			if (result.error) {
@@ -232,10 +255,12 @@ class AuthStore {
 
 			if (result.data?.is_authenticated) {
 				// セッションが有効な場合
+				console.log("セッションが有効です。認証済み状態に設定します");
 				this.user = result.data.user;
 				this.isAuthenticated = true;
 			} else {
 				// セッションが無効な場合
+				console.log("セッションが無効です。未認証状態に設定します");
 				this.setUnauthenticatedState();
 				localStorage.removeItem(this.SESSION_TOKEN_KEY);
 			}
@@ -258,7 +283,11 @@ class AuthStore {
 	 * 認証が必要かどうかを確認する
 	 */
 	requiresAuth(): boolean {
-		return !this.isAuthenticated;
+		const result = !this.isAuthenticated;
+		console.log(
+			`認証が必要かどうか: ${result} (isAuthenticated: ${this.isAuthenticated})`,
+		);
+		return result;
 	}
 
 	/**
@@ -272,6 +301,7 @@ class AuthStore {
 	 * 未認証状態に設定する（プライベートメソッド）
 	 */
 	private setUnauthenticatedState(): void {
+		console.log("未認証状態に設定します");
 		this.user = null;
 		this.isAuthenticated = false;
 		this.sessionToken = null;

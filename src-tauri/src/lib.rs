@@ -3,9 +3,10 @@ pub mod features;
 pub mod shared;
 
 // 新しい機能モジュールからコマンドをインポート
+use features::auth::middleware::AuthMiddleware;
 use features::auth::service::AuthService;
 use features::security::models::SecurityConfig;
-use features::security::service::SecurityManager;
+use features::security::service::{SecurityManager, SecurityService};
 use features::{
     auth::commands as auth_commands, expenses::commands as expense_commands,
     migrations::commands as migration_commands, receipts::commands as receipt_commands,
@@ -94,7 +95,7 @@ pub fn run() {
                 enable_audit_logging: true,
             };
             let security_manager =
-                SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
+                SecurityManager::new(security_config.clone()).expect("SecurityManager初期化失敗");
 
             info!("システム診断情報を取得中...");
 
@@ -110,7 +111,7 @@ pub fn run() {
 
             // 認証サービスを初期化
             info!("認証サービスを初期化しています...");
-            let auth_service = match GoogleOAuthConfig::from_env() {
+            let (auth_service, auth_middleware) = match GoogleOAuthConfig::from_env() {
                 Some(oauth_config) => {
                     // 認証サービス用の新しいデータベース接続を作成
                     let auth_db_conn = shared::database::connection::initialize_database(
@@ -124,17 +125,28 @@ pub fn run() {
                     match AuthService::new(oauth_config, Arc::new(Mutex::new(auth_db_conn))) {
                         Ok(service) => {
                             info!("認証サービスの初期化が完了しました");
-                            Some(service)
+
+                            // SecurityServiceを作成
+                            let security_service = Arc::new(
+                                SecurityService::new(security_config.clone())
+                                    .expect("SecurityService初期化失敗"),
+                            );
+
+                            // AuthMiddlewareを作成
+                            let auth_middleware =
+                                AuthMiddleware::new(Arc::new(service.clone()), security_service);
+
+                            (Some(service), Some(auth_middleware))
                         }
                         Err(e) => {
                             warn!("認証サービスの初期化に失敗しました: {e}");
-                            None
+                            (None, None)
                         }
                     }
                 }
                 None => {
                     warn!("Google OAuth設定が見つかりません。認証機能は無効になります。");
-                    None
+                    (None, None)
                 }
             };
 
@@ -148,6 +160,11 @@ pub fn run() {
             // 認証サービスが利用可能な場合は、個別に管理
             if let Some(auth_service) = &auth_service {
                 app.manage(auth_service.clone());
+            }
+
+            // AuthMiddlewareが利用可能な場合は、個別に管理
+            if let Some(auth_middleware) = auth_middleware {
+                app.manage(auth_middleware);
             }
 
             app.manage(AppState {

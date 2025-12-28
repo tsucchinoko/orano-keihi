@@ -282,6 +282,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: Some("テスト経費".to_string()),
+            user_id: None, // 認証後に設定される
         };
 
         assert!(validate_expense_dto(&dto).is_ok());
@@ -295,6 +296,7 @@ mod tests {
             amount: -100.0,
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);
@@ -310,6 +312,7 @@ mod tests {
             amount: 99999999999.0, // 11桁
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);
@@ -325,6 +328,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);
@@ -341,6 +345,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: Some(long_description),
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);
