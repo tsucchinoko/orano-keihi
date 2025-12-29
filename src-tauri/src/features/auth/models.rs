@@ -49,7 +49,7 @@ pub struct Session {
 }
 
 /// 認証状態を表す構造体
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthState {
     /// ユーザー情報
     pub user: Option<User>,
@@ -57,16 +57,6 @@ pub struct AuthState {
     pub is_authenticated: bool,
     /// ローディング状態
     pub is_loading: bool,
-}
-
-impl Default for AuthState {
-    fn default() -> Self {
-        Self {
-            user: None,
-            is_authenticated: false,
-            is_loading: false,
-        }
-    }
 }
 
 /// 認証エラーの種類

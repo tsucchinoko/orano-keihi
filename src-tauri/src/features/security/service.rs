@@ -393,6 +393,9 @@ impl SecurityService {
     }
 }
 
+/// SecurityManagerのエイリアス（後方互換性のため）
+pub type SecurityManager = SecurityService;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,6 +502,3 @@ mod tests {
         }
     }
 }
-
-/// SecurityManagerのエイリアス（後方互換性のため）
-pub type SecurityManager = SecurityService;

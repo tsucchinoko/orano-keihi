@@ -85,7 +85,7 @@ impl TokenEncryption {
 
         // Base64エンコード
         let ciphertext_b64 = general_purpose::STANDARD.encode(&ciphertext);
-        let nonce_b64 = general_purpose::STANDARD.encode(&nonce_bytes);
+        let nonce_b64 = general_purpose::STANDARD.encode(nonce_bytes);
 
         Ok(EncryptedData {
             ciphertext: ciphertext_b64,

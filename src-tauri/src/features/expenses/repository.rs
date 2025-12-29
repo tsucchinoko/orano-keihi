@@ -489,6 +489,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: Some("テスト経費".to_string()),
+            user_id: None,
         };
 
         let expense = create(&conn, dto, user_id).unwrap();
@@ -531,6 +532,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let expense = create(&conn, dto, user_id).unwrap();
@@ -560,6 +562,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let expense = create(&conn, dto, user_id).unwrap();
@@ -616,18 +619,21 @@ mod tests {
                 amount: 1000.0,
                 category: "食費".to_string(),
                 description: Some("1月の食費".to_string()),
+                user_id: None,
             },
             CreateExpenseDto {
                 date: "2024-02-10".to_string(),
                 amount: 2000.0,
                 category: "交通費".to_string(),
                 description: Some("2月の交通費".to_string()),
+                user_id: None,
             },
             CreateExpenseDto {
                 date: "2024-01-20".to_string(),
                 amount: 1500.0,
                 category: "食費".to_string(),
                 description: Some("1月の食費2".to_string()),
+                user_id: None,
             },
         ];
 
@@ -691,6 +697,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: Some("ユーザー1の経費".to_string()),
+            user_id: None,
         };
         let expense1 = create(&conn, dto1, user1_id).unwrap();
 
@@ -700,6 +707,7 @@ mod tests {
             amount: 2000.0,
             category: "交通費".to_string(),
             description: Some("ユーザー2の経費".to_string()),
+            user_id: None,
         };
         let expense2 = create(&conn, dto2, user2_id).unwrap();
 

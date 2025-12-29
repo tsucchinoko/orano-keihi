@@ -138,8 +138,16 @@ async fn handle_request(
 
             log::info!(
                 "OAuth認証コールバックを受信: code={}, state={}, error={:?}",
-                callback.code.is_empty().then(|| "なし").unwrap_or("あり"),
-                callback.state.is_empty().then(|| "なし").unwrap_or("あり"),
+                if callback.code.is_empty() {
+                    "なし"
+                } else {
+                    "あり"
+                },
+                if callback.state.is_empty() {
+                    "なし"
+                } else {
+                    "あり"
+                },
                 callback.error
             );
 
