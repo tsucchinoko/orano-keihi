@@ -9,14 +9,17 @@ pub mod service;
 // 公開インターフェース
 pub use commands::{
     check_database_integrity, check_migration_status, create_manual_backup,
-    drop_receipt_path_column_command, execute_receipt_url_migration, get_database_stats,
+    drop_receipt_path_column_command, execute_comprehensive_data_migration_command,
+    execute_receipt_url_migration, execute_user_authentication_migration, get_database_stats,
     list_backup_files_command, restore_database_from_backup, DatabaseStats,
 };
 
 pub use service::{
-    create_backup, drop_receipt_path_column, is_receipt_url_migration_complete, list_backup_files,
-    migrate_receipt_path_to_url, restore_from_backup, run_migrations, MigrationResult,
-    MigrationStatus, RestoreResult,
+    create_backup, drop_receipt_path_column, execute_comprehensive_data_migration,
+    is_receipt_url_migration_complete, is_user_authentication_migration_complete,
+    list_backup_files, migrate_receipt_path_to_url, migrate_user_authentication,
+    restore_from_backup, run_migrations, DataMigrationResult, MigrationResult, MigrationStatus,
+    RestoreResult,
 };
 
 /// マイグレーション機能の初期化
@@ -35,6 +38,7 @@ pub const VERSION: &str = "1.0.0";
 pub const SUPPORTED_MIGRATIONS: &[&str] = &[
     "receipt_path_to_receipt_url", // receipt_pathからreceipt_urlへの移行
     "drop_receipt_path_column",    // receipt_pathカラムの削除
+    "add_user_authentication",     // ユーザー認証機能の追加
 ];
 
 /// マイグレーション機能の説明

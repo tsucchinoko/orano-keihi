@@ -1,12 +1,24 @@
 <script lang="ts">
 import "../app.css";
-import ErrorBoundary from "$lib/components/ErrorBoundary.svelte";
-import ToastContainer from "$lib/components/ToastContainer.svelte";
+// import ErrorBoundary from "$lib/components/ErrorBoundary.svelte";
+// import ToastContainer from "$lib/components/ToastContainer.svelte";
 import { goto } from "$app/navigation";
-import { page } from "$app/stores";
+import { page } from "$app/state";
+import { authStore } from "$lib/stores";
+import { onMount } from "svelte";
 
 // 現在のパスを取得
-let currentPath = $derived($page.url.pathname);
+let currentPath = $derived(page.url.pathname);
+
+// 認証状態を取得
+let isAuthenticated = $derived(authStore.isAuthenticated);
+let user = $derived(authStore.user);
+let isLoading = $derived(authStore.isLoading);
+
+// アプリケーション初期化
+onMount(async () => {
+	await authStore.initialize();
+});
 
 // プログラム的なナビゲーション関数
 function navigateTo(path: string) {
@@ -18,72 +30,125 @@ function navigateTo(path: string) {
 function isActive(path: string): boolean {
 	return currentPath === path;
 }
+
+// ログアウト処理
+async function handleLogout() {
+	const confirmed = confirm("ログアウトしますか？");
+	if (confirmed) {
+		await authStore.logout();
+		goto("/login");
+	}
+}
+
+// ログインページかどうかを判定
+let isLoginPage = $derived(currentPath.startsWith("/login"));
 </script>
 
-<!-- エラーバウンダリでアプリ全体をラップ -->
-<ErrorBoundary>
-	{#snippet children()}
+<!-- 簡素化されたレイアウト（ErrorBoundaryとToastContainerは一時的にコメントアウト） -->
+<!-- <ErrorBoundary> -->
+	<!-- {#snippet children()} -->
 		<!-- グローバルレイアウト: グラデーション背景とナビゲーション構造 -->
 		<div class="app-container">
-			<!-- ナビゲーションヘッダー -->
-			<header class="header">
-				<nav class="nav-container">
-					<div class="nav-brand">
-						<button 
-							type="button"
-							class="brand-link brand-button" 
-							onclick={() => navigateTo('/')}
-						>
-							<h1 class="brand-title">オラの経費だゾ</h1>
-						</button>
-					</div>
-					<div class="nav-links">
-						<button 
-							type="button"
-							class:active={isActive('/expenses')}
-							class="nav-link nav-button" 
-							onclick={() => navigateTo('/expenses')}
-						>
-							経費一覧
-						</button>
-						<button 
-							type="button"
-							class:active={isActive('/subscriptions')}
-							class="nav-link nav-button" 
-							onclick={() => navigateTo('/subscriptions')}
-						>
-							サブスクリプション
-						</button>
-						{#if import.meta.env.DEV}
+			<!-- ナビゲーションヘッダー（ログインページ以外で表示） -->
+			{#if !isLoginPage}
+				<header class="header">
+					<nav class="nav-container">
+						<div class="nav-brand">
 							<button 
 								type="button"
-								class:active={isActive('/debug')}
-								class="nav-link nav-button debug-link" 
-								onclick={() => navigateTo('/debug')}
+								class="brand-link brand-button" 
+								onclick={() => navigateTo('/')}
 							>
-								デバッグ
+								<h1 class="brand-title">オラの経費だゾ</h1>
 							</button>
+						</div>
+						
+						{#if isAuthenticated}
+							<!-- 認証済みユーザー向けナビゲーション -->
+							<div class="nav-links">
+								<button 
+									type="button"
+									class:active={isActive('/expenses')}
+									class="nav-link nav-button" 
+									onclick={() => navigateTo('/expenses')}
+								>
+									経費一覧
+								</button>
+								<button 
+									type="button"
+									class:active={isActive('/subscriptions')}
+									class="nav-link nav-button" 
+									onclick={() => navigateTo('/subscriptions')}
+								>
+									サブスクリプション
+								</button>
+								{#if import.meta.env.DEV}
+									<button 
+										type="button"
+										class:active={isActive('/debug')}
+										class="nav-link nav-button debug-link" 
+										onclick={() => navigateTo('/debug')}
+									>
+										デバッグ
+									</button>
+								{/if}
+							</div>
+							
+							<!-- ユーザー情報とログアウト -->
+							<div class="user-section">
+								{#if user}
+									<div class="user-info">
+										{#if user.picture_url}
+											<img 
+												src={user.picture_url} 
+												alt={user.name}
+												class="user-avatar"
+											/>
+										{/if}
+										<span class="user-name">{user.name}</span>
+									</div>
+								{/if}
+								<button 
+									type="button"
+									class="logout-button"
+									onclick={handleLogout}
+									disabled={isLoading}
+								>
+									ログアウト
+								</button>
+							</div>
+						{:else if !isLoading}
+							<!-- 未認証ユーザー向けナビゲーション -->
+							<div class="nav-links">
+								<button 
+									type="button"
+									class="nav-link nav-button login-button" 
+									onclick={() => navigateTo('/login')}
+								>
+									ログイン
+								</button>
+							</div>
 						{/if}
-					</div>
-				</nav>
-			</header>
+					</nav>
+				</header>
+			{/if}
 
 			<!-- メインコンテンツエリア -->
-			<main class="main-content">
+			<main class="main-content" class:no-header={isLoginPage}>
 				<!-- デバッグ情報（開発環境のみ） -->
-				{#if import.meta.env.DEV}
+				{#if import.meta.env.DEV && !isLoginPage}
 					<div class="debug-info">
-						現在のパス: {currentPath}
+						現在のパス: {currentPath} | 認証状態: {isAuthenticated ? '認証済み' : '未認証'}
 					</div>
 				{/if}
 				<slot />
 			</main>
 
 			<!-- トースト通知コンテナ -->
-			<ToastContainer />
+			<!-- <ToastContainer /> -->
 		</div>
-	{/snippet}
-</ErrorBoundary>
+	<!-- {/snippet} -->
+<!-- </ErrorBoundary> -->
 
 <style>
 	/* アプリケーション全体のコンテナ */
@@ -111,6 +176,7 @@ function isActive(path: string): boolean {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		gap: 1rem;
 	}
 
 	.nav-brand {
@@ -191,11 +257,75 @@ function isActive(path: string): boolean {
 		transform: translateY(-2px);
 	}
 
+	.login-button {
+		background: var(--gradient-primary);
+		color: white;
+	}
+
+	.login-button:hover {
+		background: var(--gradient-primary);
+		opacity: 0.9;
+	}
+
+	/* ユーザーセクション */
+	.user-section {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.user-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.user-avatar {
+		width: 2rem;
+		height: 2rem;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+
+	.user-name {
+		font-weight: 600;
+		color: #374151;
+		font-size: 0.875rem;
+	}
+
+	.logout-button {
+		background: #f3f4f6;
+		color: #6b7280;
+		border: none;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease-in-out;
+	}
+
+	.logout-button:hover:not(:disabled) {
+		background: #ef4444;
+		color: white;
+		transform: translateY(-1px);
+	}
+
+	.logout-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
 	/* メインコンテンツエリア */
 	.main-content {
 		max-width: 1200px;
 		margin: 0 auto;
 		padding: 2rem;
+	}
+
+	.main-content.no-header {
+		padding: 0;
+		max-width: none;
 	}
 
 	/* デバッグ情報 */
@@ -223,8 +353,17 @@ function isActive(path: string): boolean {
 			gap: 1rem;
 		}
 
+		.user-section {
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
 		.main-content {
 			padding: 1rem;
+		}
+
+		.main-content.no-header {
+			padding: 0;
 		}
 	}
 </style>

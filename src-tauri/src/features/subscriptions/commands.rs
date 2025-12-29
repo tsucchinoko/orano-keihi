@@ -26,7 +26,7 @@ pub async fn create_subscription(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプションを作成
-    repository::create(&db, dto).map_err(|e| e.user_message().to_string())
+    repository::create(&db, dto, 1i64).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプション一覧を取得する
@@ -49,7 +49,7 @@ pub async fn get_subscriptions(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプション一覧を取得
-    repository::find_all(&db, active_only).map_err(|e| e.user_message().to_string())
+    repository::find_all(&db, 1i64, active_only).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプションを更新する
@@ -77,7 +77,7 @@ pub async fn update_subscription(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプションを更新
-    repository::update(&db, id, dto).map_err(|e| e.user_message().to_string())
+    repository::update(&db, id, dto, 1i64).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプションのアクティブ状態を切り替える
@@ -100,7 +100,7 @@ pub async fn toggle_subscription_status(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // サブスクリプションのアクティブ状態を切り替え
-    repository::toggle_status(&db, id).map_err(|e| e.user_message().to_string())
+    repository::toggle_status(&db, id, 1i64).map_err(|e| e.user_message().to_string())
 }
 
 /// アクティブなサブスクリプションの月額合計を取得する
@@ -119,7 +119,7 @@ pub async fn get_monthly_subscription_total(state: State<'_, AppState>) -> Resul
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 月額合計を計算
-    repository::calculate_monthly_total(&db).map_err(|e| e.user_message().to_string())
+    repository::calculate_monthly_total(&db, 1i64).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプション作成DTOのバリデーション

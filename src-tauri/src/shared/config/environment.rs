@@ -131,42 +131,21 @@ pub fn load_environment_variables() {
     let embedded_env = option_env!("EMBEDDED_ENVIRONMENT");
 
     if let Some(env) = embedded_env {
-        log::info!("コンパイル時埋め込み環境設定を使用: {env}");
+        // ログシステムが初期化されていないため、eprintlnを使用
+        eprintln!("コンパイル時埋め込み環境設定を使用: {env}");
         // コンパイル時に埋め込まれた環境変数がある場合は、実行時読み込みをスキップ
         return;
     }
 
-    // まず、ENVIRONMENTが設定されているかチェック
-    let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
-
-    // 環境に応じた.envファイルのパスを決定
-    let env_file = match environment.as_str() {
-        "production" => ".env.production",
-        "development" => ".env",
-        _ => ".env", // デフォルトは開発環境
-    };
-
-    log::info!("環境: {environment}, 読み込み対象: {env_file}");
-
-    // 指定された.envファイルを読み込み
-    match dotenv::from_filename(env_file) {
-        Ok(_) => {
-            log::info!("{env_file}ファイルを読み込みました");
+    // dotenv::dotenv()を使用して、カレントディレクトリから.envファイルを自動的に探す
+    // これは複数の場所を自動的に検索する
+    match dotenv::dotenv() {
+        Ok(path) => {
+            eprintln!(".envファイルを読み込みました: {}", path.display());
         }
-        Err(_) => {
-            // 環境固有のファイルがない場合は、デフォルトの.envを試行
-            if env_file != ".env" {
-                match dotenv::dotenv() {
-                    Ok(_) => {
-                        log::warn!("{env_file}が見つからないため、デフォルトの.envファイルを読み込みました");
-                    }
-                    Err(_) => {
-                        log::warn!("環境変数ファイルが見つかりません。コンパイル時埋め込み値または直接設定された環境変数を使用します。");
-                    }
-                }
-            } else {
-                log::warn!(".envファイルが見つかりません。コンパイル時埋め込み値または直接設定された環境変数を使用します。");
-            }
+        Err(e) => {
+            eprintln!(".envファイルの読み込みに失敗しました: {e}");
+            eprintln!("コンパイル時埋め込み値または直接設定された環境変数を使用します。");
         }
     }
 }
@@ -219,6 +198,137 @@ pub struct R2Config {
     pub endpoint_url: String,
     /// R2のリージョン
     pub region: String,
+}
+
+/// Google OAuth 2.0の設定を管理する構造体（ネイティブアプリ用）
+#[derive(Debug, Clone)]
+pub struct GoogleOAuthConfig {
+    /// GoogleクライアントID
+    pub client_id: String,
+    /// Googleクライアントシークレット（一時的に使用）
+    pub client_secret: String,
+    /// OAuth2リダイレクトURI（動的に設定されるため、ベースURIとして使用）
+    pub redirect_uri: String,
+    /// セッション暗号化キー
+    pub session_encryption_key: String,
+}
+
+impl GoogleOAuthConfig {
+    /// 環境変数からGoogle OAuth設定を読み込む（ネイティブアプリ用）
+    ///
+    /// # 戻り値
+    /// Google OAuth設定、または設定が不完全な場合はNone
+    pub fn from_env() -> Option<Self> {
+        log::debug!("GoogleOAuthConfig::from_env() - 環境変数の読み込みを開始");
+
+        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
+        let client_id = option_env!("EMBEDDED_GOOGLE_CLIENT_ID")
+            .map(|s| {
+                log::debug!(
+                    "コンパイル時埋め込みGOOGLE_CLIENT_ID を使用: {}****",
+                    &s[..8.min(s.len())]
+                );
+                s.to_string()
+            })
+            .or_else(|| {
+                std::env::var("GOOGLE_CLIENT_ID").ok().map(|val| {
+                    log::debug!(
+                        "実行時GOOGLE_CLIENT_ID が見つかりました: {}****",
+                        &val[..8.min(val.len())]
+                    );
+                    val
+                })
+            });
+
+        let client_id = match client_id {
+            Some(val) => val,
+            None => {
+                log::error!("GOOGLE_CLIENT_ID が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
+                return None;
+            }
+        };
+
+        // ネイティブアプリではクライアントシークレットは不要（PKCE使用）
+        // 一時的にクライアントシークレットを使用
+        let client_secret = option_env!("EMBEDDED_GOOGLE_CLIENT_SECRET")
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok())
+            .unwrap_or_else(|| {
+                log::debug!("GOOGLE_CLIENT_SECRET が設定されていません");
+                String::new()
+            });
+
+        log::debug!("一時的にクライアントシークレットを使用します（テスト用）");
+
+        let redirect_uri = option_env!("EMBEDDED_GOOGLE_REDIRECT_URI")
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("GOOGLE_REDIRECT_URI").ok())
+            .unwrap_or_else(|| {
+                log::debug!("GOOGLE_REDIRECT_URI が設定されていないため、デフォルト値を使用");
+                "http://127.0.0.1/callback".to_string()
+            });
+
+        let session_encryption_key = option_env!("EMBEDDED_SESSION_ENCRYPTION_KEY")
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("SESSION_ENCRYPTION_KEY").ok())
+            .unwrap_or_else(|| {
+                log::warn!("SESSION_ENCRYPTION_KEY が設定されていないため、デフォルト値を使用（本番環境では必ず設定してください）");
+                "default_32_byte_encryption_key_123".to_string()
+            });
+
+        log::debug!("GoogleOAuthConfig::from_env() - 設定の読み込みが完了しました");
+        Some(Self {
+            client_id,
+            client_secret,
+            redirect_uri,
+            session_encryption_key,
+        })
+    }
+
+    /// Google OAuth設定が有効かどうかを判定
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はtrue
+    pub fn is_valid(&self) -> bool {
+        !self.client_id.is_empty()
+            && !self.redirect_uri.is_empty()
+            && !self.session_encryption_key.is_empty()
+    }
+
+    /// 設定を検証する
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はOk(())、無効な場合はErr
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.is_valid() {
+            return Err("Google OAuth設定が不完全です".to_string());
+        }
+
+        // セッション暗号化キーの長さをチェック（最低16バイト）
+        if self.session_encryption_key.len() < 16 {
+            return Err("セッション暗号化キーは最低16文字以上である必要があります".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// デバッグ情報を取得
+    ///
+    /// # 戻り値
+    /// デバッグ情報のマップ
+    pub fn get_debug_info(&self) -> std::collections::HashMap<String, String> {
+        let mut info = std::collections::HashMap::new();
+        info.insert(
+            "client_id".to_string(),
+            format!("{}****", &self.client_id[..8.min(self.client_id.len())]),
+        );
+        info.insert("redirect_uri".to_string(), self.redirect_uri.clone());
+        info.insert(
+            "session_encryption_key_length".to_string(),
+            self.session_encryption_key.len().to_string(),
+        );
+        info
+    }
 }
 
 impl R2Config {

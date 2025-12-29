@@ -6,6 +6,9 @@ use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// デフォルトユーザーID（既存データ用）
+const DEFAULT_USER_ID: i64 = 1;
+
 /// ローカルキャッシュマネージャー
 pub struct CacheManager {
     cache_dir: PathBuf,
@@ -49,6 +52,7 @@ impl CacheManager {
     /// * `receipt_url` - 領収書URL
     /// * `data` - ファイルデータ
     /// * `conn` - データベース接続
+    /// * `user_id` - ユーザーID
     ///
     /// # 戻り値
     /// キャッシュファイルのパス、または失敗時はAppError
@@ -57,6 +61,7 @@ impl CacheManager {
         receipt_url: &str,
         data: Vec<u8>,
         conn: &Connection,
+        user_id: i64,
     ) -> AppResult<PathBuf> {
         // キャッシュディレクトリを確認・作成
         self.initialize_sync()?;
@@ -75,7 +80,13 @@ impl CacheManager {
             .to_str()
             .ok_or_else(|| AppError::ExternalService("パス変換失敗".to_string()))?;
 
-        self.save_receipt_cache(conn, receipt_url, local_path_str, data.len() as i64)?;
+        self.save_receipt_cache(
+            conn,
+            receipt_url,
+            local_path_str,
+            data.len() as i64,
+            user_id,
+        )?;
 
         Ok(cache_path)
     }
@@ -85,6 +96,7 @@ impl CacheManager {
     /// # 引数
     /// * `receipt_url` - 領収書URL
     /// * `conn` - データベース接続
+    /// * `user_id` - ユーザーID
     ///
     /// # 戻り値
     /// ファイルデータ（存在する場合）、または失敗時はAppError
@@ -92,9 +104,10 @@ impl CacheManager {
         &self,
         receipt_url: &str,
         conn: &Connection,
+        user_id: i64,
     ) -> AppResult<Option<Vec<u8>>> {
         // データベースからキャッシュ情報を取得
-        let cache_info = self.get_receipt_cache(conn, receipt_url)?;
+        let cache_info = self.get_receipt_cache(conn, receipt_url, user_id)?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -102,7 +115,7 @@ impl CacheManager {
             // ファイルが存在するかチェック
             if cache_path.exists() {
                 // アクセス時刻を更新
-                self.update_cache_access_time(conn, receipt_url)?;
+                self.update_cache_access_time(conn, receipt_url, user_id)?;
 
                 // ファイルを読み込み
                 let data = std::fs::read(cache_path).map_err(|e| {
@@ -112,7 +125,7 @@ impl CacheManager {
                 return Ok(Some(data));
             } else {
                 // ファイルが存在しない場合はキャッシュ情報を削除
-                self.delete_receipt_cache(conn, receipt_url)?;
+                self.delete_receipt_cache(conn, receipt_url, user_id)?;
             }
         }
 
@@ -123,14 +136,15 @@ impl CacheManager {
     ///
     /// # 引数
     /// * `conn` - データベース接続
+    /// * `user_id` - ユーザーID（Noneの場合は全ユーザー対象）
     ///
     /// # 戻り値
     /// 削除されたファイル数、または失敗時はAppError
-    pub fn cleanup_old_cache(&self, conn: &Connection) -> AppResult<usize> {
+    pub fn cleanup_old_cache(&self, conn: &Connection, user_id: Option<i64>) -> AppResult<usize> {
         let max_age_days = self.max_age.as_secs() / (24 * 3600);
 
         // データベースから古いキャッシュ情報を取得して物理ファイルも削除
-        let old_caches = self.get_old_cache_entries(conn, max_age_days as i64)?;
+        let old_caches = self.get_old_cache_entries(conn, max_age_days as i64, user_id)?;
 
         let mut _deleted_count = 0;
         for cache in &old_caches {
@@ -145,7 +159,7 @@ impl CacheManager {
         }
 
         // データベースから古いキャッシュ情報を削除
-        let db_deleted_count = self.cleanup_old_cache_db(conn, max_age_days as i64)?;
+        let db_deleted_count = self.cleanup_old_cache_db(conn, max_age_days as i64, user_id)?;
 
         Ok(db_deleted_count)
     }
@@ -154,21 +168,22 @@ impl CacheManager {
     ///
     /// # 引数
     /// * `conn` - データベース接続
+    /// * `user_id` - ユーザーID（Noneの場合は全ユーザー対象）
     ///
     /// # 戻り値
     /// 成功時はOk(())、失敗時はAppError
-    pub fn manage_cache_size(&self, conn: &Connection) -> AppResult<()> {
+    pub fn manage_cache_size(&self, conn: &Connection, user_id: Option<i64>) -> AppResult<()> {
         // 現在のキャッシュサイズを計算
         let current_size = self.calculate_cache_size_sync()?;
 
         if current_size > self.max_cache_size {
             // サイズ超過時は古いファイルから削除
-            self.cleanup_old_cache(conn)?;
+            self.cleanup_old_cache(conn, user_id)?;
 
             // まだサイズが超過している場合は、LRU方式で削除
             let remaining_size = self.calculate_cache_size_sync()?;
             if remaining_size > self.max_cache_size {
-                self.cleanup_lru_cache(conn)?;
+                self.cleanup_lru_cache(conn, user_id)?;
             }
         }
 
@@ -241,12 +256,13 @@ impl CacheManager {
     ///
     /// # 引数
     /// * `conn` - データベース接続
+    /// * `user_id` - ユーザーID（Noneの場合は全ユーザー対象）
     ///
     /// # 戻り値
     /// 成功時はOk(())、失敗時はAppError
-    fn cleanup_lru_cache(&self, conn: &Connection) -> AppResult<()> {
+    fn cleanup_lru_cache(&self, conn: &Connection, user_id: Option<i64>) -> AppResult<()> {
         // 最も古くアクセスされたファイルを取得して削除
-        let lru_caches = self.get_lru_cache_entries(conn, 10)?; // 最大10個削除
+        let lru_caches = self.get_lru_cache_entries(conn, 10, user_id)?; // 最大10個削除
 
         for cache in &lru_caches {
             let cache_path = Path::new(&cache.local_path);
@@ -260,7 +276,8 @@ impl CacheManager {
             }
 
             // データベースからも削除
-            if let Err(e) = self.delete_receipt_cache(conn, &cache.receipt_url) {
+            let delete_user_id = user_id.unwrap_or(DEFAULT_USER_ID);
+            if let Err(e) = self.delete_receipt_cache(conn, &cache.receipt_url, delete_user_id) {
                 eprintln!("LRUキャッシュDB削除エラー: {} ({})", cache.receipt_url, e);
             }
         }
@@ -273,12 +290,18 @@ impl CacheManager {
     /// # 引数
     /// * `receipt_url` - 領収書URL
     /// * `conn` - データベース接続
+    /// * `user_id` - ユーザーID
     ///
     /// # 戻り値
     /// 成功時はOk(())、失敗時はAppError
-    pub fn delete_cache_file(&self, receipt_url: &str, conn: &Connection) -> AppResult<()> {
+    pub fn delete_cache_file(
+        &self,
+        receipt_url: &str,
+        conn: &Connection,
+        user_id: i64,
+    ) -> AppResult<()> {
         // データベースからキャッシュ情報を取得
-        let cache_info = self.get_receipt_cache(conn, receipt_url)?;
+        let cache_info = self.get_receipt_cache(conn, receipt_url, user_id)?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -290,7 +313,7 @@ impl CacheManager {
             }
 
             // データベースからキャッシュ情報を削除
-            self.delete_receipt_cache(conn, receipt_url)?;
+            self.delete_receipt_cache(conn, receipt_url, user_id)?;
         }
 
         Ok(())
@@ -301,6 +324,7 @@ impl CacheManager {
     /// # 引数
     /// * `receipt_url` - 領収書URL
     /// * `conn` - データベース接続
+    /// * `user_id` - ユーザーID
     ///
     /// # 戻り値
     /// キャッシュされたファイルデータ（存在する場合）、または失敗時はAppError
@@ -308,9 +332,10 @@ impl CacheManager {
         &self,
         receipt_url: &str,
         conn: &Connection,
+        user_id: i64,
     ) -> AppResult<Option<Vec<u8>>> {
         // オフライン時はアクセス時刻を更新せずにキャッシュを取得
-        let cache_info = self.get_receipt_cache(conn, receipt_url)?;
+        let cache_info = self.get_receipt_cache(conn, receipt_url, user_id)?;
 
         if let Some(cache) = cache_info {
             let cache_path = Path::new(&cache.local_path);
@@ -337,6 +362,7 @@ impl CacheManager {
         receipt_url: &str,
         local_path: &str,
         file_size: i64,
+        user_id: i64,
     ) -> AppResult<()> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
@@ -344,9 +370,9 @@ impl CacheManager {
         let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
         conn.execute(
-            "INSERT OR REPLACE INTO receipt_cache (receipt_url, local_path, cached_at, file_size, last_accessed)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![receipt_url, local_path, &now, file_size, &now],
+            "INSERT OR REPLACE INTO receipt_cache (receipt_url, local_path, cached_at, file_size, last_accessed, user_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![receipt_url, local_path, &now, file_size, &now, user_id],
         )
         .map_err(|e| AppError::Database(format!("キャッシュ情報保存失敗: {e}")))?;
 
@@ -358,11 +384,12 @@ impl CacheManager {
         &self,
         conn: &Connection,
         receipt_url: &str,
+        user_id: i64,
     ) -> AppResult<Option<ReceiptCache>> {
         match conn.query_row(
             "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed
-             FROM receipt_cache WHERE receipt_url = ?1",
-            rusqlite::params![receipt_url],
+             FROM receipt_cache WHERE receipt_url = ?1 AND user_id = ?2",
+            rusqlite::params![receipt_url, user_id],
             |row| {
                 Ok(ReceiptCache {
                     id: row.get(0)?,
@@ -381,15 +408,20 @@ impl CacheManager {
     }
 
     /// キャッシュアクセス時刻を更新
-    fn update_cache_access_time(&self, conn: &Connection, receipt_url: &str) -> AppResult<()> {
+    fn update_cache_access_time(
+        &self,
+        conn: &Connection,
+        receipt_url: &str,
+        user_id: i64,
+    ) -> AppResult<()> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
 
         let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
         conn.execute(
-            "UPDATE receipt_cache SET last_accessed = ?1 WHERE receipt_url = ?2",
-            rusqlite::params![&now, receipt_url],
+            "UPDATE receipt_cache SET last_accessed = ?1 WHERE receipt_url = ?2 AND user_id = ?3",
+            rusqlite::params![&now, receipt_url, user_id],
         )
         .map_err(|e| AppError::Database(format!("アクセス時刻更新失敗: {e}")))?;
 
@@ -397,10 +429,15 @@ impl CacheManager {
     }
 
     /// 領収書キャッシュ情報をデータベースから削除
-    fn delete_receipt_cache(&self, conn: &Connection, receipt_url: &str) -> AppResult<()> {
+    fn delete_receipt_cache(
+        &self,
+        conn: &Connection,
+        receipt_url: &str,
+        user_id: i64,
+    ) -> AppResult<()> {
         conn.execute(
-            "DELETE FROM receipt_cache WHERE receipt_url = ?1",
-            rusqlite::params![receipt_url],
+            "DELETE FROM receipt_cache WHERE receipt_url = ?1 AND user_id = ?2",
+            rusqlite::params![receipt_url, user_id],
         )
         .map_err(|e| AppError::Database(format!("キャッシュ情報削除失敗: {e}")))?;
 
@@ -412,6 +449,7 @@ impl CacheManager {
         &self,
         conn: &Connection,
         max_age_days: i64,
+        user_id: Option<i64>,
     ) -> AppResult<Vec<ReceiptCache>> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
@@ -421,12 +459,26 @@ impl CacheManager {
         let cutoff_date = now - chrono::Duration::days(max_age_days);
         let cutoff_str = cutoff_date.to_rfc3339();
 
+        let (query, params): (String, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(uid) = user_id {
+            (
+                "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache WHERE last_accessed < ?1 AND user_id = ?2".to_string(),
+                vec![Box::new(cutoff_str), Box::new(uid)]
+            )
+        } else {
+            (
+                "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache WHERE last_accessed < ?1".to_string(),
+                vec![Box::new(cutoff_str)]
+            )
+        };
+
         let mut stmt = conn
-            .prepare("SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache WHERE last_accessed < ?1")
+            .prepare(&query)
             .map_err(|e| AppError::Database(format!("SQL準備失敗: {e}")))?;
 
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
         let cache_iter = stmt
-            .query_map([cutoff_str], |row| {
+            .query_map(param_refs.as_slice(), |row| {
                 Ok(ReceiptCache {
                     id: row.get(0)?,
                     receipt_url: row.get(1)?,
@@ -449,13 +501,32 @@ impl CacheManager {
     }
 
     /// LRUキャッシュエントリを取得するヘルパー関数
-    fn get_lru_cache_entries(&self, conn: &Connection, limit: i64) -> AppResult<Vec<ReceiptCache>> {
+    fn get_lru_cache_entries(
+        &self,
+        conn: &Connection,
+        limit: i64,
+        user_id: Option<i64>,
+    ) -> AppResult<Vec<ReceiptCache>> {
+        let (query, params): (String, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(uid) = user_id {
+            (
+                "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache WHERE user_id = ?1 ORDER BY last_accessed ASC LIMIT ?2".to_string(),
+                vec![Box::new(uid), Box::new(limit)]
+            )
+        } else {
+            (
+                "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache ORDER BY last_accessed ASC LIMIT ?1".to_string(),
+                vec![Box::new(limit)]
+            )
+        };
+
         let mut stmt = conn
-            .prepare("SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache ORDER BY last_accessed ASC LIMIT ?1")
+            .prepare(&query)
             .map_err(|e| AppError::Database(format!("SQL準備失敗: {e}")))?;
 
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
         let cache_iter = stmt
-            .query_map([limit], |row| {
+            .query_map(param_refs.as_slice(), |row| {
                 Ok(ReceiptCache {
                     id: row.get(0)?,
                     receipt_url: row.get(1)?,
@@ -478,7 +549,12 @@ impl CacheManager {
     }
 
     /// データベースから古いキャッシュ情報を削除
-    fn cleanup_old_cache_db(&self, conn: &Connection, max_age_days: i64) -> AppResult<usize> {
+    fn cleanup_old_cache_db(
+        &self,
+        conn: &Connection,
+        max_age_days: i64,
+        user_id: Option<i64>,
+    ) -> AppResult<usize> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
 
@@ -486,14 +562,62 @@ impl CacheManager {
         let cutoff_date = now - chrono::Duration::days(max_age_days);
         let cutoff_str = cutoff_date.to_rfc3339();
 
-        let deleted_count = conn
-            .execute(
+        let deleted_count = if let Some(uid) = user_id {
+            conn.execute(
+                "DELETE FROM receipt_cache WHERE last_accessed < ?1 AND user_id = ?2",
+                rusqlite::params![cutoff_str, uid],
+            )
+        } else {
+            conn.execute(
                 "DELETE FROM receipt_cache WHERE last_accessed < ?1",
                 rusqlite::params![cutoff_str],
             )
-            .map_err(|e| AppError::Database(format!("古いキャッシュ削除失敗: {e}")))?;
+        }
+        .map_err(|e| AppError::Database(format!("古いキャッシュ削除失敗: {e}")))?;
 
         Ok(deleted_count)
+    }
+
+    /// 既存データにデフォルトユーザーIDを設定する
+    ///
+    /// # 引数
+    /// * `conn` - データベース接続
+    ///
+    /// # 戻り値
+    /// 成功時はOk(())、失敗時はエラー
+    pub fn assign_default_user_to_existing_data(&self, conn: &Connection) -> AppResult<()> {
+        // user_idがNULLのレシートキャッシュにデフォルトユーザーIDを設定
+        let affected_caches = conn
+            .execute(
+                "UPDATE receipt_cache SET user_id = ?1 WHERE user_id IS NULL",
+                rusqlite::params![DEFAULT_USER_ID],
+            )
+            .map_err(|e| AppError::Database(format!("デフォルトユーザー割り当て失敗: {e}")))?;
+
+        if affected_caches > 0 {
+            log::info!(
+                "既存のレシートキャッシュ {} 件にデフォルトユーザーIDを設定しました",
+                affected_caches
+            );
+        }
+
+        Ok(())
+    }
+
+    /// デフォルトユーザーのキャッシュを取得する（後方互換性のため）
+    ///
+    /// # 引数
+    /// * `receipt_url` - 領収書URL
+    /// * `conn` - データベース接続
+    ///
+    /// # 戻り値
+    /// ファイルデータ（存在する場合）、または失敗時はエラー
+    pub fn get_cached_file_for_default_user(
+        &self,
+        receipt_url: &str,
+        conn: &Connection,
+    ) -> AppResult<Option<Vec<u8>>> {
+        self.get_cached_file(receipt_url, conn, DEFAULT_USER_ID)
     }
 }
 

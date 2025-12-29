@@ -1,6 +1,7 @@
 use super::service::{
-    create_backup, drop_receipt_path_column, is_receipt_url_migration_complete, list_backup_files,
-    migrate_receipt_path_to_url, restore_from_backup, MigrationResult, MigrationStatus,
+    create_backup, drop_receipt_path_column, is_receipt_url_migration_complete,
+    is_user_authentication_migration_complete, list_backup_files, migrate_receipt_path_to_url,
+    migrate_user_authentication, restore_from_backup, MigrationResult, MigrationStatus,
     RestoreResult,
 };
 use crate::shared::database::connection::initialize_database;
@@ -23,15 +24,20 @@ pub async fn check_migration_status(app_handle: AppHandle) -> Result<MigrationSt
     let receipt_url_migration_complete = is_receipt_url_migration_complete(&conn)
         .map_err(|e| format!("マイグレーション状態確認エラー: {e}"))?;
 
+    let user_auth_migration_complete = is_user_authentication_migration_complete(&conn)
+        .map_err(|e| format!("ユーザー認証マイグレーション状態確認エラー: {e}"))?;
+
     // データベースバージョンを取得（簡易版）
-    let database_version = if receipt_url_migration_complete {
+    let database_version = if user_auth_migration_complete {
+        "3.0.0".to_string() // ユーザー認証対応版
+    } else if receipt_url_migration_complete {
         "2.0.0".to_string() // receipt_url対応版
     } else {
         "1.0.0".to_string() // receipt_path版
     };
 
     // 最後のマイグレーション日時（JST）
-    let last_migration_date = if receipt_url_migration_complete {
+    let last_migration_date = if user_auth_migration_complete || receipt_url_migration_complete {
         Some(Utc::now().with_timezone(&Tokyo).to_rfc3339())
     } else {
         None
@@ -42,6 +48,24 @@ pub async fn check_migration_status(app_handle: AppHandle) -> Result<MigrationSt
         database_version,
         last_migration_date,
     })
+}
+
+/// ユーザー認証機能のマイグレーションを実行する
+///
+/// # 引数
+/// * `app_handle` - Tauriアプリケーションハンドル
+///
+/// # 戻り値
+/// マイグレーション結果
+#[tauri::command]
+pub async fn execute_user_authentication_migration(
+    app_handle: AppHandle,
+) -> Result<MigrationResult, String> {
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
+
+    migrate_user_authentication(&conn)
+        .map_err(|e| format!("ユーザー認証マイグレーション実行エラー: {e}"))
 }
 
 /// receipt_pathからreceipt_urlへのマイグレーションを実行する
@@ -197,6 +221,15 @@ pub async fn get_database_stats(app_handle: AppHandle) -> Result<DatabaseStats, 
         .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
         .unwrap_or(0);
 
+    // ユーザー認証テーブルのレコード数を取得（存在する場合）
+    let users_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let sessions_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+        .unwrap_or(0);
+
     // データベースファイルサイズを取得
     let page_count: i64 = conn
         .query_row("PRAGMA page_count", [], |row| row.get(0))
@@ -213,6 +246,8 @@ pub async fn get_database_stats(app_handle: AppHandle) -> Result<DatabaseStats, 
         subscriptions_count,
         receipt_cache_count,
         categories_count,
+        users_count,
+        sessions_count,
         database_size_bytes: database_size,
         page_count,
         page_size,
@@ -226,9 +261,29 @@ pub struct DatabaseStats {
     pub subscriptions_count: i64,
     pub receipt_cache_count: i64,
     pub categories_count: i64,
+    pub users_count: i64,
+    pub sessions_count: i64,
     pub database_size_bytes: i64,
     pub page_count: i64,
     pub page_size: i64,
+}
+
+/// 包括的なデータ移行を実行する
+///
+/// # 引数
+/// * `app_handle` - Tauriアプリケーションハンドル
+///
+/// # 戻り値
+/// データ移行結果
+#[tauri::command]
+pub async fn execute_comprehensive_data_migration_command(
+    app_handle: AppHandle,
+) -> Result<super::service::DataMigrationResult, String> {
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
+
+    super::service::execute_comprehensive_data_migration(&conn)
+        .map_err(|e| format!("包括的データ移行実行エラー: {e}"))
 }
 
 #[cfg(test)]

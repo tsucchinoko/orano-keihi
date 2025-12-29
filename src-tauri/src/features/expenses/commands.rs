@@ -1,3 +1,4 @@
+use crate::features::auth::middleware::AuthMiddleware;
 use crate::features::expenses::{models::*, repository};
 use crate::shared::errors::AppError;
 use crate::AppState;
@@ -9,15 +10,25 @@ use tauri::{Manager, State};
 ///
 /// # 引数
 /// * `dto` - 経費作成用DTO
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 作成された経費、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn create_expense(
     dto: CreateExpenseDto,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Expense, String> {
+    // 認証チェック
+    let _user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/expenses/create")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // バリデーション
     validate_expense_dto(&dto)?;
 
@@ -27,8 +38,12 @@ pub async fn create_expense(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
+    // ユーザーIDを含む経費DTOを作成
+    let mut user_dto = dto;
+    user_dto.user_id = Some(1i64);
+
     // 経費を作成
-    repository::create(&db, dto).map_err(|e| e.into())
+    repository::create(&db, user_dto, 1i64).map_err(|e| e.into())
 }
 
 /// 経費一覧を取得する（月とカテゴリでフィルタリング可能）
@@ -36,7 +51,9 @@ pub async fn create_expense(
 /// # 引数
 /// * `month` - 月フィルター（YYYY-MM形式、オプション）
 /// * `category` - カテゴリフィルター（オプション）
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 経費のリスト、または失敗時はエラーメッセージ
@@ -44,8 +61,16 @@ pub async fn create_expense(
 pub async fn get_expenses(
     month: Option<String>,
     category: Option<String>,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Vec<Expense>, String> {
+    // 認証チェック
+    let _user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/expenses/list")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // データベース接続を取得
     let db = state
         .db
@@ -53,7 +78,7 @@ pub async fn get_expenses(
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
     // 経費一覧を取得
-    repository::find_all(&db, month.as_deref(), category.as_deref()).map_err(|e| e.into())
+    repository::find_all(&db, 1i64, month.as_deref(), category.as_deref()).map_err(|e| e.into())
 }
 
 /// 経費を更新する
@@ -81,7 +106,7 @@ pub async fn update_expense(
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
     // 経費を更新
-    repository::update(&db, id, dto).map_err(|e| e.into())
+    repository::update(&db, id, dto, 1i64).map_err(|e| e.into())
 }
 
 /// 経費を削除する（R2対応）
@@ -109,7 +134,7 @@ pub async fn delete_expense(
             .lock()
             .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-        repository::get_receipt_url(&db, id).map_err(|e| e.user_message().to_string())?
+        repository::get_receipt_url(&db, id, 1i64).map_err(|e| e.user_message().to_string())?
     };
 
     // 領収書がR2に存在する場合は削除
@@ -134,7 +159,7 @@ pub async fn delete_expense(
                         AppError::concurrency(format!("データベースロック取得失敗: {e}"))
                     })?;
 
-                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db) {
+                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db, 1i64) {
                         eprintln!("キャッシュ削除エラー: {e}");
                     }
                 }
@@ -160,7 +185,7 @@ pub async fn delete_expense(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-    repository::delete(&db, id).map_err(|e| e.into())
+    repository::delete(&db, id, 1i64).map_err(|e| e.into())
 }
 
 /// 経費作成DTOのバリデーション
@@ -257,6 +282,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: Some("テスト経費".to_string()),
+            user_id: None, // 認証後に設定される
         };
 
         assert!(validate_expense_dto(&dto).is_ok());
@@ -270,6 +296,7 @@ mod tests {
             amount: -100.0,
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);
@@ -285,6 +312,7 @@ mod tests {
             amount: 99999999999.0, // 11桁
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);
@@ -300,6 +328,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: None,
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);
@@ -316,6 +345,7 @@ mod tests {
             amount: 1000.0,
             category: "食費".to_string(),
             description: Some(long_description),
+            user_id: None,
         };
 
         let result = validate_expense_dto(&dto);

@@ -20,6 +20,8 @@ pub struct CreateExpenseDto {
     pub amount: f64,
     pub category: String,
     pub description: Option<String>,
+    /// ユーザーID（認証後に設定される）
+    pub user_id: Option<i64>,
 }
 
 /// 経費更新用DTO

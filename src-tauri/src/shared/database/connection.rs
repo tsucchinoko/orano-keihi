@@ -138,6 +138,50 @@ pub fn create_tables(conn: &Connection) -> AppResult<()> {
     create_subscriptions_table(conn)?;
     create_categories_table(conn)?;
 
+    // ユーザー認証マイグレーションを実行
+    execute_user_authentication_migration_if_needed(conn)?;
+
+    Ok(())
+}
+
+/// 必要に応じてユーザー認証マイグレーションを実行する
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_user_authentication_migration_if_needed(conn: &Connection) -> AppResult<()> {
+    // ユーザー認証マイグレーションが必要かチェック
+    use crate::features::migrations::service::{
+        is_user_authentication_migration_complete, migrate_user_authentication,
+    };
+
+    let is_complete = is_user_authentication_migration_complete(conn)
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if !is_complete {
+        log::info!("ユーザー認証マイグレーションを実行します...");
+
+        match migrate_user_authentication(conn) {
+            Ok(result) => {
+                if result.success {
+                    log::info!("ユーザー認証マイグレーションが完了しました");
+                } else {
+                    log::warn!("ユーザー認証マイグレーションで警告: {}", result.message);
+                }
+            }
+            Err(e) => {
+                log::error!("ユーザー認証マイグレーションでエラー: {e}");
+                return Err(AppError::Database(format!(
+                    "ユーザー認証マイグレーション失敗: {e}"
+                )));
+            }
+        }
+    } else {
+        log::info!("ユーザー認証マイグレーションは既に完了しています");
+    }
+
     Ok(())
 }
 
@@ -451,6 +495,20 @@ fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -
         }
         Err(_) => false,
     }
+}
+
+/// テスト用のインメモリデータベース接続を作成する
+///
+/// # 戻り値
+/// インメモリデータベース接続、または失敗時はエラー
+#[cfg(test)]
+pub fn create_in_memory_connection() -> AppResult<Connection> {
+    let conn = Connection::open_in_memory().map_err(|e| AppError::Database(e.to_string()))?;
+
+    // テスト用の基本テーブルを作成
+    create_tables(&conn)?;
+
+    Ok(conn)
 }
 
 #[cfg(test)]

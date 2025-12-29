@@ -1,7 +1,66 @@
 // セキュリティ機能のデータモデル
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// セキュリティエラー
+#[derive(Debug, thiserror::Error)]
+pub enum SecurityError {
+    #[error("暗号化エラー: {0}")]
+    EncryptionError(String),
+
+    #[error("復号化エラー: {0}")]
+    DecryptionError(String),
+
+    #[error("認証エラー: {0}")]
+    AuthenticationError(String),
+
+    #[error("認可エラー: {0}")]
+    AuthorizationError(String),
+
+    #[error("設定エラー: {0}")]
+    ConfigError(String),
+
+    #[error("データベースエラー: {0}")]
+    DatabaseError(String),
+}
+
+/// セキュリティ設定
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    /// 暗号化キー
+    pub encryption_key: String,
+    /// トークンの最大保持時間（時間）
+    pub max_token_age_hours: i64,
+    /// 監査ログの有効化
+    pub enable_audit_logging: bool,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            encryption_key: "default_key_32_bytes_long_change_me".to_string(),
+            max_token_age_hours: 24,
+            enable_audit_logging: true,
+        }
+    }
+}
+
+/// トークン情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenInfo {
+    /// トークンID
+    pub token_id: String,
+    /// 暗号化されたトークン
+    pub encrypted_token: String,
+    /// 作成日時
+    pub created_at: DateTime<Utc>,
+    /// 最終アクセス日時
+    pub last_accessed: DateTime<Utc>,
+    /// アクセス回数
+    pub access_count: u64,
+}
 
 /// システム診断情報
 #[derive(Debug, Clone, Serialize, Deserialize)]
