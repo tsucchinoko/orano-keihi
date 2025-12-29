@@ -79,6 +79,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             // 環境に応じた.envファイルを読み込み（ログシステム初期化前に実行）
             load_environment_variables();
@@ -181,7 +183,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // 認証コマンド
             auth_commands::start_oauth_flow,
-            auth_commands::handle_auth_callback,
+            auth_commands::wait_for_auth_completion,
             auth_commands::validate_session,
             auth_commands::logout,
             auth_commands::get_auth_state,

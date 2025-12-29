@@ -340,22 +340,14 @@ export interface AuthState {
 	is_loading: boolean;
 }
 
-// OAuth認証開始レスポンス型
+// OAuth認証開始レスポンス型（ループバック方式）
 export interface StartAuthResponse {
 	auth_url: string;
-	code_verifier: string;
-	state: string;
+	loopback_port: number;
 }
 
-// 認証コールバック処理リクエスト型
-export interface HandleCallbackRequest {
-	code: string;
-	state: string;
-	code_verifier: string;
-}
-
-// 認証コールバック処理レスポンス型
-export interface HandleCallbackResponse {
+// 認証完了待機レスポンス型（ループバック方式）
+export interface WaitForAuthResponse {
 	user: User;
 	session_token: string;
 }

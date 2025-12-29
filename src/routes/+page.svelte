@@ -157,15 +157,6 @@ function getCategoryColor(category: string): string {
 	<div class="dashboard-header">
 		<h1 class="page-title">ダッシュボード</h1>
 		<p class="page-subtitle">今月の経費とサブスクリプションの概要</p>
-		
-		<!-- デバッグ情報（開発環境のみ） -->
-		{#if import.meta.env.DEV}
-			<div class="debug-auth-info">
-				<p>認証状態: {isAuthenticated ? '認証済み' : '未認証'}</p>
-				<p>ローディング: {isLoading ? 'はい' : 'いいえ'}</p>
-				<p>エラー: {authError || 'なし'}</p>
-			</div>
-		{/if}
 	</div>
 
 	{#if loading}

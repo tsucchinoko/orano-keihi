@@ -200,21 +200,21 @@ pub struct R2Config {
     pub region: String,
 }
 
-/// Google OAuth 2.0の設定を管理する構造体
+/// Google OAuth 2.0の設定を管理する構造体（ネイティブアプリ用）
 #[derive(Debug, Clone)]
 pub struct GoogleOAuthConfig {
     /// GoogleクライアントID
     pub client_id: String,
-    /// Googleクライアントシークレット
+    /// Googleクライアントシークレット（一時的に使用）
     pub client_secret: String,
-    /// OAuth2リダイレクトURI
+    /// OAuth2リダイレクトURI（動的に設定されるため、ベースURIとして使用）
     pub redirect_uri: String,
     /// セッション暗号化キー
     pub session_encryption_key: String,
 }
 
 impl GoogleOAuthConfig {
-    /// 環境変数からGoogle OAuth設定を読み込む
+    /// 環境変数からGoogle OAuth設定を読み込む（ネイティブアプリ用）
     ///
     /// # 戻り値
     /// Google OAuth設定、または設定が不完全な場合はNone
@@ -248,38 +248,24 @@ impl GoogleOAuthConfig {
             }
         };
 
+        // ネイティブアプリではクライアントシークレットは不要（PKCE使用）
+        // 一時的にクライアントシークレットを使用
         let client_secret = option_env!("EMBEDDED_GOOGLE_CLIENT_SECRET")
-            .map(|s| {
-                log::debug!(
-                    "コンパイル時埋め込みGOOGLE_CLIENT_SECRET を使用: {}****",
-                    &s[..8.min(s.len())]
-                );
-                s.to_string()
-            })
-            .or_else(|| {
-                std::env::var("GOOGLE_CLIENT_SECRET").ok().map(|val| {
-                    log::debug!(
-                        "実行時GOOGLE_CLIENT_SECRET が見つかりました: {}****",
-                        &val[..8.min(val.len())]
-                    );
-                    val
-                })
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok())
+            .unwrap_or_else(|| {
+                log::debug!("GOOGLE_CLIENT_SECRET が設定されていません");
+                String::new()
             });
 
-        let client_secret = match client_secret {
-            Some(val) => val,
-            None => {
-                log::error!("GOOGLE_CLIENT_SECRET が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
-                return None;
-            }
-        };
+        log::debug!("一時的にクライアントシークレットを使用します（テスト用）");
 
         let redirect_uri = option_env!("EMBEDDED_GOOGLE_REDIRECT_URI")
             .map(|s| s.to_string())
             .or_else(|| std::env::var("GOOGLE_REDIRECT_URI").ok())
             .unwrap_or_else(|| {
                 log::debug!("GOOGLE_REDIRECT_URI が設定されていないため、デフォルト値を使用");
-                "http://localhost:3000/auth/callback".to_string()
+                "http://127.0.0.1/callback".to_string()
             });
 
         let session_encryption_key = option_env!("EMBEDDED_SESSION_ENCRYPTION_KEY")
@@ -305,7 +291,6 @@ impl GoogleOAuthConfig {
     /// 設定が有効な場合はtrue
     pub fn is_valid(&self) -> bool {
         !self.client_id.is_empty()
-            && !self.client_secret.is_empty()
             && !self.redirect_uri.is_empty()
             && !self.session_encryption_key.is_empty()
     }

@@ -1,11 +1,12 @@
 import type { User, AuthState } from "../types";
 import {
 	startOAuthFlow,
-	handleAuthCallback,
+	waitForAuthCompletion,
 	validateSession,
 	logout as logoutCommand,
 } from "../utils/tauri";
 import { toastStore } from "./toast.svelte";
+import { open } from "@tauri-apps/plugin-shell";
 
 /**
  * 認証状態管理ストア
@@ -79,111 +80,116 @@ class AuthStore {
 	}
 
 	/**
-	 * Googleログインを開始する
+	 * Googleログインを開始する（ループバック方式）
 	 */
 	async login(): Promise<void> {
+		console.log("🔐 ログイン処理を開始します");
 		this.isLoading = true;
 		this.error = null;
 
 		try {
+			console.log("🔐 OAuth認証フロー開始します");
 			// OAuth認証フローを開始
-			const result = await startOAuthFlow();
+			const startResult = await startOAuthFlow();
+			console.log("🔐 OAuth認証フロー開始結果:", startResult);
 
-			if (result.error) {
-				this.error = result.error;
-				toastStore.error(`ログインに失敗しました: ${result.error}`);
+			if (startResult.error) {
+				console.error("🔐 OAuth認証フロー開始エラー:", startResult.error);
+				this.error = startResult.error;
+				toastStore.error(`ログインに失敗しました: ${startResult.error}`);
 				return;
 			}
 
-			if (result.data) {
-				// 認証URLをブラウザで開く
-				const { auth_url, code_verifier, state } = result.data;
-
-				// PKCE検証子と状態パラメータを一時保存
-				sessionStorage.setItem("oauth_code_verifier", code_verifier);
-				sessionStorage.setItem("oauth_state", state);
+			if (startResult.data) {
+				const { auth_url, loopback_port } = startResult.data;
+				console.log("🔐 認証URL:", auth_url);
+				console.log("🔐 ループバックポート:", loopback_port);
 
 				// 外部ブラウザで認証URLを開く
-				window.open(auth_url, "_blank");
+				console.log("🔐 外部ブラウザで認証URLを開きます");
+				try {
+					// Tauri shell pluginを使用
+					await open(auth_url);
+					console.log("🔐 Tauri shell pluginで認証URLを開きました");
 
-				toastStore.info("ブラウザでGoogleログインを完了してください");
+					// 認証完了を待機
+					console.log("🔐 認証完了を待機します");
+					toastStore.info(
+						"ブラウザでGoogleログインを完了してください。認証完了まで待機中...",
+					);
+
+					const authResult = await waitForAuthCompletion();
+					console.log("🔐 認証完了結果:", authResult);
+
+					if (authResult.error) {
+						console.error("🔐 認証完了エラー:", authResult.error);
+						this.error = authResult.error;
+						toastStore.error(`認証に失敗しました: ${authResult.error}`);
+						return;
+					}
+
+					if (authResult.data) {
+						const { user, session_token } = authResult.data;
+
+						// 認証状態を更新
+						this.user = user;
+						this.isAuthenticated = true;
+						this.sessionToken = session_token;
+
+						// セッショントークンをローカルストレージに保存
+						localStorage.setItem(this.SESSION_TOKEN_KEY, session_token);
+
+						toastStore.success(`${user.name}さん、ログインしました`);
+						console.log("🔐 ログイン処理が正常に完了しました");
+					}
+				} catch (openError) {
+					console.warn("🔐 外部ブラウザでの認証URLオープンに失敗:", openError);
+					// URLをクリップボードにコピーして、ユーザーに手動で開いてもらう
+					try {
+						await navigator.clipboard.writeText(auth_url);
+						const userConfirmed = confirm(
+							`外部ブラウザを自動で開けませんでした。\n\n以下のURLを手動でブラウザにコピーして開いてください：\n\n${auth_url}\n\nOKを押すとURLがクリップボードにコピーされます。`,
+						);
+						if (userConfirmed) {
+							toastStore.info(
+								"認証URLをクリップボードにコピーしました。ブラウザに貼り付けて開いてください。",
+							);
+
+							// 手動でブラウザを開いた場合も認証完了を待機
+							console.log("🔐 手動ブラウザオープン後、認証完了を待機します");
+							const authResult = await waitForAuthCompletion();
+
+							if (authResult.error) {
+								console.error("🔐 認証完了エラー:", authResult.error);
+								this.error = authResult.error;
+								toastStore.error(`認証に失敗しました: ${authResult.error}`);
+								return;
+							}
+
+							if (authResult.data) {
+								const { user, session_token } = authResult.data;
+								this.user = user;
+								this.isAuthenticated = true;
+								this.sessionToken = session_token;
+								localStorage.setItem(this.SESSION_TOKEN_KEY, session_token);
+								toastStore.success(`${user.name}さん、ログインしました`);
+							}
+						}
+					} catch (clipboardError) {
+						console.error("🔐 クリップボードへのコピーに失敗:", clipboardError);
+						this.error =
+							"外部ブラウザを開けませんでした。手動でブラウザを開いてください。";
+						toastStore.error(this.error);
+					}
+				}
 			}
 		} catch (err) {
-			console.error("ログイン開始エラー:", err);
+			console.error("🔐 ログイン開始エラー:", err);
 			this.error = `ログインの開始に失敗しました: ${err}`;
 			toastStore.error(this.error);
 		} finally {
 			this.isLoading = false;
-		}
-	}
-
-	/**
-	 * 認証コールバックを処理する
-	 * 認証完了後にブラウザから呼び出される
-	 */
-	async handleCallback(code: string, state: string): Promise<boolean> {
-		this.isLoading = true;
-		this.error = null;
-
-		try {
-			// セッションストレージから保存された値を取得
-			const storedCodeVerifier = sessionStorage.getItem("oauth_code_verifier");
-			const storedState = sessionStorage.getItem("oauth_state");
-
-			if (!storedCodeVerifier || !storedState) {
-				this.error = "認証情報が見つかりません。再度ログインしてください。";
-				toastStore.error(this.error);
-				return false;
-			}
-
-			// 状態パラメータを検証
-			if (state !== storedState) {
-				this.error =
-					"認証状態が一致しません。セキュリティ上の理由でログインを中止しました。";
-				toastStore.error(this.error);
-				return false;
-			}
-
-			// 認証コールバックを処理
-			const result = await handleAuthCallback({
-				code,
-				state,
-				code_verifier: storedCodeVerifier,
-			});
-
-			if (result.error) {
-				this.error = result.error;
-				toastStore.error(`認証に失敗しました: ${result.error}`);
-				return false;
-			}
-
-			if (result.data) {
-				const { user, session_token } = result.data;
-
-				// 認証状態を更新
-				this.user = user;
-				this.isAuthenticated = true;
-				this.sessionToken = session_token;
-
-				// セッショントークンをローカルストレージに保存
-				localStorage.setItem(this.SESSION_TOKEN_KEY, session_token);
-
-				// 一時保存された認証情報をクリア
-				sessionStorage.removeItem("oauth_code_verifier");
-				sessionStorage.removeItem("oauth_state");
-
-				toastStore.success(`${user.name}さん、ログインしました`);
-				return true;
-			}
-
-			return false;
-		} catch (err) {
-			console.error("認証コールバック処理エラー:", err);
-			this.error = `認証処理に失敗しました: ${err}`;
-			toastStore.error(this.error);
-			return false;
-		} finally {
-			this.isLoading = false;
+			console.log("🔐 ログイン処理が完了しました");
 		}
 	}
 
@@ -210,10 +216,6 @@ class AuthStore {
 
 			// ローカルストレージからセッショントークンを削除
 			localStorage.removeItem(this.SESSION_TOKEN_KEY);
-
-			// セッションストレージもクリア
-			sessionStorage.removeItem("oauth_code_verifier");
-			sessionStorage.removeItem("oauth_state");
 
 			toastStore.success("ログアウトしました");
 		} catch (err) {

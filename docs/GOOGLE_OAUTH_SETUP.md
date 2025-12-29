@@ -1,36 +1,31 @@
-# Google OAuth2認証セットアップガイド
+# Google OAuth2認証セットアップガイド（デスクトップアプリケーション用）
 
-このドキュメントでは、アプリケーションでGoogle OAuth2認証を使用するために必要な環境変数の設定手順を説明します。
+このドキュメントでは、TauriデスクトップアプリケーションでGoogle OAuth2認証を使用するために必要な設定手順を説明します。
 
 ## 概要
 
-Google OAuth2認証を使用するには、以下の環境変数を設定する必要があります：
+**重要**: デスクトップアプリケーションでは、セキュリティ上の理由から`client_secret`を使用せず、PKCE（Proof Key for Code Exchange）方式を使用します。
 
-- `GOOGLE_CLIENT_ID`: GoogleクライアントID
-- `GOOGLE_CLIENT_SECRET`: Googleクライアントシークレット
-- `GOOGLE_REDIRECT_URI`: OAuth2リダイレクトURI
+必要な環境変数：
+- `GOOGLE_CLIENT_ID`: GoogleクライアントID（デスクトップアプリケーション用）
+- `GOOGLE_REDIRECT_URI`: OAuth2リダイレクトURI（ループバック方式）
+- `SESSION_ENCRYPTION_KEY`: セッション暗号化キー
 
 ## セットアップ手順
 
-以下の2つの方法でセットアップできます：
-- **方法A**: Google Cloud Console（GUI）を使用
-- **方法B**: gcloudコマンド（CLI）を使用
-
-### 方法A: Google Cloud Console（GUI）を使用
-
-#### 1. Google Cloud Consoleでプロジェクトを作成
+### 1. Google Cloud Consoleでプロジェクトを作成
 
 1. [Google Cloud Console](https://console.cloud.google.com/)にアクセス
 2. 新しいプロジェクトを作成するか、既存のプロジェクトを選択
 3. プロジェクト名を入力して「作成」をクリック
 
-#### 2. Google+ APIを有効化
+### 2. 必要なAPIを有効化
 
 1. Google Cloud Consoleの左側メニューから「APIとサービス」→「ライブラリ」を選択
 2. 「Google+ API」を検索して選択
 3. 「有効にする」をクリック
 
-#### 3. OAuth同意画面を設定
+### 3. OAuth同意画面を設定
 
 1. 左側メニューから「APIとサービス」→「OAuth同意画面」を選択
 2. ユーザータイプを選択：
@@ -38,7 +33,7 @@ Google OAuth2認証を使用するには、以下の環境変数を設定する�
    - **内部**: Google Workspaceユーザーのみ
 3. 「作成」をクリック
 4. 必要な情報を入力：
-   - **アプリ名**: アプリケーションの名前
+   - **アプリ名**: アプリケーションの名前（例：「オラの経費だゾ」）
    - **ユーザーサポートメール**: サポート用メールアドレス
    - **デベロッパーの連絡先情報**: 開発者のメールアドレス
 5. 「保存して次へ」をクリック
@@ -46,25 +41,105 @@ Google OAuth2認証を使用するには、以下の環境変数を設定する�
 7. テストユーザーの追加（必要に応じて）
 8. 設定を確認して完了
 
-#### 4. OAuth2クライアントIDを作成
+### 4. OAuth2クライアントIDを作成（デスクトップアプリケーション用）
+
+**重要**: 必ず「デスクトップアプリケーション」を選択してください。
 
 1. 左側メニューから「APIとサービス」→「認証情報」を選択
 2. 「認証情報を作成」→「OAuth クライアント ID」をクリック
-3. アプリケーションの種類を選択：
-   - **デスクトップアプリケーション**（Tauriアプリの場合）
-   - **ウェブアプリケーション**（ウェブアプリの場合）
-4. 名前を入力（例：「MyApp OAuth Client」）
-5. **承認済みのリダイレクトURI**を設定：
-   - Tauriアプリケーションの場合：`http://localhost:1420/auth/callback`
-   - SvelteKit開発環境の場合：`http://localhost:5173/auth/callback`
-   - 本番環境の場合：`https://yourdomain.com/auth/callback`
-6. 「作成」をクリック
+3. **アプリケーションの種類**で「**デスクトップアプリケーション**」を選択
+4. 名前を入力（例：「オラの経費だゾ - デスクトップアプリ」）
+5. 「作成」をクリック
 
-#### 5. クライアントIDとシークレットを取得
+**注意**: デスクトップアプリケーションタイプでは、リダイレクトURIの設定項目は表示されません。これは正常な動作です。
+
+### 5. クライアントIDを取得
 
 1. 作成されたOAuth2クライアントの詳細画面で以下の情報を確認：
    - **クライアントID**: `GOOGLE_CLIENT_ID`として使用
-   - **クライアントシークレット**: `GOOGLE_CLIENT_SECRET`として使用
+   - **クライアントシークレット**: デスクトップアプリでは使用しません
+
+## 環境変数の設定
+
+### 開発環境での設定
+
+`src-tauri/.env`ファイルを作成し、以下の内容を記述：
+
+```bash
+# Google OAuth 2.0設定（デスクトップアプリケーション用）
+GOOGLE_CLIENT_ID=your_desktop_client_id_here
+GOOGLE_REDIRECT_URI=http://127.0.0.1/callback
+SESSION_ENCRYPTION_KEY=your_32_byte_encryption_key_here
+```
+
+### 本番環境での設定
+
+本番環境では、セキュリティのため環境変数を直接設定：
+
+```bash
+export GOOGLE_CLIENT_ID="your_desktop_client_id_here"
+export GOOGLE_REDIRECT_URI="http://127.0.0.1/callback"
+export SESSION_ENCRYPTION_KEY="your_32_byte_encryption_key_here"
+```
+
+## 設定値の説明
+
+### GOOGLE_CLIENT_ID
+- Google Cloud Consoleで生成されたデスクトップアプリケーション用クライアントID
+- 形式：`123456789-abcdefghijklmnop.apps.googleusercontent.com`
+- **重要**: 「デスクトップアプリケーション」タイプで作成されたものを使用
+
+### GOOGLE_REDIRECT_URI
+- OAuth認証後にリダイレクトされるURI
+- **ループバック方式（推奨）**: `http://127.0.0.1/callback`
+- ポート番号は動的に割り当てられるため、指定しません
+- Googleが`http://127.0.0.1`の任意のポートを自動的に許可します
+
+### SESSION_ENCRYPTION_KEY
+- セッション暗号化用の32バイトキー
+- Base64エンコードされた文字列
+- 生成方法：`openssl rand -base64 32`
+
+## デスクトップアプリケーションの特徴
+
+### PKCE（Proof Key for Code Exchange）方式
+- クライアントシークレットを使用しない
+- より安全な認証フロー
+- 動的に生成されるコードチャレンジとベリファイアを使用
+
+### ループバック方式
+- 動的ポート割り当て（`127.0.0.1:0`）
+- ポート競合の回避
+- セキュリティの向上
+
+## トラブルシューティング
+
+### よくあるエラー
+
+1. **client_secret is missing**
+   - 原因：「Webアプリケーション」タイプのクライアントIDを使用している
+   - 解決方法：「デスクトップアプリケーション」タイプのクライアントIDを新規作成
+
+2. **redirect_uri_mismatch**
+   - 原因：リダイレクトURIの設定が間違っている
+   - 解決方法：`http://127.0.0.1/callback`を使用（ポート番号なし）
+
+3. **invalid_client**
+   - 原因：クライアントIDが間違っている
+   - 解決方法：Google Cloud Consoleで正しいデスクトップアプリ用クライアントIDを確認
+
+### デバッグ方法
+
+1. ログを確認：`LOG_LEVEL=debug`を設定
+2. クライアントIDのタイプを確認（デスクトップアプリケーション用か）
+3. 環境変数が正しく読み込まれているか確認
+4. ネットワーク接続を確認
+
+## 参考リンク
+
+- [Google OAuth 2.0 for Mobile & Desktop Apps](https://developers.google.com/identity/protocols/oauth2/native-app)
+- [RFC 7636: Proof Key for Code Exchange](https://tools.ietf.org/html/rfc7636)
+- [Google Cloud Console](https://console.cloud.google.com/)
 
 ### 方法B: gcloudコマンド（CLI）を使用
 
@@ -281,9 +356,15 @@ export GOOGLE_REDIRECT_URI="https://yourdomain.com/auth/callback"
 ### GOOGLE_REDIRECT_URI
 - OAuth認証後にリダイレクトされるURI
 - Google Cloud Consoleで設定した承認済みリダイレクトURIと一致する必要がある
-- Tauriアプリケーション：`http://localhost:1420/auth/callback`
+- **ループバック方式（推奨）**: `http://127.0.0.1/callback`
+- Tauriアプリケーション（従来方式）：`http://localhost:1420/auth/callback`
 - SvelteKit開発環境：`http://localhost:5173/auth/callback`
 - 本番環境：`https://yourdomain.com/auth/callback`
+
+**ループバック方式の利点**:
+- 動的ポート割り当てによるセキュリティ向上
+- ポート競合の回避
+- Googleの推奨方式に準拠
 
 ## セキュリティ注意事項
 

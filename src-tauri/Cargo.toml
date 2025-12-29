@@ -35,10 +35,13 @@ thiserror = "1.0"
 aws-config = "1.0"
 aws-sdk-s3 = "1.0"
 
-# 非同期処理
+# HTTP サーバー（ループバック認証用）
 tokio = { version = "1.0", features = ["full"] }
 tokio-util = "0.7"
 futures = "0.3"
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
 
 # UUID生成
 uuid = { version = "1.0", features = ["v4"] }

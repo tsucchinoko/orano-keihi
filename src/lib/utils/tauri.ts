@@ -47,11 +47,14 @@ export async function handleTauriCommand<T>(
 	command: Promise<T>,
 ): Promise<TauriResult<T>> {
 	try {
+		console.log("🔧 Tauriコマンドを実行中...");
 		const data = await command;
+		console.log("🔧 Tauriコマンド成功:", data);
 		return { data };
 	} catch (error) {
-		console.error("Tauriコマンドエラー:", error);
+		console.error("🔧 Tauriコマンドエラー:", error);
 		const errorMessage = formatErrorMessage(error);
+		console.error("🔧 フォーマット済みエラーメッセージ:", errorMessage);
 		return { error: errorMessage };
 	}
 }
@@ -174,8 +177,12 @@ export async function saveReceipt(
 export async function createSubscription(
 	subscription: CreateSubscriptionDto,
 ): Promise<TauriResult<Subscription>> {
+	const sessionToken = getAuthToken();
 	return handleTauriCommand(
-		invoke<Subscription>("create_subscription", { dto: subscription }),
+		invoke<Subscription>("create_subscription", {
+			dto: subscription,
+			sessionToken,
+		}),
 	);
 }
 
@@ -188,8 +195,12 @@ export async function createSubscription(
 export async function getSubscriptions(
 	activeOnly: boolean = false,
 ): Promise<TauriResult<Subscription[]>> {
+	const sessionToken = getAuthToken();
 	return handleTauriCommand(
-		invoke<Subscription[]>("get_subscriptions", { activeOnly }),
+		invoke<Subscription[]>("get_subscriptions", {
+			activeOnly,
+			sessionToken,
+		}),
 	);
 }
 
@@ -204,8 +215,13 @@ export async function updateSubscription(
 	id: number,
 	subscription: UpdateSubscriptionDto,
 ): Promise<TauriResult<Subscription>> {
+	const sessionToken = getAuthToken();
 	return handleTauriCommand(
-		invoke<Subscription>("update_subscription", { id, dto: subscription }),
+		invoke<Subscription>("update_subscription", {
+			id,
+			dto: subscription,
+			sessionToken,
+		}),
 	);
 }
 
@@ -218,8 +234,12 @@ export async function updateSubscription(
 export async function toggleSubscriptionStatus(
 	id: number,
 ): Promise<TauriResult<Subscription>> {
+	const sessionToken = getAuthToken();
 	return handleTauriCommand(
-		invoke<Subscription>("toggle_subscription_status", { id }),
+		invoke<Subscription>("toggle_subscription_status", {
+			id,
+			sessionToken,
+		}),
 	);
 }
 
@@ -231,7 +251,12 @@ export async function toggleSubscriptionStatus(
 export async function getMonthlySubscriptionTotal(): Promise<
 	TauriResult<number>
 > {
-	return handleTauriCommand(invoke<number>("get_monthly_subscription_total"));
+	const sessionToken = getAuthToken();
+	return handleTauriCommand(
+		invoke<number>("get_monthly_subscription_total", {
+			sessionToken,
+		}),
+	);
 }
 
 /**
@@ -470,32 +495,35 @@ export async function getR2DebugInfo(): Promise<
 // ========================================
 
 /**
- * OAuth認証フローを開始する
+ * OAuth認証フローを開始する（ループバック方式）
  *
  * @returns 認証開始情報またはエラー
  */
 export async function startOAuthFlow(): Promise<
 	TauriResult<import("../types").StartAuthResponse>
 > {
-	return handleTauriCommand(
+	console.log("🚀 startOAuthFlow() Tauriコマンドを呼び出します");
+	const result = await handleTauriCommand(
 		invoke<import("../types").StartAuthResponse>("start_oauth_flow"),
 	);
+	console.log("🚀 startOAuthFlow() Tauriコマンド結果:", result);
+	return result;
 }
 
 /**
- * 認証コールバックを処理する
+ * 認証完了を待機する（ループバック方式）
  *
- * @param request - コールバック処理リクエスト
  * @returns 認証結果またはエラー
  */
-export async function handleAuthCallback(
-	request: import("../types").HandleCallbackRequest,
-): Promise<TauriResult<import("../types").HandleCallbackResponse>> {
-	return handleTauriCommand(
-		invoke<import("../types").HandleCallbackResponse>("handle_auth_callback", {
-			request,
-		}),
+export async function waitForAuthCompletion(): Promise<
+	TauriResult<import("../types").WaitForAuthResponse>
+> {
+	console.log("🚀 waitForAuthCompletion() Tauriコマンドを呼び出します");
+	const result = await handleTauriCommand(
+		invoke<import("../types").WaitForAuthResponse>("wait_for_auth_completion"),
 	);
+	console.log("🚀 waitForAuthCompletion() Tauriコマンド結果:", result);
+	return result;
 }
 
 /**

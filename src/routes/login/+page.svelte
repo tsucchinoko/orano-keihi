@@ -9,7 +9,7 @@ let isLoading = $derived(authStore.isLoading);
 let error = $derived(authStore.error);
 let isAuthenticated = $derived(authStore.isAuthenticated);
 
-// 認証コールバック処理
+// 認証状態の初期化
 onMount(async () => {
 	// 認証状態を初期化
 	await authStore.initialize();
@@ -19,25 +19,25 @@ onMount(async () => {
 		goto("/");
 		return;
 	}
+});
 
-	// URLパラメータから認証コードと状態を取得
-	const urlParams = new URLSearchParams(page.url.search);
-	const code = urlParams.get("code");
-	const state = urlParams.get("state");
-
-	// 認証コールバックの場合
-	if (code && state) {
-		const success = await authStore.handleCallback(code, state);
-		if (success) {
-			// 認証成功時はメインページにリダイレクト
-			goto("/");
-		}
+// 認証状態の変化を監視してリダイレクト
+$effect(() => {
+	if (isAuthenticated) {
+		console.log("🔘 認証成功を検出しました。メインページにリダイレクトします");
+		goto("/");
 	}
 });
 
 // Googleログインボタンクリック処理
 async function handleGoogleLogin() {
-	await authStore.login();
+	console.log("🔘 Googleログインボタンがクリックされました");
+	try {
+		await authStore.login();
+		console.log("🔘 authStore.login()が完了しました");
+	} catch (error) {
+		console.error("🔘 ログイン処理でエラーが発生しました:", error);
+	}
 }
 
 // エラークリア処理

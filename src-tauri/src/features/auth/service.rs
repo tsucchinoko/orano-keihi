@@ -1,3 +1,4 @@
+use crate::features::auth::loopback::{LoopbackServer, OAuthCallback};
 use crate::features::auth::models::{AuthError, GoogleUser, Session, User};
 use crate::features::auth::repository::UserRepository;
 use crate::features::auth::session::SessionManager;
@@ -10,16 +11,18 @@ use oauth2::{
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot;
 
-/// OAuth認証フローの開始情報
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// OAuth認証フローの開始情報（ループバック方式）
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OAuthStartInfo {
     /// 認証URL
     pub auth_url: String,
-    /// PKCE検証子
-    pub code_verifier: String,
-    /// 状態パラメータ
-    pub state: String,
+    /// ループバックサーバーのポート番号
+    pub loopback_port: u16,
+    /// コールバック受信用のReceiver（内部使用）
+    #[serde(skip)]
+    pub callback_receiver: Option<oneshot::Receiver<OAuthCallback>>,
 }
 
 /// OAuth認証サービス
@@ -33,6 +36,10 @@ pub struct AuthService {
     user_repository: UserRepository,
     /// HTTPクライアント
     http_client: reqwest::Client,
+    /// PKCE検証子の一時保存（実際のプロダクションではより適切な方法を使用）
+    pkce_verifier: Arc<Mutex<Option<PkceCodeVerifier>>>,
+    /// 現在のリダイレクトURI（トークン交換時に使用）
+    current_redirect_uri: Arc<Mutex<Option<String>>>,
 }
 
 impl AuthService {
@@ -48,19 +55,21 @@ impl AuthService {
         config: GoogleOAuthConfig,
         db_connection: Arc<Mutex<Connection>>,
     ) -> Result<Self, AuthError> {
-        // OAuth2クライアントを設定
+        // OAuth2クライアントを設定（ネイティブアプリ用：クライアントシークレットなし）
         let client_id = ClientId::new(config.client_id);
-        let client_secret = ClientSecret::new(config.client_secret);
         let auth_url = AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
             .map_err(|e| AuthError::ConfigError(format!("認証URL設定エラー: {e}")))?;
-        let token_url = TokenUrl::new("https://www.googleapis.com/oauth2/v4/token".to_string())
+        let token_url = TokenUrl::new("https://oauth2.googleapis.com/token".to_string())
             .map_err(|e| AuthError::ConfigError(format!("トークンURL設定エラー: {e}")))?;
-        let redirect_url = RedirectUrl::new(config.redirect_uri)
-            .map_err(|e| AuthError::ConfigError(format!("リダイレクトURL設定エラー: {e}")))?;
 
-        let oauth_client =
-            BasicClient::new(client_id, Some(client_secret), auth_url, Some(token_url))
-                .set_redirect_uri(redirect_url);
+        // ネイティブアプリではクライアントシークレットを使用しない（PKCE使用）
+        // 一時的にクライアントシークレットを使用（テスト用）
+        let client_secret = if config.client_secret.is_empty() {
+            None
+        } else {
+            Some(ClientSecret::new(config.client_secret))
+        };
+        let oauth_client = BasicClient::new(client_id, client_secret, auth_url, Some(token_url));
 
         // セッション管理を初期化
         let session_manager =
@@ -79,20 +88,45 @@ impl AuthService {
             session_manager,
             user_repository,
             http_client,
+            pkce_verifier: Arc::new(Mutex::new(None)),
+            current_redirect_uri: Arc::new(Mutex::new(None)),
         })
     }
 
-    /// OAuth認証フローを開始する
+    /// OAuth認証フローを開始する（ループバック方式）
     ///
     /// # 戻り値
-    /// 認証開始情報（認証URL、PKCE検証子、状態パラメータ）
-    pub fn start_oauth_flow(&self) -> Result<OAuthStartInfo, AuthError> {
+    /// 認証開始情報（認証URL、ループバックポート、コールバック受信用Receiver）
+    pub async fn start_oauth_flow(&self) -> Result<OAuthStartInfo, AuthError> {
+        // ループバックサーバーを作成
+        let (mut loopback_server, port) = LoopbackServer::new()
+            .map_err(|e| AuthError::NetworkError(format!("ループバックサーバー作成エラー: {e}")))?;
+
+        // リダイレクトURIを動的に設定
+        let redirect_uri = loopback_server.get_redirect_uri();
+        let redirect_url = RedirectUrl::new(redirect_uri.clone())
+            .map_err(|e| AuthError::ConfigError(format!("リダイレクトURL設定エラー: {e}")))?;
+
+        // 現在のリダイレクトURIを保存
+        {
+            let mut current_redirect_uri = self.current_redirect_uri.lock().unwrap();
+            *current_redirect_uri = Some(redirect_uri);
+        }
+
+        // OAuth2クライアントのリダイレクトURIを更新
+        let oauth_client = self.oauth_client.clone().set_redirect_uri(redirect_url);
+
         // PKCE（Proof Key for Code Exchange）を生成
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
+        // PKCE検証子を保存
+        {
+            let mut verifier_guard = self.pkce_verifier.lock().unwrap();
+            *verifier_guard = Some(pkce_verifier);
+        }
+
         // 認証URLを生成
-        let (auth_url, csrf_token) = self
-            .oauth_client
+        let (auth_url, _csrf_token) = oauth_client
             .authorize_url(CsrfToken::new_random)
             .add_scope(Scope::new("openid".to_string()))
             .add_scope(Scope::new("email".to_string()))
@@ -100,43 +134,104 @@ impl AuthService {
             .set_pkce_challenge(pkce_challenge)
             .url();
 
+        // ループバックサーバーを開始してコールバック待機
+        let callback_receiver = loopback_server
+            .start_and_wait()
+            .await
+            .map_err(|e| AuthError::NetworkError(format!("ループバックサーバー開始エラー: {e}")))?;
+
         let oauth_info = OAuthStartInfo {
             auth_url: auth_url.to_string(),
-            code_verifier: pkce_verifier.secret().clone(),
-            state: csrf_token.secret().clone(),
+            loopback_port: port,
+            callback_receiver: Some(callback_receiver),
         };
 
-        log::info!("OAuth認証フローを開始しました");
+        log::info!("OAuth認証フロー（ループバック方式）を開始しました");
         log::debug!("認証URL: {}", oauth_info.auth_url);
+        log::debug!("ループバックポート: {}", port);
 
         Ok(oauth_info)
     }
 
-    /// 認証コールバックを処理する
+    /// 認証コールバックを処理する（ループバック方式）
     ///
     /// # 引数
-    /// * `code` - 認証コード
-    /// * `state` - 状態パラメータ
-    /// * `code_verifier` - PKCE検証子
+    /// * `callback_receiver` - コールバック受信用のReceiver
     ///
     /// # 戻り値
     /// 認証されたユーザー情報とセッション
-    pub async fn handle_callback(
+    pub async fn handle_loopback_callback(
         &self,
-        code: String,
-        _state: String,
-        code_verifier: String,
+        callback_receiver: oneshot::Receiver<OAuthCallback>,
     ) -> Result<(User, Session), AuthError> {
-        log::info!("認証コールバックを処理開始");
+        log::info!("ループバック認証コールバックを処理開始");
+
+        // コールバックを待機（タイムアウト付き）
+        let callback = tokio::time::timeout(
+            std::time::Duration::from_secs(300), // 5分のタイムアウト
+            callback_receiver,
+        )
+        .await
+        .map_err(|_| AuthError::OAuthError("認証タイムアウト".to_string()))?
+        .map_err(|_| AuthError::OAuthError("コールバック受信エラー".to_string()))?;
+
+        log::debug!(
+            "受信したコールバック: code={}, state={}, error={:?}",
+            if callback.code.is_empty() {
+                "なし"
+            } else {
+                "あり"
+            },
+            if callback.state.is_empty() {
+                "なし"
+            } else {
+                "あり"
+            },
+            callback.error
+        );
+
+        // エラーチェック
+        if let Some(error) = callback.error {
+            return Err(AuthError::OAuthError(format!("OAuth認証エラー: {error}")));
+        }
+
+        if callback.code.is_empty() {
+            return Err(AuthError::OAuthError("認証コードが空です".to_string()));
+        }
 
         // 認証コードをアクセストークンに交換
-        let pkce_verifier = PkceCodeVerifier::new(code_verifier);
-        let token_result = self
-            .oauth_client
-            .exchange_code(AuthorizationCode::new(code))
+        // 保存されたPKCE検証子を取得
+        let pkce_verifier = {
+            let mut verifier_guard = self.pkce_verifier.lock().unwrap();
+            verifier_guard.take()
+        };
+
+        let pkce_verifier = pkce_verifier
+            .ok_or_else(|| AuthError::OAuthError("PKCE検証子が見つかりません".to_string()))?;
+
+        // 保存されたリダイレクトURIを取得
+        let redirect_uri = {
+            let redirect_uri_guard = self.current_redirect_uri.lock().unwrap();
+            redirect_uri_guard.clone()
+        };
+
+        let redirect_uri = redirect_uri
+            .ok_or_else(|| AuthError::OAuthError("リダイレクトURIが見つかりません".to_string()))?;
+
+        // リダイレクトURIを設定したOAuth2クライアントを作成
+        let redirect_url = RedirectUrl::new(redirect_uri)
+            .map_err(|e| AuthError::ConfigError(format!("リダイレクトURL設定エラー: {e}")))?;
+        let oauth_client_with_redirect = self.oauth_client.clone().set_redirect_uri(redirect_url);
+
+        let token_result = oauth_client_with_redirect
+            .exchange_code(AuthorizationCode::new(callback.code))
             .set_pkce_verifier(pkce_verifier)
             .request_async(async_http_client)
-            .await?;
+            .await
+            .map_err(|e| {
+                log::error!("OAuth2トークン交換エラー: {e:?}");
+                AuthError::OAuthError(format!("トークン交換に失敗しました: {e}"))
+            })?;
 
         let access_token = token_result.access_token();
         log::debug!("アクセストークンを取得しました");
@@ -157,7 +252,10 @@ impl AuthService {
         // セッションを作成
         let session = self.session_manager.create_session(user.id)?;
 
-        log::info!("認証コールバック処理が完了しました: user_id={}", user.id);
+        log::info!(
+            "ループバック認証コールバック処理が完了しました: user_id={}",
+            user.id
+        );
 
         Ok((user, session))
     }
@@ -293,13 +391,15 @@ mod tests {
 
     #[test]
     fn test_start_oauth_flow() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
         let auth_service = setup_test_auth_service();
 
-        let oauth_info = auth_service.start_oauth_flow().unwrap();
+        let oauth_info = rt
+            .block_on(async { auth_service.start_oauth_flow().await })
+            .unwrap();
 
         assert!(!oauth_info.auth_url.is_empty());
-        assert!(!oauth_info.code_verifier.is_empty());
-        assert!(!oauth_info.state.is_empty());
+        assert!(oauth_info.loopback_port > 0);
         assert!(oauth_info.auth_url.contains("accounts.google.com"));
     }
 

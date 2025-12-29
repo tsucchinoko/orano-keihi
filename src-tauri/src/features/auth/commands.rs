@@ -1,33 +1,22 @@
 use crate::features::auth::models::{AuthState, User};
 use crate::features::auth::service::AuthService;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 use tauri::State;
+use tokio::sync::oneshot;
 
-/// 認証開始のレスポンス
+/// 認証開始のレスポンス（ループバック方式）
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StartAuthResponse {
     /// 認証URL
     pub auth_url: String,
-    /// PKCE検証子（フロントエンドで保持）
-    pub code_verifier: String,
-    /// 状態パラメータ（フロントエンドで保持）
-    pub state: String,
+    /// ループバックサーバーのポート番号
+    pub loopback_port: u16,
 }
 
-/// 認証コールバック処理のリクエスト
+/// 認証完了待機のレスポンス
 #[derive(Debug, Serialize, Deserialize)]
-pub struct HandleCallbackRequest {
-    /// 認証コード
-    pub code: String,
-    /// 状態パラメータ
-    pub state: String,
-    /// PKCE検証子
-    pub code_verifier: String,
-}
-
-/// 認証コールバック処理のレスポンス
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HandleCallbackResponse {
+pub struct WaitForAuthResponse {
     /// ユーザー情報
     pub user: User,
     /// セッショントークン
@@ -43,7 +32,13 @@ pub struct ValidateSessionResponse {
     pub is_authenticated: bool,
 }
 
-/// OAuth認証フローを開始する
+// グローバルなコールバック受信用のストレージ
+// 実際のプロダクションでは、より適切な状態管理を使用すべき
+static CALLBACK_RECEIVER: Mutex<
+    Option<oneshot::Receiver<crate::features::auth::loopback::OAuthCallback>>,
+> = Mutex::new(None);
+
+/// OAuth認証フローを開始する（ループバック方式）
 ///
 /// # 引数
 /// * `auth_service` - 認証サービス
@@ -56,38 +51,52 @@ pub async fn start_oauth_flow(
 ) -> Result<StartAuthResponse, String> {
     log::info!("OAuth認証フロー開始コマンドを実行");
 
-    let oauth_info = auth_service.start_oauth_flow().map_err(|e| {
+    let oauth_info = auth_service.start_oauth_flow().await.map_err(|e| {
         log::error!("OAuth認証フロー開始エラー: {e}");
         format!("認証フローの開始に失敗しました: {e}")
     })?;
 
+    // コールバック受信用のReceiverをグローバルストレージに保存
+    if let Some(receiver) = oauth_info.callback_receiver {
+        let mut global_receiver = CALLBACK_RECEIVER.lock().unwrap();
+        *global_receiver = Some(receiver);
+    }
+
     let response = StartAuthResponse {
         auth_url: oauth_info.auth_url,
-        code_verifier: oauth_info.code_verifier,
-        state: oauth_info.state,
+        loopback_port: oauth_info.loopback_port,
     };
 
     log::info!("OAuth認証フロー開始コマンドが完了しました");
     Ok(response)
 }
 
-/// 認証コールバックを処理する
+/// 認証完了を待機する（ループバック方式）
 ///
 /// # 引数
-/// * `request` - コールバック処理リクエスト
 /// * `auth_service` - 認証サービス
 ///
 /// # 戻り値
 /// 認証結果（ユーザー情報とセッショントークン）
 #[tauri::command]
-pub async fn handle_auth_callback(
-    request: HandleCallbackRequest,
+pub async fn wait_for_auth_completion(
     auth_service: State<'_, AuthService>,
-) -> Result<HandleCallbackResponse, String> {
-    log::info!("認証コールバック処理コマンドを実行");
+) -> Result<WaitForAuthResponse, String> {
+    log::info!("認証完了待機コマンドを実行");
+
+    // グローバルストレージからコールバック受信用のReceiverを取得
+    let receiver = {
+        let mut global_receiver = CALLBACK_RECEIVER.lock().unwrap();
+        global_receiver.take()
+    };
+
+    let receiver = receiver.ok_or_else(|| {
+        log::error!("コールバック受信用のReceiverが見つかりません");
+        "認証フローが開始されていません。先にstart_oauth_flowを呼び出してください。".to_string()
+    })?;
 
     let (user, session) = auth_service
-        .handle_callback(request.code, request.state, request.code_verifier)
+        .handle_loopback_callback(receiver)
         .await
         .map_err(|e| {
             log::error!("認証コールバック処理エラー: {e}");
@@ -102,12 +111,12 @@ pub async fn handle_auth_callback(
             format!("セッショントークンの生成に失敗しました: {e}")
         })?;
 
-    let response = HandleCallbackResponse {
+    let response = WaitForAuthResponse {
         user,
         session_token,
     };
 
-    log::info!("認証コールバック処理コマンドが完了しました");
+    log::info!("認証完了待機コマンドが完了しました");
     Ok(response)
 }
 

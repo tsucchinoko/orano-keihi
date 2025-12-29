@@ -112,6 +112,9 @@
 	"plugins": {
 		"deepLink": {
 			"schemes": ["orano-keihi"]
+		},
+		"shell": {
+			"open": true
 		}
 	}
 }
