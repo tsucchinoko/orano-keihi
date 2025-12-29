@@ -1729,6 +1729,20 @@ mod tests {
         )
         .unwrap();
 
+        // receipt_cacheテーブルを作成
+        conn.execute(
+            "CREATE TABLE receipt_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_url TEXT NOT NULL UNIQUE,
+                local_path TEXT NOT NULL,
+                cached_at TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_accessed TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
         // テストデータを挿入
         conn.execute(
             "INSERT INTO expenses (date, amount, category, description, created_at, updated_at)
@@ -1786,8 +1800,40 @@ mod tests {
     fn test_data_migration_with_existing_user_auth() {
         let conn = SqliteConnection::open_in_memory().unwrap();
 
-        // 既にユーザー認証が設定されているデータベースを作成
-        migrate_user_authentication(&conn).unwrap();
+        // 手動でusersテーブルを作成（既にユーザー認証が設定されているデータベースをシミュレート）
+        conn.execute(
+            "CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                google_id TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                picture_url TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                encrypted_data TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストユーザーを挿入
+        conn.execute(
+            "INSERT INTO users (id, google_id, email, name, created_at, updated_at)
+             VALUES (1, 'test_google_id', 'test@example.com', 'テストユーザー', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        )
+        .unwrap();
 
         conn.execute(
             "CREATE TABLE expenses (
