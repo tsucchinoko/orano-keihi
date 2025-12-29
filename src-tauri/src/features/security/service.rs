@@ -1,5 +1,6 @@
 use crate::features::security::encryption::TokenEncryption;
 use crate::features::security::models::{SecurityConfig, SecurityError, TokenInfo};
+use base64::{engine::general_purpose, Engine as _};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -201,14 +202,20 @@ impl SecurityService {
             return Ok(false);
         }
 
-        // トークンの形式を検証（Base64エンコードされた暗号化トークンかチェック）
-        match self.token_encryption.decrypt_token(token) {
-            Ok(_) => {
-                log::debug!("APIリクエストの認証が成功しました");
-                Ok(true)
+        // トークンの基本的な形式を検証（Base64エンコードされているかチェック）
+        match general_purpose::STANDARD.decode(token) {
+            Ok(decoded_bytes) => {
+                // Base64デコードが成功し、最小限の長さがあるかチェック
+                if decoded_bytes.len() >= 12 {
+                    log::debug!("APIリクエストの認証トークン形式が有効です");
+                    Ok(true)
+                } else {
+                    log::warn!("APIリクエストの認証トークンが短すぎます");
+                    Ok(false)
+                }
             }
             Err(e) => {
-                log::warn!("APIリクエストの認証に失敗しました: {e}");
+                log::warn!("APIリクエストの認証トークンのBase64デコードに失敗: {e}");
                 Ok(false)
             }
         }
