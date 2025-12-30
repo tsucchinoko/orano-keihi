@@ -70,6 +70,9 @@ url = "2.4"
 aes-gcm = "0.10"
 rand = "0.8"
 
+# ハッシュ計算
+sha2 = "0.10"
+
 [dev-dependencies]
 tempfile = "3.8"
 quickcheck = "1.0"

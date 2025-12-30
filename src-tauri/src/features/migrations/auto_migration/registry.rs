@@ -4,6 +4,7 @@
 
 use super::errors::MigrationError;
 use super::models::MigrationDefinition;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 /// マイグレーション登録管理
@@ -109,6 +110,56 @@ impl MigrationRegistry {
     pub fn get_migration_names(&self) -> Vec<String> {
         self.migrations.iter().map(|m| m.name.clone()).collect()
     }
+
+    /// マイグレーション内容のチェックサムを計算
+    ///
+    /// # 引数
+    /// * `content` - マイグレーション内容
+    ///
+    /// # 戻り値
+    /// SHA-256チェックサム（16進数文字列）
+    pub fn calculate_checksum(content: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// デフォルトマイグレーションを登録
+    ///
+    /// # 戻り値
+    /// デフォルトマイグレーションが登録されたレジストリ
+    pub fn register_default_migrations() -> Result<Self, MigrationError> {
+        let mut registry = Self::new();
+
+        // 基本スキーママイグレーション
+        let basic_schema_migration = MigrationDefinition::new(
+            "001_create_basic_schema".to_string(),
+            "1.0.0".to_string(),
+            "基本テーブル構造の作成".to_string(),
+            Self::calculate_checksum("run_migrations"),
+        );
+        registry.register(basic_schema_migration)?;
+
+        // ユーザー認証マイグレーション
+        let user_auth_migration = MigrationDefinition::new(
+            "002_add_user_authentication".to_string(),
+            "2.0.0".to_string(),
+            "ユーザー認証機能の追加".to_string(),
+            Self::calculate_checksum("migrate_user_authentication"),
+        );
+        registry.register(user_auth_migration)?;
+
+        // receipt_urlマイグレーション
+        let receipt_url_migration = MigrationDefinition::new(
+            "003_migrate_receipt_url".to_string(),
+            "2.1.0".to_string(),
+            "receipt_pathからreceipt_urlへの移行".to_string(),
+            Self::calculate_checksum("migrate_receipt_path_to_url"),
+        );
+        registry.register(receipt_url_migration)?;
+
+        Ok(registry)
+    }
 }
 
 impl Default for MigrationRegistry {
@@ -186,5 +237,59 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"migration1".to_string()));
         assert!(names.contains(&"migration2".to_string()));
+    }
+
+    #[test]
+    fn test_calculate_checksum() {
+        let content1 = "test content";
+        let content2 = "different content";
+        let content3 = "test content"; // 同じ内容
+
+        let checksum1 = MigrationRegistry::calculate_checksum(content1);
+        let checksum2 = MigrationRegistry::calculate_checksum(content2);
+        let checksum3 = MigrationRegistry::calculate_checksum(content3);
+
+        // チェックサムは64文字の16進数文字列
+        assert_eq!(checksum1.len(), 64);
+        assert!(checksum1.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // 異なる内容は異なるチェックサム
+        assert_ne!(checksum1, checksum2);
+
+        // 同じ内容は同じチェックサム
+        assert_eq!(checksum1, checksum3);
+    }
+
+    #[test]
+    fn test_register_default_migrations() {
+        let registry = MigrationRegistry::register_default_migrations().unwrap();
+
+        assert_eq!(registry.count(), 3);
+        assert!(registry.find_migration("001_create_basic_schema").is_some());
+        assert!(registry
+            .find_migration("002_add_user_authentication")
+            .is_some());
+        assert!(registry.find_migration("003_migrate_receipt_url").is_some());
+
+        // 各マイグレーションのチェックサムが正しく計算されていることを確認
+        let basic_schema = registry.find_migration("001_create_basic_schema").unwrap();
+        assert_eq!(
+            basic_schema.checksum,
+            MigrationRegistry::calculate_checksum("run_migrations")
+        );
+
+        let user_auth = registry
+            .find_migration("002_add_user_authentication")
+            .unwrap();
+        assert_eq!(
+            user_auth.checksum,
+            MigrationRegistry::calculate_checksum("migrate_user_authentication")
+        );
+
+        let receipt_url = registry.find_migration("003_migrate_receipt_url").unwrap();
+        assert_eq!(
+            receipt_url.checksum,
+            MigrationRegistry::calculate_checksum("migrate_receipt_path_to_url")
+        );
     }
 }
