@@ -10,6 +10,12 @@ pub mod service;
 #[cfg(test)]
 mod commands_test;
 
+#[cfg(test)]
+mod integration_tests;
+
+#[cfg(test)]
+mod error_scenario_tests;
+
 // 公開インターフェース
 pub use auto_migration::{
     AppliedMigration, AutoMigrationResult, AutoMigrationService, MigrationDefinition,
