@@ -260,6 +260,8 @@ pub fn run() {
             receipt_commands::get_r2_performance_stats,
             // マイグレーションコマンド
             migration_commands::check_migration_status,
+            migration_commands::check_auto_migration_status,
+            migration_commands::get_detailed_migration_info,
             migration_commands::execute_receipt_url_migration,
             migration_commands::execute_user_authentication_migration,
             migration_commands::execute_comprehensive_data_migration_command,

@@ -17,7 +17,7 @@ use std::time::Instant;
 /// メインの自動マイグレーション管理サービスです。
 pub struct AutoMigrationService {
     /// マイグレーション登録管理
-    registry: MigrationRegistry,
+    pub registry: MigrationRegistry,
     /// マイグレーション実行管理
     executor: MigrationExecutor,
 }

@@ -7,6 +7,9 @@ pub mod auto_migration;
 pub mod commands;
 pub mod service;
 
+#[cfg(test)]
+mod commands_test;
+
 // 公開インターフェース
 pub use auto_migration::{
     AppliedMigration, AutoMigrationResult, AutoMigrationService, MigrationDefinition,
@@ -15,10 +18,12 @@ pub use auto_migration::{
 };
 
 pub use commands::{
-    check_database_integrity, check_migration_status, create_manual_backup,
-    drop_receipt_path_column_command, execute_comprehensive_data_migration_command,
-    execute_receipt_url_migration, execute_user_authentication_migration, get_database_stats,
-    list_backup_files_command, restore_database_from_backup, DatabaseStats,
+    check_auto_migration_status, check_database_integrity, check_migration_status,
+    create_manual_backup, drop_receipt_path_column_command,
+    execute_comprehensive_data_migration_command, execute_receipt_url_migration,
+    execute_user_authentication_migration, get_database_stats, get_detailed_migration_info,
+    list_backup_files_command, restore_database_from_backup, DatabaseStats, DetailedMigrationInfo,
+    MigrationInfo,
 };
 
 pub use service::{
