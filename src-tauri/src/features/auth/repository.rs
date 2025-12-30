@@ -45,6 +45,14 @@ impl UserRepository {
             .lock()
             .map_err(|e| AuthError::DatabaseError(format!("データベースロック取得失敗: {e}")))?;
 
+        // usersテーブルが存在するかチェック
+        if !self.check_users_table_exists(&conn)? {
+            return Err(AuthError::DatabaseError(
+                "usersテーブルが存在しません。データベースマイグレーションを実行してください。"
+                    .to_string(),
+            ));
+        }
+
         // 既存ユーザーを検索
         if let Some(existing_user) = self.get_user_by_google_id_internal(&conn, &google_user.id)? {
             // 既存ユーザーの情報を更新
@@ -72,6 +80,12 @@ impl UserRepository {
             .lock()
             .map_err(|e| AuthError::DatabaseError(format!("データベースロック取得失敗: {e}")))?;
 
+        // usersテーブルが存在するかチェック
+        if !self.check_users_table_exists(&conn)? {
+            log::warn!("usersテーブルが存在しないため、ユーザー取得をスキップします");
+            return Ok(None);
+        }
+
         self.get_user_by_id_internal(&conn, user_id)
     }
 
@@ -90,6 +104,12 @@ impl UserRepository {
             .db_connection
             .lock()
             .map_err(|e| AuthError::DatabaseError(format!("データベースロック取得失敗: {e}")))?;
+
+        // usersテーブルが存在するかチェック
+        if !self.check_users_table_exists(&conn)? {
+            log::warn!("usersテーブルが存在しないため、ユーザー取得をスキップします");
+            return Ok(None);
+        }
 
         self.get_user_by_google_id_internal(&conn, &google_id)
     }
@@ -315,6 +335,25 @@ impl UserRepository {
             created_at,
             updated_at,
         })
+    }
+
+    /// usersテーブルが存在するかチェックする
+    ///
+    /// # 引数
+    /// * `conn` - データベース接続
+    ///
+    /// # 戻り値
+    /// テーブルが存在する場合はtrue、失敗時はエラー
+    fn check_users_table_exists(&self, conn: &Connection) -> Result<bool, AuthError> {
+        let table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| AuthError::DatabaseError(format!("テーブル存在確認エラー: {e}")))?;
+
+        Ok(table_exists > 0)
     }
 }
 

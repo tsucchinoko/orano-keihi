@@ -101,7 +101,7 @@ pub fn run() {
 
             info!("システム診断情報を取得中...");
 
-            // アプリ起動時にデータベースを初期化
+            // アプリ起動時にデータベースを初期化（認証サービス初期化前に実行）
             info!("データベースを初期化しています...");
             let _db_conn = shared::database::connection::initialize_database(app.handle())
                 .map_err(|e| {
@@ -110,6 +110,28 @@ pub fn run() {
                 })?;
 
             info!("データベースの初期化が完了しました");
+
+            // データベースマイグレーションが完了していることを確認
+            info!("データベースマイグレーション状態を確認しています...");
+            let migration_check_conn =
+                shared::database::connection::initialize_database(app.handle()).map_err(|e| {
+                    error!("マイグレーション確認用データベース接続の作成に失敗しました: {e}");
+                    e
+                })?;
+
+            // ユーザー認証マイグレーションの状態を確認
+            use features::migrations::service::is_user_authentication_migration_complete;
+            let migration_complete =
+                is_user_authentication_migration_complete(&migration_check_conn).map_err(|e| {
+                    error!("マイグレーション状態の確認に失敗しました: {e}");
+                    e
+                })?;
+
+            if migration_complete {
+                info!("ユーザー認証マイグレーションは完了しています");
+            } else {
+                warn!("ユーザー認証マイグレーションが未完了です");
+            }
 
             // 認証サービスを初期化
             info!("認証サービスを初期化しています...");

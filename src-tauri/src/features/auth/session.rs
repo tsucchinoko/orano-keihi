@@ -46,6 +46,16 @@ impl SessionManager {
     /// # 戻り値
     /// 作成されたセッション情報
     pub fn create_session(&self, user_id: i64) -> Result<Session, SessionError> {
+        let conn = self.db_connection.lock().unwrap();
+
+        // sessionsテーブルが存在するかチェック
+        if !self.check_sessions_table_exists(&conn)? {
+            return Err(SessionError::DatabaseError(
+                "sessionsテーブルが存在しません。データベースマイグレーションを実行してください。"
+                    .to_string(),
+            ));
+        }
+
         let session_id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now();
         let expires_at = now + Duration::days(30); // 30日間有効
@@ -58,7 +68,6 @@ impl SessionManager {
         };
 
         // データベースにセッションを保存
-        let conn = self.db_connection.lock().unwrap();
         conn.execute(
             "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![
@@ -86,6 +95,13 @@ impl SessionManager {
 
         // データベースからセッションを取得
         let conn = self.db_connection.lock().unwrap();
+
+        // sessionsテーブルが存在するかチェック
+        if !self.check_sessions_table_exists(&conn)? {
+            log::warn!("sessionsテーブルが存在しないため、セッション検証をスキップします");
+            return Err(SessionError::NotFound);
+        }
+
         let mut stmt = conn
             .prepare("SELECT id, user_id, expires_at, created_at FROM sessions WHERE id = ?1")
             .map_err(|e| SessionError::DatabaseError(e.to_string()))?;
@@ -239,8 +255,17 @@ impl SessionManager {
     /// # 戻り値
     /// 削除されたセッション数
     pub fn cleanup_expired_sessions(&self) -> Result<usize, SessionError> {
-        let now = Utc::now();
         let conn = self.db_connection.lock().unwrap();
+
+        // sessionsテーブルが存在するかチェック
+        if !self.check_sessions_table_exists(&conn)? {
+            log::warn!(
+                "sessionsテーブルが存在しないため、セッションクリーンアップをスキップします"
+            );
+            return Ok(0);
+        }
+
+        let now = Utc::now();
 
         let affected_rows = conn.execute(
             "DELETE FROM sessions WHERE expires_at < ?1",
@@ -269,6 +294,25 @@ impl SessionManager {
 
         log::info!("ユーザー{user_id}のセッションを{affected_rows}件無効化しました");
         Ok(affected_rows)
+    }
+
+    /// sessionsテーブルが存在するかチェックする
+    ///
+    /// # 引数
+    /// * `conn` - データベース接続
+    ///
+    /// # 戻り値
+    /// テーブルが存在する場合はtrue、失敗時はエラー
+    fn check_sessions_table_exists(&self, conn: &Connection) -> Result<bool, SessionError> {
+        let table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| SessionError::DatabaseError(format!("テーブル存在確認エラー: {e}")))?;
+
+        Ok(table_exists > 0)
     }
 }
 

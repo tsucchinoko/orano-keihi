@@ -37,6 +37,8 @@ pub struct MigrationStatus {
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラー
 pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
+    log::info!("データベースマイグレーションを開始します");
+
     // 既存のテーブル構造をチェック
     let table_exists: i64 = conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='expenses'",
@@ -46,6 +48,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
 
     if table_exists == 0 {
         // 新規インストール: 最新のスキーマ（receipt_url）でテーブルを作成
+        log::info!("新規データベースを作成します（receipt_urlスキーマ）");
         conn.execute(
             "CREATE TABLE expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,16 +63,16 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
             [],
         )?;
 
-        println!("新規データベースを作成しました（receipt_urlスキーマ）");
+        log::info!("新規データベースを作成しました（receipt_urlスキーマ）");
     } else {
         // 既存インストール: 必要なカラムを安全に追加
-        println!("既存のデータベースを確認中...");
+        log::info!("既存のデータベースを確認中...");
 
         // receipt_urlカラムが存在するかチェック
         let has_receipt_url = check_column_exists(conn, "expenses", "receipt_url");
 
         if !has_receipt_url {
-            println!("receipt_urlカラムを追加します...");
+            log::info!("receipt_urlカラムを追加します...");
             // receipt_urlカラムを追加（エラーを無視）
             let _ = conn.execute("ALTER TABLE expenses ADD COLUMN receipt_url TEXT", []);
         }
@@ -77,17 +80,17 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         // receipt_pathカラムが存在する場合は削除する
         let has_receipt_path = check_column_exists(conn, "expenses", "receipt_path");
         if has_receipt_path {
-            println!("古いreceipt_pathカラムを削除します...");
+            log::info!("古いreceipt_pathカラムを削除します...");
             match drop_receipt_path_column(conn) {
                 Ok(result) => {
                     if result.success {
-                        println!("{}", result.message);
+                        log::info!("{}", result.message);
                     } else {
-                        eprintln!("警告: {}", result.message);
+                        log::warn!("警告: {}", result.message);
                     }
                 }
                 Err(e) => {
-                    eprintln!("警告: receipt_pathカラムの削除でエラーが発生しました: {e}");
+                    log::warn!("警告: receipt_pathカラムの削除でエラーが発生しました: {e}");
                 }
             }
         }
@@ -192,6 +195,7 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         }
     }
 
+    log::info!("基本テーブルの作成・更新が完了しました");
     Ok(())
 }
 
@@ -1296,35 +1300,64 @@ fn validate_user_authentication_migration(tx: &Transaction) -> Result<(), AppErr
 /// ユーザー認証マイグレーションが完了している場合はtrue
 pub fn is_user_authentication_migration_complete(conn: &Connection) -> Result<bool, AppError> {
     // usersテーブルの存在確認
-    let users_table_exists: i64 = conn.query_row(
+    let users_table_exists: i64 = match conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'",
         [],
         |row| row.get(0),
-    )?;
+    ) {
+        Ok(count) => count,
+        Err(e) => {
+            log::warn!("usersテーブルの存在確認でエラー: {e}");
+            return Ok(false);
+        }
+    };
 
     if users_table_exists == 0 {
+        log::debug!("usersテーブルが存在しないため、マイグレーション未完了");
         return Ok(false);
     }
 
     // sessionsテーブルの存在確認
-    let sessions_table_exists: i64 = conn.query_row(
+    let sessions_table_exists: i64 = match conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
         [],
         |row| row.get(0),
-    )?;
+    ) {
+        Ok(count) => count,
+        Err(e) => {
+            log::warn!("sessionsテーブルの存在確認でエラー: {e}");
+            return Ok(false);
+        }
+    };
 
     if sessions_table_exists == 0 {
+        log::debug!("sessionsテーブルが存在しないため、マイグレーション未完了");
         return Ok(false);
     }
 
     // 既存テーブルのuser_idカラムの確認
     let tables_to_check = ["expenses", "subscriptions", "receipt_cache"];
     for table in &tables_to_check {
-        if !check_column_exists(conn, table, "user_id") {
+        // テーブルが存在するかチェック
+        let table_exists: i64 = match conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            [table],
+            |row| row.get(0),
+        ) {
+            Ok(count) => count,
+            Err(e) => {
+                log::warn!("テーブル {table} の存在確認でエラー: {e}");
+                continue; // このテーブルは存在しないのでスキップ
+            }
+        };
+
+        if table_exists > 0 && !check_column_exists(conn, table, "user_id") {
+            log::debug!("テーブル {table} にuser_idカラムが存在しないため、マイグレーション未完了");
             return Ok(false);
         }
     }
 
+    log::debug!("ユーザー認証マイグレーションは完了しています");
     Ok(true)
 }
 

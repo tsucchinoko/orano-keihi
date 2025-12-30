@@ -157,11 +157,17 @@ fn execute_user_authentication_migration_if_needed(conn: &Connection) -> AppResu
         is_user_authentication_migration_complete, migrate_user_authentication,
     };
 
-    let is_complete = is_user_authentication_migration_complete(conn)
+    // まず、usersテーブルが存在するかチェック
+    let users_table_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'",
+            [],
+            |row| row.get(0),
+        )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
-    if !is_complete {
-        log::info!("ユーザー認証マイグレーションを実行します...");
+    if users_table_exists == 0 {
+        log::info!("usersテーブルが存在しないため、ユーザー認証マイグレーションを実行します...");
 
         match migrate_user_authentication(conn) {
             Ok(result) => {
@@ -179,7 +185,31 @@ fn execute_user_authentication_migration_if_needed(conn: &Connection) -> AppResu
             }
         }
     } else {
-        log::info!("ユーザー認証マイグレーションは既に完了しています");
+        // テーブルが存在する場合は、マイグレーション完了状態をチェック
+        let is_complete = is_user_authentication_migration_complete(conn)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        if !is_complete {
+            log::info!("ユーザー認証マイグレーションが不完全なため、再実行します...");
+
+            match migrate_user_authentication(conn) {
+                Ok(result) => {
+                    if result.success {
+                        log::info!("ユーザー認証マイグレーションが完了しました");
+                    } else {
+                        log::warn!("ユーザー認証マイグレーションで警告: {}", result.message);
+                    }
+                }
+                Err(e) => {
+                    log::error!("ユーザー認証マイグレーションでエラー: {e}");
+                    return Err(AppError::Database(format!(
+                        "ユーザー認証マイグレーション失敗: {e}"
+                    )));
+                }
+            }
+        } else {
+            log::info!("ユーザー認証マイグレーションは既に完了しています");
+        }
     }
 
     Ok(())
