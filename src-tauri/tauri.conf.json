@@ -56,10 +56,10 @@
 			"frameworks": [],
 			"minimumSystemVersion": "10.15",
 			"exceptionDomain": "",
-			"signingIdentity": "$APPLE_SIGNING_IDENTITY",
+			"signingIdentity": null,
 			"providerShortName": null,
 			"entitlements": "entitlements.plist",
-			"hardenedRuntime": true,
+			"hardenedRuntime": false,
 			"dmg": {
 				"appPosition": {
 					"x": 180,

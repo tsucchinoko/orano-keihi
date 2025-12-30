@@ -179,8 +179,19 @@ fn execute_user_authentication_migration_if_needed(conn: &Connection) -> AppResu
             }
             Err(e) => {
                 log::error!("ユーザー認証マイグレーションでエラー: {e}");
+
+                // マイグレーション失敗時の詳細情報を出力
+                log::error!("データベースファイルパス: {:?}", conn.path());
+                log::error!("環境設定: ENVIRONMENT={:?}", std::env::var("ENVIRONMENT"));
+                log::error!("プロダクション環境判定: {}", is_production_environment());
+
+                // 部分的に作成されたテーブルをクリーンアップ
+                log::info!("マイグレーション失敗のため、部分的に作成されたテーブルをクリーンアップします...");
+                let _ = conn.execute("DROP TABLE IF EXISTS users", []);
+                let _ = conn.execute("DROP TABLE IF EXISTS sessions", []);
+
                 return Err(AppError::Database(format!(
-                    "ユーザー認証マイグレーション失敗: {e}"
+                    "ユーザー認証マイグレーション失敗: {e}。アプリケーションを再起動してください。"
                 )));
             }
         }
@@ -202,8 +213,14 @@ fn execute_user_authentication_migration_if_needed(conn: &Connection) -> AppResu
                 }
                 Err(e) => {
                     log::error!("ユーザー認証マイグレーションでエラー: {e}");
+
+                    // マイグレーション失敗時の詳細情報を出力
+                    log::error!("データベースファイルパス: {:?}", conn.path());
+                    log::error!("環境設定: ENVIRONMENT={:?}", std::env::var("ENVIRONMENT"));
+                    log::error!("プロダクション環境判定: {}", is_production_environment());
+
                     return Err(AppError::Database(format!(
-                        "ユーザー認証マイグレーション失敗: {e}"
+                        "ユーザー認証マイグレーション失敗: {e}。アプリケーションを再起動してください。"
                     )));
                 }
             }

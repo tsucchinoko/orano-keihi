@@ -103,13 +103,37 @@ pub fn run() {
 
             // アプリ起動時にデータベースを初期化（認証サービス初期化前に実行）
             info!("データベースを初期化しています...");
-            let _db_conn = shared::database::connection::initialize_database(app.handle())
-                .map_err(|e| {
-                    error!("データベースの初期化に失敗しました: {e}");
-                    e
-                })?;
 
-            info!("データベースの初期化が完了しました");
+            // 最大3回まで初期化を試行
+            let mut db_init_attempts = 0;
+            let max_attempts = 3;
+            let mut db_conn = None;
+
+            while db_init_attempts < max_attempts {
+                db_init_attempts += 1;
+                info!("データベース初期化試行 {db_init_attempts}/{max_attempts}");
+
+                match shared::database::connection::initialize_database(app.handle()) {
+                    Ok(conn) => {
+                        info!("データベースの初期化が完了しました（試行 {db_init_attempts}）");
+                        db_conn = Some(conn);
+                        break;
+                    }
+                    Err(e) => {
+                        error!("データベース初期化失敗（試行 {db_init_attempts}）: {e}");
+
+                        if db_init_attempts < max_attempts {
+                            warn!("データベース初期化を再試行します...");
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                        } else {
+                            error!("データベース初期化が最大試行回数に達しました");
+                            return Err(e.into());
+                        }
+                    }
+                }
+            }
+
+            let _db_conn = db_conn.expect("データベース接続が確立されていません");
 
             // データベースマイグレーションが完了していることを確認
             info!("データベースマイグレーション状態を確認しています...");
