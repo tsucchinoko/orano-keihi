@@ -3,10 +3,17 @@
 //! このモジュールは、データベーススキーマのマイグレーション、
 //! バックアップの作成と復元、マイグレーション状態の確認を提供します。
 
+pub mod auto_migration;
 pub mod commands;
 pub mod service;
 
 // 公開インターフェース
+pub use auto_migration::{
+    AppliedMigration, AutoMigrationResult, AutoMigrationService, MigrationDefinition,
+    MigrationError, MigrationErrorType, MigrationExecutionResult, MigrationExecutor,
+    MigrationRegistry, MigrationStatusReport, MigrationTable,
+};
+
 pub use commands::{
     check_database_integrity, check_migration_status, create_manual_backup,
     drop_receipt_path_column_command, execute_comprehensive_data_migration_command,
