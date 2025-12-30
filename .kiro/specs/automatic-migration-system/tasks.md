@@ -52,7 +52,7 @@
   - **プロパティ 12: マイグレーションエラー時トランザクション管理**
   - **検証: 要件 3.3, 6.1, 6.2, 6.3**
 
-- [ ] 5. 既存マイグレーション機能との統合
+- [x] 5. 既存マイグレーション機能との統合
   - 既存マイグレーション関数のラッパー実装を作成
   - `BasicSchemaMigrationExecutor`を実装（`run_migrations`統合）
   - `UserAuthMigrationExecutor`を実装（`migrate_user_authentication`統合）

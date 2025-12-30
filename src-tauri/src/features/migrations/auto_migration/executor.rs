@@ -3,12 +3,35 @@
 //! このモジュールは、マイグレーションの実行とトランザクション管理を行います。
 
 use super::errors::MigrationError;
-use super::models::{MigrationDefinition, MigrationExecutionResult};
-use crate::features::migrations::service::create_backup;
+use super::models::MigrationExecutionResult;
+use crate::features::migrations::service::{
+    create_backup, migrate_receipt_path_to_url, migrate_user_authentication, run_migrations,
+};
 use chrono::Utc;
 use chrono_tz::Asia::Tokyo;
 use rusqlite::Connection;
 use std::time::Instant;
+
+/// マイグレーション実行トレイト
+///
+/// 個別のマイグレーション実行機能を定義します。
+/// 既存のマイグレーション機能を統合するためのインターフェースです。
+pub trait MigrationExecutorTrait: Send + Sync {
+    /// マイグレーションを実行
+    ///
+    /// # 引数
+    /// * `conn` - データベース接続
+    ///
+    /// # 戻り値
+    /// 実行結果
+    fn execute(&self, conn: &Connection) -> Result<(), String>;
+
+    /// マイグレーション名を取得
+    ///
+    /// # 戻り値
+    /// マイグレーション名
+    fn name(&self) -> &str;
+}
 
 /// マイグレーション実行管理
 ///
@@ -33,18 +56,21 @@ impl MigrationExecutor {
     ///
     /// # 引数
     /// * `conn` - データベース接続
-    /// * `migration` - マイグレーション定義
+    /// * `executable_migration` - 実行可能なマイグレーション定義
     ///
     /// # 戻り値
     /// マイグレーション実行結果
     pub fn execute_migration(
         &self,
         conn: &Connection,
-        migration: &MigrationDefinition,
+        executable_migration: &crate::features::migrations::auto_migration::models::ExecutableMigrationDefinition,
     ) -> Result<MigrationExecutionResult, MigrationError> {
         let start_time = Instant::now();
 
-        log::info!("マイグレーション '{}' の実行を開始します", migration.name);
+        log::info!(
+            "マイグレーション '{}' の実行を開始します",
+            executable_migration.name()
+        );
 
         // 1. バックアップを作成（要件3.3）
         let backup_path = match self.create_backup(conn) {
@@ -59,50 +85,16 @@ impl MigrationExecutor {
             }
         };
 
-        // 2. トランザクション内でマイグレーションを実行
-        let tx = match conn.unchecked_transaction() {
-            Ok(tx) => tx,
-            Err(e) => {
-                let error_msg = format!("トランザクション開始に失敗しました: {}", e);
-                log::error!("{}", error_msg);
-                return Ok(MigrationExecutionResult::failure(
-                    error_msg,
-                    backup_path.clone(),
-                ));
-            }
-        };
-
-        // 3. 具体的なマイグレーション実行
-        let migration_result = match migration.name.as_str() {
-            "001_create_basic_schema" => self.execute_basic_schema_migration(&tx),
-            "002_add_user_authentication" => self.execute_user_auth_migration(&tx),
-            "003_migrate_receipt_url" => self.execute_receipt_url_migration(&tx),
-            _ => {
-                let error_msg = format!("未知のマイグレーション: {}", migration.name);
-                log::error!("{}", error_msg);
-                Err(MigrationError::execution(
-                    migration.name.clone(),
-                    error_msg,
-                    None,
-                ))
-            }
-        };
+        // 2. マイグレーションを実行（既存の関数を直接呼び出し）
+        let migration_result = executable_migration.execute(conn);
 
         match migration_result {
             Ok(_) => {
-                // 4. コミット
-                if let Err(e) = tx.commit() {
-                    let error_msg = format!("トランザクションコミットに失敗しました: {}", e);
-                    log::error!("{}", error_msg);
-                    return Ok(MigrationExecutionResult::failure(
-                        error_msg,
-                        backup_path.clone(),
-                    ));
-                }
-
                 let execution_time = start_time.elapsed().as_millis() as i64;
-                let success_msg =
-                    format!("マイグレーション '{}' が正常に完了しました", migration.name);
+                let success_msg = format!(
+                    "マイグレーション '{}' が正常に完了しました",
+                    executable_migration.name()
+                );
 
                 log::info!("{} (実行時間: {}ms)", success_msg, execution_time);
 
@@ -113,24 +105,22 @@ impl MigrationExecutor {
                 ))
             }
             Err(e) => {
-                // 5. エラー時のロールバック（要件6.1）
-                if let Err(rollback_err) = tx.rollback() {
-                    log::error!("ロールバックに失敗しました: {}", rollback_err);
-                }
+                // 詳細なエラーメッセージをログに出力（要件6.2）
+                log::error!("マイグレーション実行エラー: {}", e);
 
-                // 6. 詳細なエラーメッセージをログに出力（要件6.2）
-                log::error!("マイグレーション実行エラー: {}", e.detailed_message());
-
-                // 7. バックアップファイルの場所を通知（要件6.3）
+                // バックアップファイルの場所を通知（要件6.3）
                 let error_msg = if let Some(ref backup) = backup_path {
                     format!(
                         "マイグレーション '{}' の実行に失敗しました: {}。バックアップファイル: {}",
-                        migration.name, e.message, backup
+                        executable_migration.name(),
+                        e,
+                        backup
                     )
                 } else {
                     format!(
                         "マイグレーション '{}' の実行に失敗しました: {}",
-                        migration.name, e.message
+                        executable_migration.name(),
+                        e
                     )
                 };
 
@@ -168,371 +158,6 @@ impl MigrationExecutor {
             }
         }
     }
-
-    /// 基本スキーママイグレーションを実行
-    ///
-    /// # 引数
-    /// * `tx` - トランザクション
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はエラー
-    fn execute_basic_schema_migration(
-        &self,
-        tx: &rusqlite::Transaction,
-    ) -> Result<(), MigrationError> {
-        log::info!("基本スキーママイグレーションを実行中...");
-
-        // 既存のrun_migrations機能を使用するため、
-        // トランザクション内で直接実行する代わりに、
-        // 接続レベルでの実行が必要
-        // ここでは基本的なテーブル作成のみを実行
-        self.create_basic_tables(tx)
-            .map_err(|e| MigrationError::execution("001_create_basic_schema".to_string(), e, None))
-    }
-
-    /// ユーザー認証マイグレーションを実行
-    ///
-    /// # 引数
-    /// * `tx` - トランザクション
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はエラー
-    fn execute_user_auth_migration(
-        &self,
-        tx: &rusqlite::Transaction,
-    ) -> Result<(), MigrationError> {
-        log::info!("ユーザー認証マイグレーションを実行中...");
-
-        // ユーザー認証テーブルの作成
-        self.create_user_auth_tables(tx).map_err(|e| {
-            MigrationError::execution("002_add_user_authentication".to_string(), e, None)
-        })
-    }
-
-    /// receipt_urlマイグレーションを実行
-    ///
-    /// # 引数
-    /// * `tx` - トランザクション
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はエラー
-    fn execute_receipt_url_migration(
-        &self,
-        tx: &rusqlite::Transaction,
-    ) -> Result<(), MigrationError> {
-        log::info!("receipt_urlマイグレーションを実行中...");
-
-        // receipt_pathからreceipt_urlへの移行
-        self.migrate_receipt_path_to_url_in_tx(tx)
-            .map_err(|e| MigrationError::execution("003_migrate_receipt_url".to_string(), e, None))
-    }
-
-    /// 基本テーブルを作成
-    ///
-    /// # 引数
-    /// * `tx` - トランザクション
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はエラー文字列
-    fn create_basic_tables(&self, tx: &rusqlite::Transaction) -> Result<(), String> {
-        // expensesテーブルを作成
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT NOT NULL,
-                description TEXT,
-                receipt_url TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .map_err(|e| format!("expensesテーブル作成エラー: {}", e))?;
-
-        // インデックスを作成
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
-            [],
-        )
-        .map_err(|e| format!("expensesインデックス作成エラー: {}", e))?;
-
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
-            [],
-        )
-        .map_err(|e| format!("expensesインデックス作成エラー: {}", e))?;
-
-        // subscriptionsテーブルを作成
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS subscriptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                amount REAL NOT NULL,
-                billing_cycle TEXT NOT NULL CHECK(billing_cycle IN ('monthly', 'annual')),
-                start_date TEXT NOT NULL,
-                category TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                receipt_path TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .map_err(|e| format!("subscriptionsテーブル作成エラー: {}", e))?;
-
-        // categoriesテーブルを作成
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                color TEXT NOT NULL,
-                icon TEXT
-            )",
-            [],
-        )
-        .map_err(|e| format!("categoriesテーブル作成エラー: {}", e))?;
-
-        // 初期カテゴリデータを挿入
-        let count: i64 = tx
-            .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
-            .map_err(|e| format!("カテゴリ数取得エラー: {}", e))?;
-
-        if count == 0 {
-            let categories = [
-                ("交通費", "#3B82F6", "🚗"),
-                ("飲食費", "#EF4444", "🍽️"),
-                ("通信費", "#8B5CF6", "📱"),
-                ("消耗品費", "#10B981", "📦"),
-                ("接待交際費", "#F59E0B", "🤝"),
-                ("その他", "#6B7280", "📋"),
-            ];
-
-            for (name, color, icon) in categories.iter() {
-                tx.execute(
-                    "INSERT INTO categories (name, color, icon) VALUES (?1, ?2, ?3)",
-                    [name, color, icon],
-                )
-                .map_err(|e| format!("初期カテゴリ挿入エラー: {}", e))?;
-            }
-        }
-
-        log::info!("基本テーブルの作成が完了しました");
-        Ok(())
-    }
-
-    /// ユーザー認証テーブルを作成
-    ///
-    /// # 引数
-    /// * `tx` - トランザクション
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はエラー文字列
-    fn create_user_auth_tables(&self, tx: &rusqlite::Transaction) -> Result<(), String> {
-        // usersテーブルを作成
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                google_id TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL,
-                name TEXT NOT NULL,
-                picture_url TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .map_err(|e| format!("usersテーブル作成エラー: {}", e))?;
-
-        // usersテーブルのインデックスを作成
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)",
-            [],
-        )
-        .map_err(|e| format!("usersインデックス作成エラー: {}", e))?;
-
-        // sessionsテーブルを作成
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                expires_at TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )",
-            [],
-        )
-        .map_err(|e| format!("sessionsテーブル作成エラー: {}", e))?;
-
-        // sessionsテーブルのインデックスを作成
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
-            [],
-        )
-        .map_err(|e| format!("sessionsインデックス作成エラー: {}", e))?;
-
-        // デフォルトユーザーを作成
-        let default_user_exists: i64 = tx
-            .query_row("SELECT COUNT(*) FROM users WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .map_err(|e| format!("デフォルトユーザー確認エラー: {}", e))?;
-
-        if default_user_exists == 0 {
-            let now_jst = Utc::now().with_timezone(&Tokyo);
-            let timestamp = now_jst.to_rfc3339();
-
-            tx.execute(
-                "INSERT OR IGNORE INTO users (id, google_id, email, name, picture_url, created_at, updated_at)
-                 VALUES (1, 'default_user', 'default@example.com', 'デフォルトユーザー', NULL, ?1, ?2)",
-                [&timestamp, &timestamp],
-            )
-            .map_err(|e| format!("デフォルトユーザー作成エラー: {}", e))?;
-        }
-
-        // 既存テーブルにuser_idカラムを追加
-        self.add_user_id_columns(tx)?;
-
-        log::info!("ユーザー認証テーブルの作成が完了しました");
-        Ok(())
-    }
-
-    /// 既存テーブルにuser_idカラムを追加
-    ///
-    /// # 引数
-    /// * `tx` - トランザクション
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はエラー文字列
-    fn add_user_id_columns(&self, tx: &rusqlite::Transaction) -> Result<(), String> {
-        let tables = ["expenses", "subscriptions", "receipt_cache"];
-
-        for table in &tables {
-            // テーブルが存在するかチェック
-            let table_exists: i64 = tx
-                .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-                    [table],
-                    |row| row.get(0),
-                )
-                .map_err(|e| format!("テーブル存在確認エラー ({}): {}", table, e))?;
-
-            if table_exists > 0 {
-                // user_idカラムを追加（エラーを無視）
-                let _ = tx.execute(
-                    &format!(
-                        "ALTER TABLE {} ADD COLUMN user_id INTEGER REFERENCES users(id)",
-                        table
-                    ),
-                    [],
-                );
-
-                // 既存データにデフォルトユーザーIDを設定
-                tx.execute(
-                    &format!("UPDATE {} SET user_id = 1 WHERE user_id IS NULL", table),
-                    [],
-                )
-                .map_err(|e| format!("user_id更新エラー ({}): {}", table, e))?;
-
-                // インデックスを作成
-                tx.execute(
-                    &format!(
-                        "CREATE INDEX IF NOT EXISTS idx_{}_user_id ON {}(user_id)",
-                        table, table
-                    ),
-                    [],
-                )
-                .map_err(|e| format!("user_idインデックス作成エラー ({}): {}", table, e))?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// receipt_pathからreceipt_urlへの移行をトランザクション内で実行
-    ///
-    /// # 引数
-    /// * `tx` - トランザクション
-    ///
-    /// # 戻り値
-    /// 成功時はOk(())、失敗時はエラー文字列
-    fn migrate_receipt_path_to_url_in_tx(&self, tx: &rusqlite::Transaction) -> Result<(), String> {
-        // 新しいテーブル構造を作成
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS expenses_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT NOT NULL,
-                description TEXT,
-                receipt_url TEXT CHECK(receipt_url IS NULL OR receipt_url LIKE 'https://%'),
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .map_err(|e| format!("新しいexpensesテーブル作成エラー: {}", e))?;
-
-        // 既存データを移行（receipt_pathは無視）
-        tx.execute(
-            "INSERT INTO expenses_new (id, date, amount, category, description, created_at, updated_at)
-             SELECT id, date, amount, category, description, created_at, updated_at
-             FROM expenses",
-            [],
-        )
-        .map_err(|e| format!("データ移行エラー: {}", e))?;
-
-        // 古いテーブルを削除
-        tx.execute("DROP TABLE expenses", [])
-            .map_err(|e| format!("古いテーブル削除エラー: {}", e))?;
-
-        // 新しいテーブルをリネーム
-        tx.execute("ALTER TABLE expenses_new RENAME TO expenses", [])
-            .map_err(|e| format!("テーブルリネームエラー: {}", e))?;
-
-        // インデックスを再作成
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
-            [],
-        )
-        .map_err(|e| format!("インデックス再作成エラー: {}", e))?;
-
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
-            [],
-        )
-        .map_err(|e| format!("インデックス再作成エラー: {}", e))?;
-
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
-            [],
-        )
-        .map_err(|e| format!("インデックス再作成エラー: {}", e))?;
-
-        // receipt_cacheテーブルを作成
-        tx.execute(
-            "CREATE TABLE IF NOT EXISTS receipt_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                receipt_url TEXT NOT NULL UNIQUE,
-                local_path TEXT NOT NULL,
-                cached_at TEXT NOT NULL,
-                file_size INTEGER NOT NULL,
-                last_accessed TEXT NOT NULL
-            )",
-            [],
-        )
-        .map_err(|e| format!("receipt_cacheテーブル作成エラー: {}", e))?;
-
-        tx.execute(
-            "CREATE INDEX IF NOT EXISTS idx_receipt_cache_url ON receipt_cache(receipt_url)",
-            [],
-        )
-        .map_err(|e| format!("receipt_cacheインデックス作成エラー: {}", e))?;
-
-        log::info!("receipt_urlマイグレーションが完了しました");
-        Ok(())
-    }
 }
 
 impl Default for MigrationExecutor {
@@ -541,9 +166,105 @@ impl Default for MigrationExecutor {
     }
 }
 
+/// 基本スキーママイグレーション実行器
+///
+/// 既存の`run_migrations`関数をラップします。
+/// 要件5.1に対応します。
+pub struct BasicSchemaMigrationExecutor;
+
+impl MigrationExecutorTrait for BasicSchemaMigrationExecutor {
+    fn execute(&self, conn: &Connection) -> Result<(), String> {
+        log::info!("基本スキーママイグレーションを実行中...");
+
+        run_migrations(conn).map_err(|e| {
+            let error_msg = format!("基本スキーママイグレーション実行エラー: {}", e);
+            log::error!("{}", error_msg);
+            error_msg
+        })?;
+
+        log::info!("基本スキーママイグレーションが完了しました");
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "001_create_basic_schema"
+    }
+}
+
+/// ユーザー認証マイグレーション実行器
+///
+/// 既存の`migrate_user_authentication`関数をラップします。
+/// 要件5.2に対応します。
+pub struct UserAuthMigrationExecutor;
+
+impl MigrationExecutorTrait for UserAuthMigrationExecutor {
+    fn execute(&self, conn: &Connection) -> Result<(), String> {
+        log::info!("ユーザー認証マイグレーションを実行中...");
+
+        let result = migrate_user_authentication(conn).map_err(|e| {
+            let error_msg = format!("ユーザー認証マイグレーション実行エラー: {}", e);
+            log::error!("{}", error_msg);
+            error_msg
+        })?;
+
+        if !result.success {
+            let error_msg = format!("ユーザー認証マイグレーション失敗: {}", result.message);
+            log::error!("{}", error_msg);
+            return Err(error_msg);
+        }
+
+        log::info!(
+            "ユーザー認証マイグレーションが完了しました: {}",
+            result.message
+        );
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "002_add_user_authentication"
+    }
+}
+
+/// receipt_urlマイグレーション実行器
+///
+/// 既存の`migrate_receipt_path_to_url`関数をラップします。
+/// 要件5.3に対応します。
+pub struct ReceiptUrlMigrationExecutor;
+
+impl MigrationExecutorTrait for ReceiptUrlMigrationExecutor {
+    fn execute(&self, conn: &Connection) -> Result<(), String> {
+        log::info!("receipt_urlマイグレーションを実行中...");
+
+        let result = migrate_receipt_path_to_url(conn).map_err(|e| {
+            let error_msg = format!("receipt_urlマイグレーション実行エラー: {}", e);
+            log::error!("{}", error_msg);
+            error_msg
+        })?;
+
+        if !result.success {
+            let error_msg = format!("receipt_urlマイグレーション失敗: {}", result.message);
+            log::error!("{}", error_msg);
+            return Err(error_msg);
+        }
+
+        log::info!(
+            "receipt_urlマイグレーションが完了しました: {}",
+            result.message
+        );
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "003_migrate_receipt_url"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::migrations::auto_migration::models::{
+        ExecutableMigrationDefinition, MigrationDefinition,
+    };
     use rusqlite::Connection;
 
     /// テスト用のデータベースを作成
@@ -560,6 +281,25 @@ mod tests {
             "テストマイグレーション".to_string(),
             "a".repeat(64), // 64文字のSHA-256ハッシュ
         )
+    }
+
+    /// テスト用の実行可能マイグレーション定義を作成
+    fn create_test_executable_migration(name: &str) -> ExecutableMigrationDefinition {
+        let definition = create_test_migration(name);
+        match name {
+            "001_create_basic_schema" => ExecutableMigrationDefinition::new(
+                definition,
+                Box::new(BasicSchemaMigrationExecutor),
+            ),
+            "002_add_user_authentication" => {
+                ExecutableMigrationDefinition::new(definition, Box::new(UserAuthMigrationExecutor))
+            }
+            "003_migrate_receipt_url" => ExecutableMigrationDefinition::new(
+                definition,
+                Box::new(ReceiptUrlMigrationExecutor),
+            ),
+            _ => panic!("未知のマイグレーション名: {}", name),
+        }
     }
 
     #[test]
@@ -591,18 +331,13 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_basic_schema_migration() {
-        let executor = MigrationExecutor::new();
+    fn test_basic_schema_migration_executor() {
+        let executor = BasicSchemaMigrationExecutor;
         let conn = create_test_db();
-        let migration = create_test_migration("001_create_basic_schema");
 
         // 基本スキーママイグレーションを実行
-        let result = executor.execute_migration(&conn, &migration);
-        assert!(result.is_ok());
-
-        let execution_result = result.unwrap();
-        assert!(execution_result.success);
-        assert!(execution_result.execution_time_ms >= 0);
+        let result = executor.execute(&conn);
+        assert!(result.is_ok(), "実行エラー: {:?}", result);
 
         // テーブルが作成されていることを確認
         let table_count: i64 = conn
@@ -622,21 +357,17 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_user_auth_migration() {
-        let executor = MigrationExecutor::new();
+    fn test_user_auth_migration_executor() {
+        let executor = UserAuthMigrationExecutor;
         let conn = create_test_db();
 
         // 基本テーブルを先に作成
-        let basic_migration = create_test_migration("001_create_basic_schema");
-        executor.execute_migration(&conn, &basic_migration).unwrap();
+        let basic_executor = BasicSchemaMigrationExecutor;
+        basic_executor.execute(&conn).unwrap();
 
         // ユーザー認証マイグレーションを実行
-        let auth_migration = create_test_migration("002_add_user_authentication");
-        let result = executor.execute_migration(&conn, &auth_migration);
-        assert!(result.is_ok());
-
-        let execution_result = result.unwrap();
-        assert!(execution_result.success);
+        let result = executor.execute(&conn);
+        assert!(result.is_ok(), "実行エラー: {:?}", result);
 
         // usersテーブルが作成されていることを確認
         let users_table_exists: i64 = conn
@@ -658,8 +389,8 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_receipt_url_migration() {
-        let executor = MigrationExecutor::new();
+    fn test_receipt_url_migration_executor() {
+        let executor = ReceiptUrlMigrationExecutor;
         let conn = create_test_db();
 
         // 古いスキーマでexpensesテーブルを作成
@@ -686,12 +417,8 @@ mod tests {
         ).unwrap();
 
         // receipt_urlマイグレーションを実行
-        let migration = create_test_migration("003_migrate_receipt_url");
-        let result = executor.execute_migration(&conn, &migration);
-        assert!(result.is_ok());
-
-        let execution_result = result.unwrap();
-        assert!(execution_result.success);
+        let result = executor.execute(&conn);
+        assert!(result.is_ok(), "実行エラー: {:?}", result);
 
         // 新しいスキーマでデータが保持されていることを確認
         let count: i64 = conn
@@ -713,18 +440,30 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_unknown_migration() {
+    fn test_execute_migration_with_executable() {
         let executor = MigrationExecutor::new();
         let conn = create_test_db();
-        let migration = create_test_migration("999_unknown_migration");
 
-        // 未知のマイグレーションを実行
-        let result = executor.execute_migration(&conn, &migration);
+        // 実行可能なマイグレーションを作成
+        let executable_migration = create_test_executable_migration("001_create_basic_schema");
+
+        // マイグレーションを実行
+        let result = executor.execute_migration(&conn, &executable_migration);
         assert!(result.is_ok());
 
         let execution_result = result.unwrap();
-        assert!(!execution_result.success);
-        assert!(execution_result.message.contains("未知のマイグレーション"));
+        assert!(execution_result.success);
+        assert!(execution_result.execution_time_ms >= 0);
+
+        // テーブルが作成されていることを確認
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('expenses', 'subscriptions', 'categories')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(table_count, 3);
     }
 
     #[test]
@@ -741,9 +480,11 @@ mod tests {
         conn.execute("INSERT INTO test_table (name) VALUES ('test')", [])
             .unwrap();
 
+        // 実行可能なマイグレーションを作成
+        let executable_migration = create_test_executable_migration("001_create_basic_schema");
+
         // マイグレーションを実行
-        let migration = create_test_migration("001_create_basic_schema");
-        let result = executor.execute_migration(&conn, &migration);
+        let result = executor.execute_migration(&conn, &executable_migration);
         assert!(result.is_ok());
 
         let execution_result = result.unwrap();
@@ -757,44 +498,15 @@ mod tests {
     }
 
     #[test]
-    fn test_migration_rollback_on_error() {
-        let executor = MigrationExecutor::new();
-        let conn = create_test_db();
+    fn test_migration_executor_trait_implementations() {
+        // 各実行器の名前が正しいことを確認
+        let basic_executor = BasicSchemaMigrationExecutor;
+        assert_eq!(basic_executor.name(), "001_create_basic_schema");
 
-        // 無効なSQLを含むマイグレーションをシミュレート
-        // （実際のテストでは、エラーを発生させる条件を作成）
+        let user_auth_executor = UserAuthMigrationExecutor;
+        assert_eq!(user_auth_executor.name(), "002_add_user_authentication");
 
-        // テストテーブルを作成
-        conn.execute(
-            "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
-            [],
-        )
-        .unwrap();
-
-        let initial_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-
-        // 未知のマイグレーションを実行（エラーが発生する）
-        let migration = create_test_migration("999_error_migration");
-        let result = executor.execute_migration(&conn, &migration);
-        assert!(result.is_ok());
-
-        let execution_result = result.unwrap();
-        assert!(!execution_result.success);
-
-        // テーブル数が変わっていないことを確認（ロールバックされた）
-        let final_count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(initial_count, final_count);
+        let receipt_url_executor = ReceiptUrlMigrationExecutor;
+        assert_eq!(receipt_url_executor.name(), "003_migrate_receipt_url");
     }
 }

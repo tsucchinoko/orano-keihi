@@ -78,6 +78,59 @@ impl fmt::Display for MigrationDefinition {
     }
 }
 
+/// 実行可能なマイグレーション定義
+///
+/// マイグレーション定義に実行器を含む構造体です。
+/// 実際のマイグレーション実行時に使用されます。
+pub struct ExecutableMigrationDefinition {
+    /// 基本的なマイグレーション定義
+    pub definition: MigrationDefinition,
+    /// マイグレーション実行器
+    pub executor:
+        Box<dyn crate::features::migrations::auto_migration::executor::MigrationExecutorTrait>,
+}
+
+impl ExecutableMigrationDefinition {
+    /// 新しい実行可能マイグレーション定義を作成
+    ///
+    /// # 引数
+    /// * `definition` - マイグレーション定義
+    /// * `executor` - マイグレーション実行器
+    ///
+    /// # 戻り値
+    /// 新しい実行可能マイグレーション定義
+    pub fn new(
+        definition: MigrationDefinition,
+        executor: Box<
+            dyn crate::features::migrations::auto_migration::executor::MigrationExecutorTrait,
+        >,
+    ) -> Self {
+        Self {
+            definition,
+            executor,
+        }
+    }
+
+    /// マイグレーション名を取得
+    ///
+    /// # 戻り値
+    /// マイグレーション名
+    pub fn name(&self) -> &str {
+        &self.definition.name
+    }
+
+    /// マイグレーションを実行
+    ///
+    /// # 引数
+    /// * `conn` - データベース接続
+    ///
+    /// # 戻り値
+    /// 実行結果
+    pub fn execute(&self, conn: &rusqlite::Connection) -> Result<(), String> {
+        self.executor.execute(conn)
+    }
+}
+
 /// 適用済みマイグレーション
 ///
 /// データベースに記録された適用済みマイグレーションの情報を表します。
