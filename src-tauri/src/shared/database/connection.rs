@@ -1,3 +1,4 @@
+use crate::features::migrations::AutoMigrationService;
 use crate::shared::errors::{AppError, AppResult};
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
@@ -16,6 +17,7 @@ use tauri::{AppHandle, Manager};
 /// 2. データベースファイルパスの決定
 /// 3. データベース接続の開設
 /// 4. テーブル作成とマイグレーションの実行
+/// 5. 自動マイグレーションシステムの実行（要件3.1）
 pub fn initialize_database(app_handle: &AppHandle) -> AppResult<Connection> {
     // データベースファイルパスを取得
     let database_path = get_database_path(app_handle)?;
@@ -26,9 +28,120 @@ pub fn initialize_database(app_handle: &AppHandle) -> AppResult<Connection> {
     // テーブルを作成
     create_tables(&conn)?;
 
+    // 自動マイグレーションシステムを実行（要件3.1, 3.4, 3.5）
+    execute_auto_migration_system(&conn)?;
+
     log::info!("データベースを初期化しました: {database_path:?}");
 
     Ok(conn)
+}
+
+/// 自動マイグレーションシステムを実行する
+///
+/// アプリケーション起動時に未適用のマイグレーションを自動で適用します。
+/// 要件3.1（データベース接続確立後にマイグレーションチェックを実行）、
+/// 要件3.4（マイグレーション成功時に実行記録を追加）、
+/// 要件3.5（マイグレーション失敗時にエラーログを出力し、アプリケーション起動を停止）
+/// に対応します。
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_auto_migration_system(conn: &Connection) -> AppResult<()> {
+    log::info!("自動マイグレーションシステムを開始します");
+
+    // 自動マイグレーションサービスを初期化
+    let auto_migration_service = AutoMigrationService::new(conn).map_err(|e| {
+        log::error!("自動マイグレーションサービスの初期化に失敗しました: {}", e);
+        AppError::Database(format!("自動マイグレーションサービス初期化失敗: {}", e))
+    })?;
+
+    // 起動時自動マイグレーションを実行
+    match auto_migration_service.run_startup_migrations(conn) {
+        Ok(result) => {
+            if result.success {
+                log::info!(
+                    "自動マイグレーションが正常に完了しました: {}",
+                    result.message
+                );
+
+                if !result.applied_migrations.is_empty() {
+                    log::info!(
+                        "適用されたマイグレーション: {:?}",
+                        result.applied_migrations
+                    );
+                }
+
+                if let Some(backup_path) = result.backup_path {
+                    log::info!("バックアップファイル: {}", backup_path);
+                }
+
+                log::info!(
+                    "自動マイグレーション実行時間: {}ms",
+                    result.total_execution_time_ms
+                );
+            } else {
+                // 成功フラグがfalseの場合（通常は発生しないが安全のため）
+                log::warn!("自動マイグレーションで警告: {}", result.message);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            // 要件3.5: マイグレーション失敗時にエラーログを出力し、アプリケーション起動を停止
+            log::error!("自動マイグレーション実行中にエラーが発生しました: {}", e);
+            log::error!("アプリケーション起動を停止します");
+
+            // 詳細なエラー情報をログに出力
+            log::error!("データベースファイルパス: {:?}", conn.path());
+            log::error!("環境設定: ENVIRONMENT={:?}", std::env::var("ENVIRONMENT"));
+            log::error!("プロダクション環境判定: {}", is_production_environment());
+
+            // エラーの種類に応じた追加情報を出力
+            match e.error_type {
+                crate::features::migrations::MigrationErrorType::Initialization => {
+                    log::error!("初期化エラー: migrationsテーブルの作成またはマイグレーション定義の登録に失敗しました");
+                }
+                crate::features::migrations::MigrationErrorType::Execution => {
+                    log::error!("実行エラー: マイグレーション処理中にエラーが発生しました");
+                    if let Some(details) = &e.details {
+                        log::error!("詳細情報: {}", details);
+                        if details.contains("バックアップ") {
+                            log::error!("データベースを手動で復元してください");
+                        }
+                    }
+                }
+                crate::features::migrations::MigrationErrorType::Concurrency => {
+                    log::error!("並行制御エラー: 別のインスタンスがマイグレーション実行中です");
+                    log::error!("しばらく待ってから再度起動してください");
+                }
+                crate::features::migrations::MigrationErrorType::System => {
+                    log::error!("システムエラー: ファイルシステムまたはデータベースアクセスに問題があります");
+                }
+                crate::features::migrations::MigrationErrorType::ChecksumMismatch => {
+                    log::error!("チェックサム不一致エラー: マイグレーション内容が変更されています");
+                    if let Some(migration_name) = &e.migration_name {
+                        log::error!("対象マイグレーション: {}", migration_name);
+                    }
+                    if let Some(details) = &e.details {
+                        log::error!("チェックサム詳細: {}", details);
+                    }
+                }
+                crate::features::migrations::MigrationErrorType::Validation => {
+                    log::error!("検証エラー: マイグレーション定義または実行結果に問題があります");
+                    if let Some(migration_name) = &e.migration_name {
+                        log::error!("対象マイグレーション: {}", migration_name);
+                    }
+                }
+            }
+
+            Err(AppError::Database(format!(
+                "自動マイグレーション失敗: {}。アプリケーションを起動できません。",
+                e
+            )))
+        }
+    }
 }
 
 /// アプリデータディレクトリ内のデータベースファイルパスを取得する
@@ -585,6 +698,50 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "テーブル {table} が作成されていません");
         }
+    }
+
+    #[test]
+    fn test_auto_migration_system_integration() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // 基本テーブルを作成
+        create_tables(&conn).unwrap();
+
+        // 自動マイグレーションサービスの初期化のみテスト
+        use crate::features::migrations::AutoMigrationService;
+        let service = AutoMigrationService::new(&conn).unwrap();
+
+        // migrationsテーブルが作成されていることを確認
+        let migrations_table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='migrations'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            migrations_table_exists, 1,
+            "migrationsテーブルが作成されていません"
+        );
+
+        // マイグレーション状態確認が動作することを確認
+        let status = service.check_migration_status(&conn);
+        assert!(status.is_ok(), "マイグレーション状態確認に失敗");
+
+        let status = status.unwrap();
+        assert_eq!(
+            status.total_available, 3,
+            "利用可能なマイグレーション数が期待値と異なります"
+        );
+        assert_eq!(
+            status.total_applied, 0,
+            "初期状態では適用済みマイグレーションは0であるべきです"
+        );
+        assert_eq!(
+            status.pending_migrations.len(),
+            3,
+            "未適用マイグレーション数が期待値と異なります"
+        );
     }
 
     #[test]
