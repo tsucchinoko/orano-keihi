@@ -4,6 +4,39 @@ use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
+/// データベース接続を取得する（非同期版）
+///
+/// # 戻り値
+/// データベース接続、または失敗時はエラー
+pub async fn get_database_connection() -> AppResult<Connection> {
+    // 一時的な実装: 新しい接続を作成
+    // 本来はアプリケーション状態から取得すべきですが、
+    // 現在の実装では直接作成します
+
+    // データベースパスを取得（環境に応じて）
+    let db_filename = get_database_filename();
+
+    // アプリケーションデータディレクトリのパスを構築
+    let app_data_dir = dirs::data_dir()
+        .ok_or_else(|| AppError::configuration("アプリケーションデータディレクトリの取得に失敗"))?
+        .join("subscription-memo");
+
+    // ディレクトリが存在しない場合は作成
+    if !app_data_dir.exists() {
+        std::fs::create_dir_all(&app_data_dir).map_err(|e| {
+            AppError::configuration(format!("アプリデータディレクトリの作成に失敗: {e}"))
+        })?;
+    }
+
+    let database_path = app_data_dir.join(db_filename);
+
+    // データベース接続を開く
+    let conn = Connection::open(&database_path)
+        .map_err(|e| AppError::Database(format!("データベース接続エラー: {e}")))?;
+
+    Ok(conn)
+}
+
 /// データベース接続を初期化し、マイグレーションを実行する
 ///
 /// # 引数

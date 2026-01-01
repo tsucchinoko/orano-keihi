@@ -6,6 +6,8 @@
 pub mod auto_migration;
 pub mod batch_processor;
 pub mod commands;
+pub mod database_update_commands;
+pub mod database_updater;
 pub mod r2_migration_commands;
 pub mod r2_user_directory_migration;
 pub mod service;
@@ -40,6 +42,16 @@ pub use commands::{
     execute_user_authentication_migration, get_database_stats, get_detailed_migration_info,
     list_backup_files_command, restore_database_from_backup, DatabaseStats, DetailedMigrationInfo,
     MigrationInfo,
+};
+
+pub use database_update_commands::{
+    check_database_url_integrity, detect_legacy_receipt_urls, execute_database_update,
+    get_database_statistics, update_specific_receipt_urls, DatabaseIntegrityResult,
+    DatabaseUpdateParams, LegacyUrlDetectionResult,
+};
+
+pub use database_updater::{
+    DatabaseStatistics, DatabaseUpdateResult, DatabaseUpdater, UrlUpdateItem,
 };
 
 pub use r2_migration_commands::{

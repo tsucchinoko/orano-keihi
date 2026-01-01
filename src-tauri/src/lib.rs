@@ -8,9 +8,12 @@ use features::auth::service::AuthService;
 use features::security::models::SecurityConfig;
 use features::security::service::{SecurityManager, SecurityService};
 use features::{
-    auth::commands as auth_commands, expenses::commands as expense_commands,
-    migrations::commands as migration_commands, receipts::commands as receipt_commands,
-    security::commands as security_commands, subscriptions::commands as subscription_commands,
+    auth::commands as auth_commands,
+    expenses::commands as expense_commands,
+    migrations::{commands as migration_commands, database_update_commands, r2_migration_commands},
+    receipts::commands as receipt_commands,
+    security::commands as security_commands,
+    subscriptions::commands as subscription_commands,
 };
 use log::{error, info, warn};
 use rusqlite::Connection;
@@ -267,6 +270,19 @@ pub fn run() {
             migration_commands::execute_comprehensive_data_migration_command,
             migration_commands::restore_database_from_backup,
             migration_commands::drop_receipt_path_column_command,
+            // データベース更新コマンド
+            database_update_commands::detect_legacy_receipt_urls,
+            database_update_commands::execute_database_update,
+            database_update_commands::get_database_statistics,
+            database_update_commands::update_specific_receipt_urls,
+            database_update_commands::check_database_url_integrity,
+            // R2移行コマンド
+            r2_migration_commands::start_r2_migration,
+            r2_migration_commands::get_r2_migration_status,
+            r2_migration_commands::pause_r2_migration,
+            r2_migration_commands::resume_r2_migration,
+            r2_migration_commands::stop_r2_migration,
+            r2_migration_commands::validate_r2_migration_integrity,
             // セキュリティコマンド
             security_commands::get_system_diagnostic_info,
             security_commands::validate_security_configuration,

@@ -7,7 +7,7 @@ use super::r2_user_directory_migration::{create_migration_item, update_migration
 use crate::features::receipts::service::R2Client;
 use crate::shared::errors::{AppError, AppResult};
 use log::{debug, error, info, warn};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -90,6 +90,8 @@ enum DatabaseRequest {
     UpdateReceiptUrl {
         old_path: String,
         new_path: String,
+        user_id: i64,
+        expense_id: Option<i64>,
         response_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
     },
 }
@@ -181,10 +183,19 @@ impl BatchProcessor {
                     DatabaseRequest::UpdateReceiptUrl {
                         old_path,
                         new_path,
+                        user_id,
+                        expense_id,
                         response_tx,
                     } => {
-                        let result =
-                            Self::update_database_receipt_url_sync(&conn, &old_path, &new_path);
+                        let result = if let Some(expense_id) = expense_id {
+                            // 特定の経費IDに対する更新
+                            Self::update_specific_receipt_url_sync(
+                                &conn, expense_id, &old_path, &new_path, user_id,
+                            )
+                        } else {
+                            // パターンマッチによる更新（従来の方式）
+                            Self::update_database_receipt_url_sync(&conn, &old_path, &new_path)
+                        };
                         let _ = response_tx.send(result);
                     }
                 }
@@ -395,12 +406,14 @@ impl BatchProcessor {
 
         match Self::execute_file_migration(&r2_client, &item).await {
             Ok(file_hash) => {
-                // データベースのreceipt_urlを更新
+                // データベースのreceipt_urlを更新（改善版）
                 let (response_tx, response_rx) = tokio::sync::oneshot::channel();
                 db_tx
                     .send(DatabaseRequest::UpdateReceiptUrl {
                         old_path: item.old_path.clone(),
                         new_path: item.new_path.clone(),
+                        user_id: item.user_id,
+                        expense_id: Self::extract_expense_id_from_path(&item.old_path),
                         response_tx,
                     })
                     .map_err(|_| AppError::concurrency("データベースワーカーへの送信に失敗"))?;
@@ -553,6 +566,146 @@ impl BatchProcessor {
         Ok(())
     }
 
+    /// 特定の経費IDに対するreceipt_url更新（同期版・改善版）
+    ///
+    /// # 引数
+    /// * `conn` - データベース接続
+    /// * `expense_id` - 経費ID
+    /// * `old_path` - 古いパス
+    /// * `new_path` - 新しいパス
+    /// * `user_id` - ユーザーID
+    ///
+    /// # 戻り値
+    /// 処理結果
+    fn update_specific_receipt_url_sync(
+        conn: &Connection,
+        expense_id: i64,
+        old_path: &str,
+        new_path: &str,
+        user_id: i64,
+    ) -> AppResult<()> {
+        // トランザクション内で安全に更新
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| AppError::Database(format!("トランザクション開始エラー: {e}")))?;
+
+        // 更新前の値を確認
+        let current_url: Option<String> = tx
+            .query_row(
+                "SELECT receipt_url FROM expenses WHERE id = ? AND user_id = ?",
+                [expense_id, user_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map_err(|e| {
+                AppError::Database(format!("expense_id={}の現在URL取得エラー: {e}", expense_id))
+            })?
+            .flatten(); // Option<Option<String>> -> Option<String>
+
+        match current_url {
+            Some(url) => {
+                // 古いパスが含まれているかチェック
+                if !url.contains(old_path) {
+                    warn!(
+                        "expense_id={}のreceipt_urlに古いパスが含まれていません: 現在URL={}, 期待パス={}",
+                        expense_id, url, old_path
+                    );
+                    return Ok(()); // エラーではなく、単に更新対象外として扱う
+                }
+
+                // URLを新しいパスに置換
+                let new_url = url.replace(old_path, new_path);
+                let now = chrono::Utc::now()
+                    .with_timezone(&chrono_tz::Asia::Tokyo)
+                    .to_rfc3339();
+
+                let rows_affected = tx
+                    .execute(
+                        "UPDATE expenses SET receipt_url = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+                        [&new_url, &now, &expense_id.to_string(), &user_id.to_string()],
+                    )
+                    .map_err(|e| {
+                        AppError::Database(format!(
+                            "expense_id={}のreceipt_url更新エラー: {e}",
+                            expense_id
+                        ))
+                    })?;
+
+                if rows_affected > 0 {
+                    // 更新後の整合性チェック
+                    let updated_url: Option<String> = tx
+                        .query_row(
+                            "SELECT receipt_url FROM expenses WHERE id = ? AND user_id = ?",
+                            [expense_id, user_id],
+                            |row| row.get::<_, Option<String>>(0),
+                        )
+                        .optional()
+                        .map_err(|e| {
+                            AppError::Database(format!(
+                                "expense_id={}の更新後URL確認エラー: {e}",
+                                expense_id
+                            ))
+                        })?
+                        .flatten(); // Option<Option<String>> -> Option<String>
+
+                    if let Some(updated) = updated_url {
+                        if updated != new_url {
+                            return Err(AppError::validation(format!(
+                                "expense_id={}の更新後整合性チェック失敗: 期待値={}, 実際値={}",
+                                expense_id, new_url, updated
+                            )));
+                        }
+                    }
+
+                    tx.commit().map_err(|e| {
+                        AppError::Database(format!("トランザクションコミットエラー: {e}"))
+                    })?;
+
+                    debug!(
+                        "expense_id={}のreceipt_url更新完了: {} -> {}",
+                        expense_id, url, new_url
+                    );
+                } else {
+                    warn!(
+                        "expense_id={}の更新対象レコードが見つかりません",
+                        expense_id
+                    );
+                }
+            }
+            None => {
+                warn!("expense_id={}のレコードが見つかりません", expense_id);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// パスから経費IDを抽出
+    ///
+    /// # 引数
+    /// * `path` - ファイルパス
+    ///
+    /// # 戻り値
+    /// 経費ID（抽出できない場合はNone）
+    fn extract_expense_id_from_path(path: &str) -> Option<i64> {
+        // パス例: "receipts/123/timestamp-uuid-filename.pdf" または "users/456/receipts/123/timestamp-uuid-filename.pdf"
+
+        // receipts/の後の最初の数字を経費IDとして抽出
+        if let Some(receipts_pos) = path.find("/receipts/") {
+            let after_receipts = &path[receipts_pos + 10..]; // "/receipts/".len() = 10
+
+            if let Some(slash_pos) = after_receipts.find('/') {
+                let expense_id_str = &after_receipts[..slash_pos];
+                expense_id_str.parse::<i64>().ok()
+            } else {
+                // スラッシュが見つからない場合、残り全体を試す
+                after_receipts.parse::<i64>().ok()
+            }
+        } else {
+            None
+        }
+    }
+
     /// 処理を一時停止
     pub async fn pause(&self) {
         *self.pause_token.lock().await = true;
@@ -678,10 +831,36 @@ mod tests {
         assert_eq!(result.duration, Duration::from_secs(0));
     }
 
+    #[test]
+    fn test_extract_expense_id_from_path() {
+        // レガシーパス
+        assert_eq!(
+            BatchProcessor::extract_expense_id_from_path("path/receipts/123/file.pdf"),
+            Some(123)
+        );
+
+        // ユーザーパス
+        assert_eq!(
+            BatchProcessor::extract_expense_id_from_path("users/456/receipts/789/file.pdf"),
+            Some(789)
+        );
+
+        // 無効なパス
+        assert_eq!(
+            BatchProcessor::extract_expense_id_from_path("invalid/path"),
+            None
+        );
+
+        // 数字以外
+        assert_eq!(
+            BatchProcessor::extract_expense_id_from_path("path/receipts/abc/file.pdf"),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn test_batch_processor_pause_resume() {
-        // モックR2クライアントを作成（実際のテストでは適切なモックを使用）
-        let r2_config = crate::shared::config::environment::R2Config {
+        let _r2_config = crate::shared::config::environment::R2Config {
             access_key_id: "test".to_string(),
             secret_access_key: "test".to_string(),
             endpoint_url: "https://test.com".to_string(),
