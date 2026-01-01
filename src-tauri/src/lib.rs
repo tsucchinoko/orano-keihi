@@ -9,7 +9,8 @@ use features::security::models::SecurityConfig;
 use features::security::service::SecurityManager;
 use features::{
     auth::commands as auth_commands, expenses::commands as expense_commands,
-    security::commands as security_commands,
+    receipts::auth_commands as receipt_commands, security::commands as security_commands,
+    subscriptions::commands as subscription_commands,
 };
 use log::info;
 use rusqlite::Connection;
@@ -234,6 +235,20 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // セキュリティコマンド
             security_commands::get_system_diagnostic_info,
+            security_commands::validate_security_configuration,
+            security_commands::test_r2_connection_secure,
+            security_commands::get_environment_info,
+            security_commands::log_security_event,
+            security_commands::get_r2_diagnostic_info,
+            security_commands::encrypt_and_store_token,
+            security_commands::decrypt_token,
+            security_commands::encrypt_multiple_tokens,
+            security_commands::verify_api_request,
+            security_commands::invalidate_token,
+            security_commands::invalidate_all_tokens,
+            security_commands::get_security_stats,
+            security_commands::cleanup_expired_tokens,
+            security_commands::detect_unauthorized_access,
             // 認証コマンド
             auth_commands::start_oauth_flow,
             auth_commands::wait_for_auth_completion,
@@ -246,10 +261,42 @@ pub fn run() {
             expense_commands::get_expenses,
             expense_commands::update_expense,
             expense_commands::delete_expense,
+            // サブスクリプションコマンド
+            subscription_commands::create_subscription,
+            subscription_commands::get_subscriptions,
+            subscription_commands::update_subscription,
+            subscription_commands::toggle_subscription_status,
+            subscription_commands::get_monthly_subscription_total,
+            // 領収書コマンド
+            receipt_commands::upload_receipt_with_auth,
+            receipt_commands::get_receipt_with_auth,
+            receipt_commands::delete_receipt_with_auth,
+            receipt_commands::download_receipt_with_auth,
+            receipt_commands::extract_path_from_url_with_auth,
             // マイグレーションコマンド
             features::migrations::commands::check_migration_status,
             features::migrations::commands::check_auto_migration_status,
             features::migrations::commands::get_detailed_migration_info,
+            features::migrations::commands::execute_user_authentication_migration,
+            features::migrations::commands::execute_receipt_url_migration,
+            features::migrations::commands::restore_database_from_backup,
+            features::migrations::commands::drop_receipt_path_column_command,
+            features::migrations::commands::list_backup_files_command,
+            features::migrations::commands::create_manual_backup,
+            features::migrations::commands::check_database_integrity,
+            // R2マイグレーションコマンド
+            features::migrations::r2_migration_commands::start_r2_migration,
+            features::migrations::r2_migration_commands::get_r2_migration_status,
+            features::migrations::r2_migration_commands::pause_r2_migration,
+            features::migrations::r2_migration_commands::resume_r2_migration,
+            features::migrations::r2_migration_commands::stop_r2_migration,
+            features::migrations::r2_migration_commands::validate_r2_migration_integrity,
+            // データベース更新コマンド
+            features::migrations::database_update_commands::detect_legacy_receipt_urls,
+            features::migrations::database_update_commands::execute_database_update,
+            features::migrations::database_update_commands::get_database_statistics,
+            features::migrations::database_update_commands::update_specific_receipt_urls,
+            features::migrations::database_update_commands::check_database_url_integrity,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");
