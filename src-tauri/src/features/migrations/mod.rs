@@ -24,6 +24,9 @@ mod integration_tests;
 #[cfg(test)]
 mod error_scenario_tests;
 
+#[cfg(test)]
+mod r2_migration_commands_test;
+
 // 公開インターフェース
 pub use auto_migration::{
     AppliedMigration, AutoMigrationResult, AutoMigrationService, MigrationDefinition,

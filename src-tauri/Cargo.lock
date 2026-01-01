@@ -5142,6 +5142,7 @@ dependencies = [
  "hyper-util",
  "log",
  "oauth2",
+ "once_cell",
  "quickcheck",
  "quickcheck_macros",
  "rand 0.8.5",
