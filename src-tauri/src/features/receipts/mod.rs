@@ -4,6 +4,7 @@ pub mod cache;
 pub mod commands;
 pub mod models;
 pub mod service;
+pub mod user_path_manager;
 
 // 公開インターフェース
 
@@ -16,6 +17,9 @@ pub use models::{
 
 // サービス
 pub use service::R2Client;
+
+// ユーザーパス管理
+pub use user_path_manager::UserPathManager;
 
 // キャッシュマネージャー
 pub use cache::CacheManager;
