@@ -8,8 +8,10 @@ use features::auth::service::AuthService;
 use features::security::models::SecurityConfig;
 use features::security::service::SecurityManager;
 use features::{
-    auth::commands as auth_commands, expenses::commands as expense_commands,
-    receipts::auth_commands as receipt_commands, security::commands as security_commands,
+    auth::commands as auth_commands,
+    expenses::commands as expense_commands,
+    receipts::{auth_commands as receipt_auth_commands, commands as receipt_commands},
+    security::commands as security_commands,
     subscriptions::commands as subscription_commands,
 };
 use log::info;
@@ -267,12 +269,22 @@ pub fn run() {
             subscription_commands::update_subscription,
             subscription_commands::toggle_subscription_status,
             subscription_commands::get_monthly_subscription_total,
-            // 領収書コマンド
-            receipt_commands::upload_receipt_with_auth,
-            receipt_commands::get_receipt_with_auth,
-            receipt_commands::delete_receipt_with_auth,
-            receipt_commands::download_receipt_with_auth,
-            receipt_commands::extract_path_from_url_with_auth,
+            // 領収書コマンド（認証付き）
+            receipt_auth_commands::upload_receipt_with_auth,
+            receipt_auth_commands::get_receipt_with_auth,
+            receipt_auth_commands::delete_receipt_with_auth,
+            receipt_auth_commands::download_receipt_with_auth,
+            receipt_auth_commands::extract_path_from_url_with_auth,
+            // 領収書コマンド（通常）
+            receipt_commands::upload_receipt_to_r2,
+            receipt_commands::get_receipt_from_r2,
+            receipt_commands::delete_receipt_from_r2,
+            receipt_commands::get_receipt_offline,
+            receipt_commands::sync_cache_on_online,
+            receipt_commands::get_cache_stats,
+            receipt_commands::upload_multiple_receipts_to_r2,
+            receipt_commands::test_r2_connection,
+            receipt_commands::get_r2_performance_stats,
             // マイグレーションコマンド
             features::migrations::commands::check_migration_status,
             features::migrations::commands::check_auto_migration_status,
