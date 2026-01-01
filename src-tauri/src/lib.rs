@@ -3,10 +3,14 @@ pub mod features;
 pub mod shared;
 
 // 新しい機能モジュールからコマンドをインポート
+use features::auth::middleware::AuthMiddleware;
 use features::auth::service::AuthService;
 use features::security::models::SecurityConfig;
 use features::security::service::SecurityManager;
-use features::{auth::commands as auth_commands, security::commands as security_commands};
+use features::{
+    auth::commands as auth_commands, expenses::commands as expense_commands,
+    security::commands as security_commands,
+};
 use log::info;
 use rusqlite::Connection;
 use shared::config::environment::{
@@ -116,7 +120,7 @@ pub fn run() {
                     eprintln!("SecurityManager初期化失敗: {e}");
                     // プロダクション環境でクラッシュを防ぐため、デフォルト設定で再試行
                     eprintln!("デフォルト設定でSecurityManagerを再作成します...");
-                    match SecurityManager::new(security_config) {
+                    match SecurityManager::new(security_config.clone()) {
                         Ok(manager) => {
                             eprintln!("デフォルト設定でSecurityManager作成成功");
                             manager
@@ -204,7 +208,17 @@ pub fn run() {
             };
 
             // AuthServiceを直接管理（コマンドで使用するため）
-            app.manage(auth_service);
+            app.manage(auth_service.clone());
+
+            // SecurityServiceを管理（認証ミドルウェアで使用するため）
+            // SecurityManagerから設定を取得してSecurityServiceを作成
+            let security_service = Arc::new(security_manager.clone());
+            app.manage(security_service.clone());
+
+            // 認証ミドルウェアを作成・管理
+            let auth_middleware =
+                AuthMiddleware::new(Arc::new(auth_service.clone()), security_service.clone());
+            app.manage(auth_middleware);
 
             app.manage(AppState {
                 db: Mutex::new(app_db_conn),
@@ -227,6 +241,11 @@ pub fn run() {
             auth_commands::logout,
             auth_commands::get_auth_state,
             auth_commands::cleanup_expired_sessions,
+            // 経費コマンド
+            expense_commands::create_expense,
+            expense_commands::get_expenses,
+            expense_commands::update_expense,
+            expense_commands::delete_expense,
             // マイグレーションコマンド
             features::migrations::commands::check_migration_status,
             features::migrations::commands::check_auto_migration_status,
