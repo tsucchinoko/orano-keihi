@@ -3,7 +3,9 @@
 
 use super::service::R2Client;
 use crate::features::auth::middleware::AuthMiddleware;
+use crate::features::auth::service::AuthService;
 use crate::features::expenses::repository as expense_operations;
+use crate::features::security::service::SecurityManager;
 use crate::shared::config::environment::R2Config;
 use crate::shared::errors::AppError;
 use crate::AppState;
@@ -29,6 +31,7 @@ pub async fn upload_receipt_with_auth(
     session_token: String,
     expense_id: i64,
     file_path: String,
+    auth_service: State<'_, AuthService>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     info!(
@@ -36,7 +39,7 @@ pub async fn upload_receipt_with_auth(
     );
 
     // 認証ミドルウェアを初期化
-    let auth_middleware = create_auth_middleware(&state).await?;
+    let auth_middleware = create_auth_middleware(&auth_service, &state.security_manager).await?;
 
     // 認証を実行
     let user = auth_middleware
@@ -162,12 +165,13 @@ async fn upload_receipt_with_auth_internal(
 pub async fn get_receipt_with_auth(
     session_token: String,
     receipt_url: String,
+    auth_service: State<'_, AuthService>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     info!("ユーザー認証付きファイル取得開始: receipt_url={receipt_url}");
 
     // 認証ミドルウェアを初期化
-    let auth_middleware = create_auth_middleware(&state).await?;
+    let auth_middleware = create_auth_middleware(&auth_service, &state.security_manager).await?;
 
     // 認証を実行
     let user = auth_middleware
@@ -250,12 +254,13 @@ async fn get_receipt_with_auth_internal(
 pub async fn delete_receipt_with_auth(
     session_token: String,
     receipt_url: String,
+    auth_service: State<'_, AuthService>,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     info!("ユーザー認証付きファイル削除開始: receipt_url={receipt_url}");
 
     // 認証ミドルウェアを初期化
-    let auth_middleware = create_auth_middleware(&state).await?;
+    let auth_middleware = create_auth_middleware(&auth_service, &state.security_manager).await?;
 
     // 認証を実行
     let user = auth_middleware
@@ -336,12 +341,13 @@ pub async fn download_receipt_with_auth(
     session_token: String,
     receipt_url: String,
     expires_in_seconds: Option<u64>,
+    auth_service: State<'_, AuthService>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     info!("ユーザー認証付きファイルダウンロード開始: receipt_url={receipt_url}");
 
     // 認証ミドルウェアを初期化
-    let auth_middleware = create_auth_middleware(&state).await?;
+    let auth_middleware = create_auth_middleware(&auth_service, &state.security_manager).await?;
 
     // 認証を実行
     let user = auth_middleware
@@ -430,12 +436,13 @@ async fn download_receipt_with_auth_internal(
 pub async fn extract_path_from_url_with_auth(
     session_token: String,
     url: String,
+    auth_service: State<'_, AuthService>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     info!("URLからパス抽出開始: url={url}");
 
     // 認証ミドルウェアを初期化
-    let auth_middleware = create_auth_middleware(&state).await?;
+    let auth_middleware = create_auth_middleware(&auth_service, &state.security_manager).await?;
 
     // 認証を実行
     let user = auth_middleware
@@ -468,17 +475,14 @@ pub async fn extract_path_from_url_with_auth(
 }
 
 /// 認証ミドルウェアを作成するヘルパー関数
-async fn create_auth_middleware(state: &State<'_, AppState>) -> Result<AuthMiddleware, String> {
-    // 認証サービスを取得
-    let auth_service = state
-        .auth_service
-        .as_ref()
-        .ok_or_else(|| "認証サービスが初期化されていません".to_string())?;
-
-    let auth_service = Arc::new(auth_service.clone());
+async fn create_auth_middleware(
+    auth_service: &State<'_, AuthService>,
+    security_manager: &SecurityManager,
+) -> Result<AuthMiddleware, String> {
+    let auth_service = Arc::new(auth_service.inner().clone());
 
     // セキュリティサービスを取得（SecurityManagerはSecurityServiceのエイリアス）
-    let security_service = Arc::new(state.security_manager.clone());
+    let security_service = Arc::new(security_manager.clone());
 
     Ok(AuthMiddleware::new(auth_service, security_service))
 }
