@@ -4,10 +4,14 @@
 //! バックアップの作成と復元、マイグレーション状態の確認を提供します。
 
 pub mod auto_migration;
+pub mod batch_processor;
 pub mod commands;
 pub mod r2_migration_commands;
 pub mod r2_user_directory_migration;
 pub mod service;
+
+#[cfg(test)]
+mod batch_processor_test;
 
 #[cfg(test)]
 mod commands_test;
@@ -23,6 +27,10 @@ pub use auto_migration::{
     AppliedMigration, AutoMigrationResult, AutoMigrationService, MigrationDefinition,
     MigrationError, MigrationErrorType, MigrationExecutionResult, MigrationExecutor,
     MigrationRegistry, MigrationStatusReport, MigrationTable,
+};
+
+pub use batch_processor::{
+    BatchProcessor, BatchProcessorStats, MigrationItem, MigrationResult, R2FileInfo,
 };
 
 pub use commands::{
@@ -49,8 +57,7 @@ pub use service::{
     create_backup, drop_receipt_path_column, execute_comprehensive_data_migration,
     is_receipt_url_migration_complete, is_user_authentication_migration_complete,
     list_backup_files, migrate_receipt_path_to_url, migrate_user_authentication,
-    restore_from_backup, run_migrations, DataMigrationResult, MigrationResult, MigrationStatus,
-    RestoreResult,
+    restore_from_backup, run_migrations, DataMigrationResult, MigrationStatus, RestoreResult,
 };
 
 /// マイグレーション機能の初期化
