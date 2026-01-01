@@ -1,5 +1,6 @@
 use super::models::{CreateSubscriptionDto, Subscription, UpdateSubscriptionDto};
 use super::repository;
+use crate::features::auth::middleware::AuthMiddleware;
 use crate::AppState;
 use tauri::State;
 
@@ -7,15 +8,25 @@ use tauri::State;
 ///
 /// # 引数
 /// * `dto` - サブスクリプション作成用DTO
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 作成されたサブスクリプション、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn create_subscription(
     dto: CreateSubscriptionDto,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Subscription, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/create")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // バリデーション
     validate_create_subscription_dto(&dto)?;
 
@@ -25,31 +36,41 @@ pub async fn create_subscription(
         .lock()
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-    // サブスクリプションを作成
-    repository::create(&db, dto, 1i64).map_err(|e| e.user_message().to_string())
+    // 認証されたユーザーのサブスクリプションを作成
+    repository::create(&db, dto, user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプション一覧を取得する
 ///
 /// # 引数
 /// * `active_only` - アクティブなサブスクリプションのみを取得するか
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// サブスクリプションのリスト、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn get_subscriptions(
     active_only: bool,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Vec<Subscription>, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/list")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // データベース接続を取得
     let db = state
         .db
         .lock()
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-    // サブスクリプション一覧を取得
-    repository::find_all(&db, 1i64, active_only).map_err(|e| e.user_message().to_string())
+    // 認証されたユーザーのサブスクリプション一覧を取得
+    repository::find_all(&db, user.id, active_only).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプションを更新する
@@ -57,7 +78,9 @@ pub async fn get_subscriptions(
 /// # 引数
 /// * `id` - サブスクリプションID
 /// * `dto` - サブスクリプション更新用DTO
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 更新されたサブスクリプション、または失敗時はエラーメッセージ
@@ -65,8 +88,16 @@ pub async fn get_subscriptions(
 pub async fn update_subscription(
     id: i64,
     dto: UpdateSubscriptionDto,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Subscription, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/update")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // バリデーション
     validate_update_subscription_dto(&dto)?;
 
@@ -76,50 +107,72 @@ pub async fn update_subscription(
         .lock()
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-    // サブスクリプションを更新
-    repository::update(&db, id, dto, 1i64).map_err(|e| e.user_message().to_string())
+    // 認証されたユーザーのサブスクリプションを更新
+    repository::update(&db, id, dto, user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプションのアクティブ状態を切り替える
 ///
 /// # 引数
 /// * `id` - サブスクリプションID
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 更新されたサブスクリプション、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn toggle_subscription_status(
     id: i64,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Subscription, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/toggle")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // データベース接続を取得
     let db = state
         .db
         .lock()
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-    // サブスクリプションのアクティブ状態を切り替え
-    repository::toggle_status(&db, id, 1i64).map_err(|e| e.user_message().to_string())
+    // 認証されたユーザーのサブスクリプションのアクティブ状態を切り替え
+    repository::toggle_status(&db, id, user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// アクティブなサブスクリプションの月額合計を取得する
 ///
 /// # 引数
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 月額合計金額、または失敗時はエラーメッセージ
 #[tauri::command]
-pub async fn get_monthly_subscription_total(state: State<'_, AppState>) -> Result<f64, String> {
+pub async fn get_monthly_subscription_total(
+    session_token: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<f64, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/total")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // データベース接続を取得
     let db = state
         .db
         .lock()
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
-    // 月額合計を計算
-    repository::calculate_monthly_total(&db, 1i64).map_err(|e| e.user_message().to_string())
+    // 認証されたユーザーの月額合計を計算
+    repository::calculate_monthly_total(&db, user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプション作成DTOのバリデーション

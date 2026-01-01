@@ -24,7 +24,7 @@ pub async fn create_expense(
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Expense, String> {
     // 認証チェック
-    let _user = auth_middleware
+    let user = auth_middleware
         .authenticate_request(session_token.as_deref(), "/expenses/create")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
@@ -38,12 +38,12 @@ pub async fn create_expense(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-    // ユーザーIDを含む経費DTOを作成
+    // 認証されたユーザーIDを使用して経費DTOを作成
     let mut user_dto = dto;
-    user_dto.user_id = Some(1i64);
+    user_dto.user_id = Some(user.id);
 
     // 経費を作成
-    repository::create(&db, user_dto, 1i64).map_err(|e| e.into())
+    repository::create(&db, user_dto, user.id).map_err(|e| e.into())
 }
 
 /// 経費一覧を取得する（月とカテゴリでフィルタリング可能）
@@ -66,7 +66,7 @@ pub async fn get_expenses(
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Vec<Expense>, String> {
     // 認証チェック
-    let _user = auth_middleware
+    let user = auth_middleware
         .authenticate_request(session_token.as_deref(), "/expenses/list")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
@@ -77,8 +77,8 @@ pub async fn get_expenses(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-    // 経費一覧を取得
-    repository::find_all(&db, 1i64, month.as_deref(), category.as_deref()).map_err(|e| e.into())
+    // 認証されたユーザーの経費一覧を取得
+    repository::find_all(&db, user.id, month.as_deref(), category.as_deref()).map_err(|e| e.into())
 }
 
 /// 経費を更新する
@@ -86,7 +86,9 @@ pub async fn get_expenses(
 /// # 引数
 /// * `id` - 経費ID
 /// * `dto` - 経費更新用DTO
+/// * `session_token` - セッショントークン
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 更新された経費、または失敗時はエラーメッセージ
@@ -94,8 +96,16 @@ pub async fn get_expenses(
 pub async fn update_expense(
     id: i64,
     dto: UpdateExpenseDto,
+    session_token: Option<String>,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Expense, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/expenses/update")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // バリデーション
     validate_update_expense_dto(&dto)?;
 
@@ -105,8 +115,8 @@ pub async fn update_expense(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-    // 経費を更新
-    repository::update(&db, id, dto, 1i64).map_err(|e| e.into())
+    // 認証されたユーザーの経費を更新
+    repository::update(&db, id, dto, user.id).map_err(|e| e.into())
 }
 
 /// 経費を削除する（R2対応）
@@ -134,7 +144,7 @@ pub async fn delete_expense(
     use chrono_tz::Asia::Tokyo;
 
     // 認証チェック
-    let _user = auth_middleware
+    let user = auth_middleware
         .authenticate_request(session_token.as_deref(), "/expenses/delete")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
@@ -146,7 +156,7 @@ pub async fn delete_expense(
             .lock()
             .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-        repository::get_receipt_url(&db, id, 1i64).map_err(|e| e.user_message().to_string())?
+        repository::get_receipt_url(&db, id, user.id).map_err(|e| e.user_message().to_string())?
     };
 
     // 領収書がR2に存在する場合は削除
@@ -198,7 +208,7 @@ pub async fn delete_expense(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-    repository::delete(&db, id, 1i64).map_err(|e| e.into())
+    repository::delete(&db, id, user.id).map_err(|e| e.into())
 }
 
 /// 経費作成DTOのバリデーション
