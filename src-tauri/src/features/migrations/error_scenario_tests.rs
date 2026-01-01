@@ -3,7 +3,7 @@
 //! このモジュールは、自動マイグレーションシステムの様々なエラー条件での動作を検証します。
 
 #[cfg(test)]
-mod error_scenario_tests {
+mod tests {
     use crate::features::migrations::auto_migration::{
         AutoMigrationService, MigrationErrorType, MigrationTable,
     };
@@ -265,9 +265,9 @@ mod error_scenario_tests {
         // 実行エラーまたは成功（既存テーブルの処理方法による）
         // このテストは実装の詳細に依存するため、エラーハンドリングの存在を確認
         match result {
-            Ok(migration_result) => {
+            Ok(_migration_result) => {
                 // 成功した場合でも、適切に処理されていることを確認
-                assert!(migration_result.success || !migration_result.success);
+                // migration_resultが適切に設定されていることを確認
             }
             Err(error) => {
                 // エラーが発生した場合、適切なエラータイプであることを確認
@@ -311,7 +311,7 @@ mod error_scenario_tests {
         }
 
         // このテストは環境に依存するため、エラーハンドリングの存在を確認するのみ
-        assert!(true); // テストが完了することを確認
+        // テストが正常に完了することを確認
     }
 
     /// エラーシナリオ: トランザクション競合エラー
@@ -423,7 +423,7 @@ mod error_scenario_tests {
         }
 
         // このテストは環境に依存するため、エラーハンドリングの存在を確認するのみ
-        assert!(true); // テストが完了することを確認
+        // テストが正常に完了することを確認
     }
 
     /// エラーシナリオ: ネットワーク関連エラー（ファイルシステム）

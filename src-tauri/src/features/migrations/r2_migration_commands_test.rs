@@ -3,7 +3,7 @@
 //! R2ユーザーディレクトリ移行のためのTauriコマンドのテスト
 
 use super::r2_migration_commands::*;
-use crate::shared::errors::AppError;
+
 use serde_json;
 
 #[cfg(test)]
@@ -150,7 +150,7 @@ mod tests {
         // プレースホルダーテスト
         // 実際のテストでは、SimpleR2MigrationServiceの作成と基本機能をテスト
         // R2Clientの作成には実際の設定が必要なため、ここではプレースホルダー
-        assert!(true);
+        // テストが正常に完了することを確認
     }
 
     #[tokio::test]
@@ -161,7 +161,7 @@ mod tests {
         // - pause_migration
         // - resume_migration
         // - stop_migration
-        assert!(true);
+        // テストが正常に完了することを確認
     }
 
     #[test]

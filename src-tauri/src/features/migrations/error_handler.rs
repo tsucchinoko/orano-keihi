@@ -13,6 +13,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
+/// エラーコールバック関数の型エイリアス
+type ErrorCallback = Box<dyn Fn(&MigrationError) + Send + Sync>;
+
 /// エラー処理結果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ErrorHandlingResult {
@@ -112,7 +115,7 @@ pub struct ComprehensiveErrorHandler {
     /// 最大リトライ回数の制限
     max_retry_limit: usize,
     /// エラー発生時のコールバック
-    error_callbacks: Vec<Box<dyn Fn(&MigrationError) + Send + Sync>>,
+    error_callbacks: Vec<ErrorCallback>,
 }
 
 impl ComprehensiveErrorHandler {
@@ -799,8 +802,8 @@ mod tests {
         let stats = handler.get_error_statistics();
         assert_eq!(stats.total_errors, 2);
         assert_eq!(stats.retry_success_count, 1);
-        assert!(stats.error_type_counts.len() > 0);
-        assert!(stats.severity_counts.len() > 0);
+        assert!(!stats.error_type_counts.is_empty());
+        assert!(!stats.severity_counts.is_empty());
     }
 
     #[test]

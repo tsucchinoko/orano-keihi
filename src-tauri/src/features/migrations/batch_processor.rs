@@ -910,13 +910,14 @@ mod tests {
         // let processor = BatchProcessor::new(r2_client, Some(3));
 
         // プレースホルダーテスト
-        assert!(true);
+        // 実際のテストでは、BatchProcessorの基本構造をテスト
+        // テストが正常に完了することを確認
     }
 
     #[tokio::test]
     async fn test_batch_processor_concurrency_adjustment() {
         // プレースホルダーテスト
         // 実際のテストでは、BatchProcessorのconcurrency調整機能をテスト
-        assert!(true);
+        // テストが正常に完了することを確認
     }
 }

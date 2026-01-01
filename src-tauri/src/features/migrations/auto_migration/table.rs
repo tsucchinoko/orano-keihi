@@ -103,7 +103,7 @@ impl MigrationTable {
         })?;
 
         let migration_iter = stmt
-            .query_map([], |row| Ok(Self::row_to_applied_migration(row)?))
+            .query_map([], Self::row_to_applied_migration)
             .map_err(|e| {
                 MigrationError::system(
                     "適用済みマイグレーション取得のクエリ実行に失敗しました".to_string(),
@@ -264,7 +264,7 @@ impl MigrationTable {
         "#;
 
         match conn.query_row(sql, params![name], |row| {
-            Ok(Self::row_to_applied_migration(row)?)
+            Self::row_to_applied_migration(row)
         }) {
             Ok(migration) => Ok(Some(migration)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -337,18 +337,10 @@ impl MigrationTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     /// テスト用のデータベース接続を作成
     fn create_test_db() -> Connection {
         Connection::open_in_memory().expect("テスト用データベースの作成に失敗")
-    }
-
-    /// テスト用のファイルデータベース接続を作成
-    fn create_test_file_db() -> (Connection, NamedTempFile) {
-        let temp_file = NamedTempFile::new().expect("一時ファイルの作成に失敗");
-        let conn = Connection::open(temp_file.path()).expect("テスト用データベースの作成に失敗");
-        (conn, temp_file)
     }
 
     #[test]

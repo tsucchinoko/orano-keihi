@@ -144,7 +144,6 @@ impl DatabaseUpdater {
     /// 更新されたレコード数
     async fn update_receipt_urls_transaction(update_items: Vec<UrlUpdateItem>) -> AppResult<usize> {
         let mut conn = get_database_connection().await?;
-        let mut updated_count = 0;
 
         // トランザクション開始
         let tx = conn
@@ -163,10 +162,8 @@ impl DatabaseUpdater {
         }
 
         // 一括更新実行
-        match Self::execute_batch_update(&tx, &update_items) {
+        let updated_count = match Self::execute_batch_update(&tx, &update_items) {
             Ok(count) => {
-                updated_count = count;
-
                 // 更新後の整合性チェック
                 if let Err(e) = Self::validate_update_integrity(&tx, &update_items) {
                     error!("整合性チェック失敗: {}", e);
@@ -185,7 +182,8 @@ impl DatabaseUpdater {
                     AppError::Database(format!("トランザクションコミットエラー: {e}"))
                 })?;
 
-                debug!("トランザクション正常完了: {}件更新", updated_count);
+                debug!("トランザクション正常完了: {}件更新", count);
+                count
             }
             Err(e) => {
                 error!("バッチ更新失敗: {}", e);
@@ -193,7 +191,7 @@ impl DatabaseUpdater {
                 // 自動ロールバック（トランザクションがドロップされる）
                 return Err(e);
             }
-        }
+        };
 
         Ok(updated_count)
     }

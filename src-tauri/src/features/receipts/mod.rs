@@ -29,7 +29,6 @@ pub use cache::CacheManager;
 pub use commands::{
     delete_receipt_from_r2, get_cache_stats, get_r2_performance_stats, get_receipt_from_r2,
     get_receipt_offline, sync_cache_on_online, test_r2_connection, upload_multiple_receipts_to_r2,
-    upload_receipt_to_r2,
 };
 
 // 認証付きコマンド（新規）

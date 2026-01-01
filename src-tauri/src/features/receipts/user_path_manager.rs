@@ -284,7 +284,7 @@ impl UserPathManager {
     /// # 戻り値
     /// ファイル名、または抽出エラー
     pub fn extract_filename_from_path(path: &str) -> AppResult<String> {
-        if let Some(filename) = path.split('/').last() {
+        if let Some(filename) = path.split('/').next_back() {
             if filename.is_empty() {
                 Err(AppError::validation("ファイル名が空です"))
             } else {

@@ -5,12 +5,6 @@
 #[cfg(test)]
 mod tests {
     use super::super::commands::*;
-    use rusqlite::Connection;
-
-    /// テスト用のデータベース接続を作成
-    fn create_test_db() -> Connection {
-        Connection::open_in_memory().expect("テスト用データベースの作成に失敗")
-    }
 
     #[test]
     fn test_migration_info_creation() {

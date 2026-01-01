@@ -184,6 +184,18 @@ pub struct StructuredLogger {
     session_id: Option<String>,
 }
 
+/// ファイル移行ログのパラメータ
+#[derive(Debug)]
+pub struct FileMigrationLogParams {
+    pub migration_log_id: i64,
+    pub old_path: String,
+    pub new_path: String,
+    pub user_id: i64,
+    pub file_size: u64,
+    pub success: bool,
+    pub duration_ms: Option<u128>,
+}
+
 impl StructuredLogger {
     /// 新しい構造化ロガーを作成
     pub fn new(max_buffer_size: Option<usize>) -> Self {
@@ -435,39 +447,40 @@ impl StructuredLogger {
     }
 
     /// ファイル移行ログを記録
-    pub fn log_file_migration(
-        &self,
-        migration_log_id: i64,
-        old_path: &str,
-        new_path: &str,
-        user_id: i64,
-        file_size: u64,
-        success: bool,
-        duration_ms: Option<u128>,
-    ) {
-        let level = if success {
+    pub fn log_file_migration(&self, params: FileMigrationLogParams) {
+        let level = if params.success {
             LogLevel::Debug
         } else {
             LogLevel::Error
         };
-        let message = if success {
+        let message = if params.success {
             "ファイル移行成功"
         } else {
             "ファイル移行失敗"
         };
 
-        let mut entry =
-            StructuredLogEntry::new(level, "file_migration", message, Some(migration_log_id))
-                .with_user_id(user_id)
-                .with_context("old_path", serde_json::Value::String(old_path.to_string()))
-                .with_context("new_path", serde_json::Value::String(new_path.to_string()))
-                .with_context(
-                    "file_size",
-                    serde_json::Value::Number(serde_json::Number::from(file_size)),
-                )
-                .with_context("success", serde_json::Value::Bool(success));
+        let mut entry = StructuredLogEntry::new(
+            level,
+            "file_migration",
+            message,
+            Some(params.migration_log_id),
+        )
+        .with_user_id(params.user_id)
+        .with_context(
+            "old_path",
+            serde_json::Value::String(params.old_path.clone()),
+        )
+        .with_context(
+            "new_path",
+            serde_json::Value::String(params.new_path.clone()),
+        )
+        .with_context(
+            "file_size",
+            serde_json::Value::Number(serde_json::Number::from(params.file_size)),
+        )
+        .with_context("success", serde_json::Value::Bool(params.success));
 
-        if let Some(duration) = duration_ms {
+        if let Some(duration) = params.duration_ms {
             entry = entry.with_context(
                 "duration_ms",
                 serde_json::Value::Number(serde_json::Number::from(duration as u64)),

@@ -14,8 +14,11 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 
+/// 移行サービスマップの型エイリアス
+type MigrationServiceMap = HashMap<String, Arc<SimpleR2MigrationService>>;
+
 /// グローバル移行サービス管理
-static MIGRATION_SERVICES: Lazy<Arc<Mutex<HashMap<String, Arc<SimpleR2MigrationService>>>>> =
+static MIGRATION_SERVICES: Lazy<Arc<Mutex<MigrationServiceMap>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// 現在実行中の移行ID管理

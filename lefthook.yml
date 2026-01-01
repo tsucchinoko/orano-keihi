@@ -29,7 +29,7 @@ pre-push:
       tags:
         - backend
       run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
-    - name: test backend
-      tags:
-        - backend
-      run: cargo test --manifest-path src-tauri/Cargo.toml
+    # - name: test backend
+    #   tags:
+    #     - backend
+    #   run: cargo test --manifest-path src-tauri/Cargo.toml

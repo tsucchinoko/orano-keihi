@@ -338,14 +338,14 @@ pub fn update_migration_item_status(
         "UPDATE migration_items SET status = ? WHERE id = ?"
     };
 
-    if started_at.is_some() {
-        conn.execute(sql, [status, started_at.unwrap(), &item_id.to_string()])
-    } else if completed_at.is_some() {
+    if let Some(started_time) = started_at {
+        conn.execute(sql, [status, started_time, &item_id.to_string()])
+    } else if let Some(completed_time) = completed_at {
         conn.execute(
             sql,
             [
                 status,
-                completed_at.unwrap(),
+                completed_time,
                 error_message.unwrap_or("null"),
                 file_hash.unwrap_or("null"),
                 &item_id.to_string(),

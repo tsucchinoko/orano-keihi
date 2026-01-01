@@ -489,6 +489,6 @@ mod tests {
     async fn test_r2_migration_service_creation() {
         // プレースホルダーテスト
         // 実際のテストでは、R2MigrationServiceの作成と基本機能をテスト
-        assert!(true);
+        // テストが正常に完了することを確認
     }
 }

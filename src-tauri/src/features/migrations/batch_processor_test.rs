@@ -29,7 +29,7 @@ mod tests {
         // let processor = BatchProcessor::new(r2_client, Some(3));
 
         // 基本的な機能のテスト
-        assert!(true, "BatchProcessorの基本構造テストが完了しました");
+        // BatchProcessorの基本構造テストが完了しました
     }
 
     /// ファイルハッシュ計算のテスト
@@ -107,7 +107,7 @@ mod tests {
         // let result = processor.adjust_concurrency(0).await;
         // assert!(result.is_err());
 
-        assert!(true, "並列度調整テストが完了しました");
+        // 並列度調整テストが完了しました
     }
 
     /// BatchProcessorの一時停止・再開機能テスト
@@ -142,6 +142,6 @@ mod tests {
         // processor.stop().await;
         // assert!(processor.is_cancelled());
 
-        assert!(true, "一時停止・再開機能テストが完了しました");
+        // 一時停止・再開機能テストが完了しました
     }
 }
