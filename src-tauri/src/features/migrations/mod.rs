@@ -5,6 +5,8 @@
 
 pub mod auto_migration;
 pub mod commands;
+pub mod r2_migration_commands;
+pub mod r2_user_directory_migration;
 pub mod service;
 
 #[cfg(test)]
@@ -32,6 +34,17 @@ pub use commands::{
     MigrationInfo,
 };
 
+pub use r2_migration_commands::{
+    get_r2_migration_status, pause_r2_migration, resume_r2_migration, start_r2_migration,
+    stop_r2_migration, validate_r2_migration_integrity, R2MigrationResult, R2MigrationStatus,
+    StartR2MigrationParams, ValidationResult,
+};
+
+pub use r2_user_directory_migration::{
+    create_migration_item, create_migration_log_entry, get_migration_progress,
+    update_migration_item_status, update_migration_log_status, MigrationProgress,
+};
+
 pub use service::{
     create_backup, drop_receipt_path_column, execute_comprehensive_data_migration,
     is_receipt_url_migration_complete, is_user_authentication_migration_complete,
@@ -57,6 +70,7 @@ pub const SUPPORTED_MIGRATIONS: &[&str] = &[
     "receipt_path_to_receipt_url", // receipt_pathからreceipt_urlへの移行
     "drop_receipt_path_column",    // receipt_pathカラムの削除
     "add_user_authentication",     // ユーザー認証機能の追加
+    "r2_migration_schema",         // R2移行用データベーススキーマ
 ];
 
 /// マイグレーション機能の説明

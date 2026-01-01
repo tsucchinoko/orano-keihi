@@ -7,6 +7,7 @@ use super::executor::{
     BasicSchemaMigrationExecutor, ReceiptUrlMigrationExecutor, UserAuthMigrationExecutor,
 };
 use super::models::{ExecutableMigrationDefinition, MigrationDefinition};
+use crate::features::migrations::r2_user_directory_migration::get_r2_migration_schema_definition;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -209,6 +210,10 @@ impl MigrationRegistry {
         );
         registry.register_executable(receipt_url_executable)?;
 
+        // R2移行用スキーママイグレーション（要件4.1, 4.2, 4.3）
+        let r2_migration_schema = get_r2_migration_schema_definition();
+        registry.register_executable(r2_migration_schema)?;
+
         Ok(registry)
     }
 }
@@ -331,7 +336,7 @@ mod tests {
     fn test_register_default_migrations() {
         let registry = MigrationRegistry::register_default_migrations().unwrap();
 
-        assert_eq!(registry.count(), 3);
+        assert_eq!(registry.count(), 4);
         assert!(registry
             .find_executable_migration("001_create_basic_schema")
             .is_some());
@@ -340,6 +345,9 @@ mod tests {
             .is_some());
         assert!(registry
             .find_executable_migration("003_migrate_receipt_url")
+            .is_some());
+        assert!(registry
+            .find_executable_migration("r2_migration_schema")
             .is_some());
 
         // 各マイグレーションのチェックサムが正しく計算されていることを確認
