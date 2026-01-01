@@ -1,3 +1,4 @@
+use super::auto_migration::{AutoMigrationService, MigrationStatusReport};
 use super::service::{
     create_backup, drop_receipt_path_column, is_receipt_url_migration_complete,
     is_user_authentication_migration_complete, list_backup_files, migrate_receipt_path_to_url,
@@ -230,6 +231,11 @@ pub async fn get_database_stats(app_handle: AppHandle) -> Result<DatabaseStats, 
         .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
         .unwrap_or(0);
 
+    // migrationsテーブルのレコード数を取得
+    let migrations_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM migrations", [], |row| row.get(0))
+        .unwrap_or(0);
+
     // データベースファイルサイズを取得
     let page_count: i64 = conn
         .query_row("PRAGMA page_count", [], |row| row.get(0))
@@ -251,6 +257,7 @@ pub async fn get_database_stats(app_handle: AppHandle) -> Result<DatabaseStats, 
         database_size_bytes: database_size,
         page_count,
         page_size,
+        migrations_count: Some(migrations_count),
     })
 }
 
@@ -266,6 +273,41 @@ pub struct DatabaseStats {
     pub database_size_bytes: i64,
     pub page_count: i64,
     pub page_size: i64,
+    pub migrations_count: Option<i64>,
+}
+
+/// マイグレーション情報
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct MigrationInfo {
+    /// マイグレーション名
+    pub name: String,
+    /// バージョン
+    pub version: String,
+    /// 説明
+    pub description: String,
+    /// チェックサム
+    pub checksum: String,
+    /// 適用済みフラグ
+    pub is_applied: bool,
+    /// 適用日時（適用済みの場合）
+    pub applied_at: Option<String>,
+    /// 実行時間（適用済みの場合）
+    pub execution_time_ms: Option<i64>,
+}
+
+/// 詳細なマイグレーション情報
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct DetailedMigrationInfo {
+    /// 基本的なマイグレーション状態レポート
+    pub status_report: MigrationStatusReport,
+    /// 利用可能なマイグレーション一覧（適用状態含む）
+    pub available_migrations: Vec<MigrationInfo>,
+    /// 適用済みマイグレーション詳細一覧
+    pub applied_migrations: Vec<super::auto_migration::AppliedMigration>,
+    /// データベース整合性状態
+    pub integrity_status: String,
+    /// データベース統計情報
+    pub database_stats: DatabaseStats,
 }
 
 /// 包括的なデータ移行を実行する
@@ -284,6 +326,185 @@ pub async fn execute_comprehensive_data_migration_command(
 
     super::service::execute_comprehensive_data_migration(&conn)
         .map_err(|e| format!("包括的データ移行実行エラー: {e}"))
+}
+
+/// 自動マイグレーションシステムの状態を確認する
+///
+/// 新しい自動マイグレーションシステムを使用して、詳細なマイグレーション状態を取得します。
+/// 要件7.1, 7.2, 7.3, 7.4に対応します。
+///
+/// # 引数
+/// * `app_handle` - Tauriアプリケーションハンドル
+///
+/// # 戻り値
+/// 詳細なマイグレーション状態レポート
+#[tauri::command]
+pub async fn check_auto_migration_status(
+    app_handle: AppHandle,
+) -> Result<MigrationStatusReport, String> {
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
+
+    // 自動マイグレーションサービスを初期化
+    let auto_migration_service = AutoMigrationService::new(&conn)
+        .map_err(|e| format!("自動マイグレーションサービス初期化エラー: {e}"))?;
+
+    // マイグレーション状態を確認
+    auto_migration_service
+        .check_migration_status(&conn)
+        .map_err(|e| format!("マイグレーション状態確認エラー: {e}"))
+}
+
+/// 自動マイグレーションシステムの詳細情報を取得する
+///
+/// 適用済み・未適用マイグレーション一覧、実行日時、整合性状態を含む
+/// 包括的な情報を提供します。要件7.1, 7.2, 7.3, 7.4に対応します。
+///
+/// # 引数
+/// * `app_handle` - Tauriアプリケーションハンドル
+///
+/// # 戻り値
+/// 詳細なマイグレーション情報
+#[tauri::command]
+pub async fn get_detailed_migration_info(
+    app_handle: AppHandle,
+) -> Result<DetailedMigrationInfo, String> {
+    let conn =
+        initialize_database(&app_handle).map_err(|e| format!("データベース接続エラー: {e}"))?;
+
+    // 自動マイグレーションサービスを初期化
+    let auto_migration_service = AutoMigrationService::new(&conn)
+        .map_err(|e| format!("自動マイグレーションサービス初期化エラー: {e}"))?;
+
+    // 基本的なマイグレーション状態を取得
+    let status_report = auto_migration_service
+        .check_migration_status(&conn)
+        .map_err(|e| format!("マイグレーション状態確認エラー: {e}"))?;
+
+    // 適用済みマイグレーション詳細を取得
+    let applied_migrations = super::auto_migration::MigrationTable::get_applied_migrations(&conn)
+        .map_err(|e| format!("適用済みマイグレーション取得エラー: {e}"))?;
+
+    // 利用可能なマイグレーション一覧を取得
+    let available_migrations: Vec<MigrationInfo> = auto_migration_service
+        .registry
+        .get_available_migrations()
+        .iter()
+        .map(|m| MigrationInfo {
+            name: m.name.clone(),
+            version: m.version.clone(),
+            description: m.description.clone(),
+            checksum: m.checksum.clone(),
+            is_applied: applied_migrations.iter().any(|am| am.name == m.name),
+            applied_at: applied_migrations
+                .iter()
+                .find(|am| am.name == m.name)
+                .map(|am| am.applied_at.clone()),
+            execution_time_ms: applied_migrations
+                .iter()
+                .find(|am| am.name == m.name)
+                .and_then(|am| am.execution_time_ms),
+        })
+        .collect();
+
+    // データベース整合性チェック
+    let integrity_status = check_database_integrity_internal(&conn)
+        .map_err(|e| format!("データベース整合性チェックエラー: {e}"))?;
+
+    Ok(DetailedMigrationInfo {
+        status_report,
+        available_migrations,
+        applied_migrations,
+        integrity_status,
+        database_stats: get_database_stats_internal(&conn)
+            .map_err(|e| format!("データベース統計取得エラー: {e}"))?,
+    })
+}
+
+/// データベース整合性チェック（内部用）
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// 整合性チェック結果
+fn check_database_integrity_internal(conn: &rusqlite::Connection) -> Result<String, String> {
+    // SQLiteの整合性チェックを実行
+    let integrity_result: String = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|e| format!("整合性チェック実行エラー: {e}"))?;
+
+    if integrity_result == "ok" {
+        Ok("データベースの整合性に問題はありません".to_string())
+    } else {
+        Ok(format!(
+            "データベースの整合性に問題があります: {integrity_result}"
+        ))
+    }
+}
+
+/// データベース統計情報取得（内部用）
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// データベース統計情報
+fn get_database_stats_internal(conn: &rusqlite::Connection) -> Result<DatabaseStats, String> {
+    // 各テーブルのレコード数を取得
+    let expenses_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let subscriptions_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM subscriptions", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let receipt_cache_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM receipt_cache", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let categories_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM categories", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    // ユーザー認証テーブルのレコード数を取得（存在する場合）
+    let users_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let sessions_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    // migrationsテーブルのレコード数を取得
+    let migrations_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM migrations", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    // データベースファイルサイズを取得
+    let page_count: i64 = conn
+        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let page_size: i64 = conn
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .unwrap_or(4096);
+
+    let database_size = page_count * page_size;
+
+    Ok(DatabaseStats {
+        expenses_count,
+        subscriptions_count,
+        receipt_cache_count,
+        categories_count,
+        users_count,
+        sessions_count,
+        database_size_bytes: database_size,
+        page_count,
+        page_size,
+        migrations_count: Some(migrations_count),
+    })
 }
 
 #[cfg(test)]

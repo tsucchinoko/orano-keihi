@@ -1,9 +1,11 @@
 // 領収書機能モジュール
 
+pub mod auth_commands;
 pub mod cache;
 pub mod commands;
 pub mod models;
 pub mod service;
+pub mod user_path_manager;
 
 // 公開インターフェース
 
@@ -17,6 +19,9 @@ pub use models::{
 // サービス
 pub use service::R2Client;
 
+// ユーザーパス管理
+pub use user_path_manager::UserPathManager;
+
 // キャッシュマネージャー
 pub use cache::CacheManager;
 
@@ -24,7 +29,12 @@ pub use cache::CacheManager;
 pub use commands::{
     delete_receipt_from_r2, get_cache_stats, get_r2_performance_stats, get_receipt_from_r2,
     get_receipt_offline, sync_cache_on_online, test_r2_connection, upload_multiple_receipts_to_r2,
-    upload_receipt_to_r2,
+};
+
+// 認証付きコマンド（新規）
+pub use auth_commands::{
+    delete_receipt_with_auth, download_receipt_with_auth, extract_path_from_url_with_auth,
+    get_receipt_with_auth, upload_receipt_with_auth,
 };
 
 /// 領収書機能の初期化とセットアップ
@@ -74,8 +84,8 @@ pub fn get_feature_stats() -> std::collections::HashMap<String, String> {
     stats.insert("version".to_string(), "1.0.0".to_string());
     stats.insert("status".to_string(), "active".to_string());
 
-    // 利用可能なコマンド数
-    stats.insert("available_commands".to_string(), "9".to_string());
+    // 利用可能なコマンド数（既存9 + 新規5 = 14）
+    stats.insert("available_commands".to_string(), "14".to_string());
 
     // サポートされるファイル形式
     stats.insert(
@@ -128,7 +138,7 @@ mod tests {
         assert_eq!(stats.get("feature_name"), Some(&"receipts".to_string()));
         assert_eq!(stats.get("version"), Some(&"1.0.0".to_string()));
         assert_eq!(stats.get("status"), Some(&"active".to_string()));
-        assert_eq!(stats.get("available_commands"), Some(&"9".to_string()));
+        assert_eq!(stats.get("available_commands"), Some(&"14".to_string()));
         assert_eq!(
             stats.get("supported_formats"),
             Some(&"PNG,JPG,JPEG,PDF".to_string())

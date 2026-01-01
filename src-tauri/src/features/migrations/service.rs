@@ -995,27 +995,40 @@ pub struct DataMigrationResult {
 /// # 戻り値
 /// マイグレーション結果
 pub fn migrate_user_authentication(conn: &Connection) -> Result<MigrationResult, AppError> {
+    log::info!("ユーザー認証マイグレーションを開始します");
+
+    // 環境情報をログ出力
+    log::info!("環境設定: ENVIRONMENT={:?}", std::env::var("ENVIRONMENT"));
+    log::info!("データベースファイルパス: {:?}", conn.path());
+
     // バックアップパスを生成（JST使用）
     let now_jst = Utc::now().with_timezone(&Tokyo);
     let backup_path = format!("database_backup_auth_{}.db", now_jst.timestamp());
 
     // 1. バックアップを作成
+    log::info!("データベースバックアップを作成中: {backup_path}");
     if let Err(e) = create_backup(conn, &backup_path) {
+        log::error!("バックアップ作成に失敗: {e}");
         return Ok(MigrationResult {
             success: false,
             message: format!("バックアップ作成に失敗しました: {e}"),
             backup_path: None,
         });
     }
+    log::info!("バックアップ作成完了");
 
     // 2. トランザクション内でマイグレーションを実行
+    log::info!("マイグレーショントランザクションを開始");
     let tx = conn.unchecked_transaction()?;
 
     match execute_user_authentication_migration(&tx) {
         Ok(_) => {
+            log::info!("マイグレーション実行完了、検証を開始");
+
             // 3. マイグレーション検証
             if let Err(e) = validate_user_authentication_migration(&tx) {
                 // 検証失敗時はロールバック
+                log::error!("マイグレーション検証に失敗、ロールバック実行: {e}");
                 tx.rollback()?;
                 return Ok(MigrationResult {
                     success: false,
@@ -1025,7 +1038,9 @@ pub fn migrate_user_authentication(conn: &Connection) -> Result<MigrationResult,
             }
 
             // 4. コミット
+            log::info!("マイグレーション検証完了、コミット実行");
             tx.commit()?;
+            log::info!("ユーザー認証マイグレーションが正常に完了しました");
 
             Ok(MigrationResult {
                 success: true,
@@ -1035,6 +1050,7 @@ pub fn migrate_user_authentication(conn: &Connection) -> Result<MigrationResult,
         }
         Err(e) => {
             // エラー時はロールバック
+            log::error!("マイグレーション実行中にエラー発生、ロールバック実行: {e}");
             tx.rollback()?;
             Ok(MigrationResult {
                 success: false,

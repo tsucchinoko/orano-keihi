@@ -305,6 +305,38 @@ impl R2Client {
         format!("receipts/{expense_id}/{timestamp}-{uuid}-{filename}")
     }
 
+    /// ユーザー別ファイルキーを生成（新しい構造用）
+    ///
+    /// # 引数
+    /// * `user_id` - ユーザーID
+    /// * `expense_id` - 経費ID
+    /// * `filename` - ファイル名
+    ///
+    /// # 戻り値
+    /// ユーザー別ファイルキー（`users/{user_id}/receipts/{expense_id}/{timestamp}-{uuid}-{filename}`）
+    pub fn generate_user_file_key(user_id: i64, expense_id: i64, filename: &str) -> String {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+        UserPathManager::generate_user_receipt_path(user_id, expense_id, filename)
+    }
+
+    /// サブスクリプション用のユーザー別ファイルキーを生成
+    ///
+    /// # 引数
+    /// * `user_id` - ユーザーID
+    /// * `subscription_id` - サブスクリプションID
+    /// * `filename` - ファイル名
+    ///
+    /// # 戻り値
+    /// ユーザー別サブスクリプションファイルキー（`users/{user_id}/subscriptions/{subscription_id}/{timestamp}-{uuid}-{filename}`）
+    pub fn generate_user_subscription_key(
+        user_id: i64,
+        subscription_id: i64,
+        filename: &str,
+    ) -> String {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+        UserPathManager::generate_user_subscription_path(user_id, subscription_id, filename)
+    }
+
     /// ファイル形式を検証
     pub fn validate_file_format(filename: &str) -> AppResult<()> {
         let extension = std::path::Path::new(filename)
@@ -414,6 +446,295 @@ impl R2Client {
             connection_status: "healthy".to_string(),
             last_measured: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    /// ファイルをR2からダウンロード
+    pub async fn download_file(&self, key: &str) -> AppResult<Vec<u8>> {
+        info!("ファイルダウンロード開始: key={}", key);
+
+        let start_time = std::time::Instant::now();
+
+        let response = self
+            .client
+            .get_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| {
+                error!("ファイルダウンロード失敗: key={}, error={}", key, e);
+                AppError::ExternalService(format!("R2ダウンロードエラー: {e}"))
+            })?;
+
+        let data = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("データ読み込みエラー: {e}")))?
+            .into_bytes()
+            .to_vec();
+
+        let duration = start_time.elapsed();
+        info!(
+            "ファイルダウンロード成功: key={}, size={} bytes, duration={:?}",
+            key,
+            data.len(),
+            duration
+        );
+
+        Ok(data)
+    }
+
+    /// 部分ダウンロード（範囲指定）
+    pub async fn download_file_partial(
+        &self,
+        key: &str,
+        start: u64,
+        end: u64,
+    ) -> AppResult<Vec<u8>> {
+        let range = format!("bytes={start}-{end}");
+        info!("部分ファイルダウンロード開始: key={}, range={}", key, range);
+
+        let response = self
+            .client
+            .get_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .range(range)
+            .send()
+            .await
+            .map_err(|e| {
+                error!("部分ファイルダウンロード失敗: key={}, error={}", key, e);
+                AppError::ExternalService(format!("R2部分ダウンロードエラー: {e}"))
+            })?;
+
+        let data = response
+            .body
+            .collect()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("データ読み込みエラー: {e}")))?
+            .into_bytes()
+            .to_vec();
+
+        info!(
+            "部分ファイルダウンロード成功: key={}, size={} bytes",
+            key,
+            data.len()
+        );
+
+        Ok(data)
+    }
+
+    /// ファイルの存在確認
+    pub async fn file_exists(&self, key: &str) -> AppResult<bool> {
+        match self
+            .client
+            .head_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .send()
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                // NotFoundエラーの場合はfalseを返す
+                if e.to_string().contains("NotFound") || e.to_string().contains("404") {
+                    Ok(false)
+                } else {
+                    Err(AppError::ExternalService(format!(
+                        "ファイル存在確認エラー: {e}"
+                    )))
+                }
+            }
+        }
+    }
+
+    /// ファイルサイズを取得
+    pub async fn get_file_size(&self, key: &str) -> AppResult<u64> {
+        let response = self
+            .client
+            .head_object()
+            .bucket(&self.bucket_name)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| AppError::ExternalService(format!("ファイル情報取得エラー: {e}")))?;
+
+        let size = response.content_length().unwrap_or(0) as u64;
+
+        Ok(size)
+    }
+
+    /// URLからパスを抽出
+    pub fn extract_path_from_url(&self, url: &str) -> AppResult<String> {
+        if let Some(path_start) = url.find("/users/") {
+            Ok(url[path_start + 1..].to_string())
+        } else if let Some(path_start) = url.find("/receipts/") {
+            // レガシーパスの場合
+            Ok(url[path_start + 1..].to_string())
+        } else {
+            Err(AppError::Validation(format!("無効なURL形式: {url}")))
+        }
+    }
+
+    /// ユーザー認証付きファイルアップロード
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `expense_id` - 経費ID
+    /// * `filename` - ファイル名
+    /// * `file_data` - ファイルデータ
+    /// * `content_type` - Content-Type
+    ///
+    /// # 戻り値
+    /// アップロードされたファイルのURL
+    pub async fn upload_file_with_user_auth(
+        &self,
+        user_id: i64,
+        expense_id: i64,
+        filename: &str,
+        file_data: Vec<u8>,
+        content_type: &str,
+    ) -> AppResult<String> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!(
+            "ユーザー認証付きファイルアップロード開始: user_id={user_id}, expense_id={expense_id}, filename={filename}"
+        );
+
+        // ユーザー別パスを生成
+        let file_path = UserPathManager::generate_user_receipt_path(user_id, expense_id, filename);
+
+        // ファイルをアップロード
+        let url = self
+            .upload_file(&file_path, file_data, content_type)
+            .await?;
+
+        info!(
+            "ユーザー認証付きファイルアップロード成功: user_id={user_id}, path={file_path}, url={url}"
+        );
+
+        Ok(url)
+    }
+
+    /// ユーザー認証付きファイル取得
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `file_path` - ファイルパス
+    ///
+    /// # 戻り値
+    /// ファイルデータ
+    pub async fn download_file_with_user_auth(
+        &self,
+        user_id: i64,
+        file_path: &str,
+    ) -> AppResult<Vec<u8>> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!("ユーザー認証付きファイル取得開始: user_id={user_id}, path={file_path}");
+
+        // ユーザーのアクセス権限を検証
+        UserPathManager::validate_user_access(user_id, file_path)?;
+
+        // ファイルをダウンロード
+        let data = self.download_file(file_path).await?;
+
+        info!(
+            "ユーザー認証付きファイル取得成功: user_id={user_id}, path={file_path}, size={} bytes",
+            data.len()
+        );
+
+        Ok(data)
+    }
+
+    /// ユーザー認証付きファイル削除
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `file_path` - ファイルパス
+    ///
+    /// # 戻り値
+    /// 削除成功の場合はOk(())
+    pub async fn delete_file_with_user_auth(&self, user_id: i64, file_path: &str) -> AppResult<()> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!("ユーザー認証付きファイル削除開始: user_id={user_id}, path={file_path}");
+
+        // ユーザーのアクセス権限を検証
+        UserPathManager::validate_user_access(user_id, file_path)?;
+
+        // ファイルを削除
+        self.delete_file(file_path).await?;
+
+        info!("ユーザー認証付きファイル削除成功: user_id={user_id}, path={file_path}");
+
+        Ok(())
+    }
+
+    /// 管理者権限付きファイルアクセス
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `is_admin` - 管理者フラグ
+    /// * `file_path` - ファイルパス
+    ///
+    /// # 戻り値
+    /// ファイルデータ
+    pub async fn download_file_with_admin_auth(
+        &self,
+        user_id: i64,
+        is_admin: bool,
+        file_path: &str,
+    ) -> AppResult<Vec<u8>> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!(
+            "管理者権限付きファイル取得開始: user_id={user_id}, is_admin={is_admin}, path={file_path}"
+        );
+
+        // 管理者または所有者のアクセス権限を検証
+        UserPathManager::validate_admin_or_user_access(user_id, is_admin, file_path)?;
+
+        // ファイルをダウンロード
+        let data = self.download_file(file_path).await?;
+
+        info!(
+            "管理者権限付きファイル取得成功: user_id={user_id}, path={file_path}, size={} bytes",
+            data.len()
+        );
+
+        Ok(data)
+    }
+
+    /// ユーザー認証付きPresigned URL生成
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `file_path` - ファイルパス
+    /// * `expires_in` - 有効期限
+    ///
+    /// # 戻り値
+    /// Presigned URL
+    pub async fn generate_presigned_url_with_user_auth(
+        &self,
+        user_id: i64,
+        file_path: &str,
+        expires_in: Duration,
+    ) -> AppResult<String> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!("ユーザー認証付きPresigned URL生成開始: user_id={user_id}, path={file_path}");
+
+        // ユーザーのアクセス権限を検証
+        UserPathManager::validate_user_access(user_id, file_path)?;
+
+        // Presigned URLを生成
+        let url = self.generate_presigned_url(file_path, expires_in).await?;
+
+        info!("ユーザー認証付きPresigned URL生成成功: user_id={user_id}, path={file_path}");
+
+        Ok(url)
     }
 
     /// キャッシュ対応のパフォーマンス統計を取得する

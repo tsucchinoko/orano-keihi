@@ -91,6 +91,14 @@ let isLoginPage = $derived(currentPath.startsWith("/login"));
 									>
 										デバッグ
 									</button>
+									<button 
+										type="button"
+										class:active={isActive('/migration-status')}
+										class="nav-link nav-button debug-link" 
+										onclick={() => navigateTo('/migration-status')}
+									>
+										マイグレーション状態
+									</button>
 								{/if}
 							</div>
 							

@@ -137,16 +137,47 @@ pub fn load_environment_variables() {
         return;
     }
 
-    // dotenv::dotenv()を使用して、カレントディレクトリから.envファイルを自動的に探す
-    // これは複数の場所を自動的に検索する
-    match dotenv::dotenv() {
+    // 本番環境かどうかを判定（ビルド設定ベース）
+    let is_production = !cfg!(debug_assertions);
+
+    // 環境に応じた.envファイルを読み込み
+    let env_file = if is_production {
+        ".env.production"
+    } else {
+        ".env"
+    };
+
+    eprintln!("環境判定: production={is_production}, 読み込み対象: {env_file}");
+
+    // 指定された.envファイルを読み込み
+    match dotenv::from_filename(env_file) {
         Ok(path) => {
-            eprintln!(".envファイルを読み込みました: {}", path.display());
+            eprintln!("環境ファイルを読み込みました: {}", path.display());
         }
         Err(e) => {
-            eprintln!(".envファイルの読み込みに失敗しました: {e}");
-            eprintln!("コンパイル時埋め込み値または直接設定された環境変数を使用します。");
+            eprintln!("環境ファイル({env_file})の読み込みに失敗: {e}");
+
+            // フォールバック: デフォルトの.envファイルを試行
+            match dotenv::dotenv() {
+                Ok(path) => {
+                    eprintln!(
+                        "フォールバック: デフォルト.envファイルを読み込みました: {}",
+                        path.display()
+                    );
+                }
+                Err(e2) => {
+                    eprintln!("デフォルト.envファイルの読み込みも失敗: {e2}");
+                    eprintln!("直接設定された環境変数を使用します。");
+                }
+            }
         }
+    }
+
+    // 読み込み後の環境変数を確認
+    if let Ok(env_var) = std::env::var("ENVIRONMENT") {
+        eprintln!("ENVIRONMENT環境変数: {env_var}");
+    } else {
+        eprintln!("ENVIRONMENT環境変数が設定されていません");
     }
 }
 

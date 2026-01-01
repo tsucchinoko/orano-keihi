@@ -75,6 +75,7 @@ export interface MonthlyTotal {
 
 // Tauriコマンドのレスポンス型
 export interface TauriResult<T> {
+	success?: boolean;
 	data?: T;
 	error?: string;
 }

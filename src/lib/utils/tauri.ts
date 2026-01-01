@@ -305,7 +305,7 @@ export async function deleteSubscriptionReceipt(
 // ========================================
 
 /**
- * 領収書ファイルをR2にアップロードする
+ * 領収書ファイルをR2にアップロードする（ユーザー認証付き）
  *
  * @param expenseId - 経費ID
  * @param filePath - アップロードするファイルのパス
@@ -315,13 +315,25 @@ export async function uploadReceiptToR2(
 	expenseId: number,
 	filePath: string,
 ): Promise<TauriResult<string>> {
+	const sessionToken = getAuthToken();
+	if (!sessionToken) {
+		return {
+			success: false,
+			error: "認証が必要です。ログインしてください。",
+		};
+	}
+
 	return handleTauriCommand(
-		invoke<string>("upload_receipt_to_r2", { expenseId, filePath }),
+		invoke<string>("upload_receipt_with_auth", {
+			sessionToken,
+			expenseId,
+			filePath,
+		}),
 	);
 }
 
 /**
- * R2から領収書を取得する
+ * R2から領収書を取得する（ユーザー認証付き）
  *
  * @param receiptUrl - 領収書のHTTPS URL
  * @returns Base64エンコードされたファイルデータまたはエラー
@@ -329,13 +341,24 @@ export async function uploadReceiptToR2(
 export async function getReceiptFromR2(
 	receiptUrl: string,
 ): Promise<TauriResult<string>> {
+	const sessionToken = getAuthToken();
+	if (!sessionToken) {
+		return {
+			success: false,
+			error: "認証が必要です。ログインしてください。",
+		};
+	}
+
 	return handleTauriCommand(
-		invoke<string>("get_receipt_from_r2", { receiptUrl }),
+		invoke<string>("get_receipt_with_auth", {
+			sessionToken,
+			receiptUrl,
+		}),
 	);
 }
 
 /**
- * R2から領収書を削除する
+ * R2から領収書を削除する（ユーザー認証付き）
  *
  * @param expenseId - 経費ID
  * @returns 成功またはエラー
@@ -343,8 +366,19 @@ export async function getReceiptFromR2(
 export async function deleteReceiptFromR2(
 	expenseId: number,
 ): Promise<TauriResult<boolean>> {
+	const sessionToken = getAuthToken();
+	if (!sessionToken) {
+		return {
+			success: false,
+			error: "認証が必要です。ログインしてください。",
+		};
+	}
+
 	return handleTauriCommand(
-		invoke<boolean>("delete_receipt_from_r2", { expenseId }),
+		invoke<boolean>("delete_receipt_with_auth", {
+			sessionToken,
+			expenseId,
+		}),
 	);
 }
 
@@ -563,5 +597,62 @@ export async function getAuthState(
 ): Promise<TauriResult<import("../types").AuthState>> {
 	return handleTauriCommand(
 		invoke<import("../types").AuthState>("get_auth_state", { sessionToken }),
+	);
+}
+
+// ========================================
+// サブスクリプション領収書関連のコマンド
+// ========================================
+
+/**
+ * サブスクリプション領収書ファイルをR2にアップロードする（ユーザー認証付き）
+ *
+ * @param subscriptionId - サブスクリプションID
+ * @param filePath - アップロードするファイルのパス
+ * @returns アップロードされたHTTPS URLまたはエラー
+ */
+export async function uploadSubscriptionReceiptToR2(
+	subscriptionId: number,
+	filePath: string,
+): Promise<TauriResult<string>> {
+	const sessionToken = getAuthToken();
+	if (!sessionToken) {
+		return {
+			success: false,
+			error: "認証が必要です。ログインしてください。",
+		};
+	}
+
+	return handleTauriCommand(
+		invoke<string>("upload_subscription_receipt_with_auth", {
+			sessionToken,
+			subscriptionId,
+			filePath,
+		}),
+	);
+}
+
+/**
+ * R2からサブスクリプション領収書を削除する（ユーザー認証付き）
+ *
+ * @param subscriptionId - サブスクリプションID
+ * @returns 成功またはエラー
+ */
+export async function deleteSubscriptionReceiptFromR2(
+	subscriptionId: number,
+): Promise<TauriResult<boolean>> {
+	const sessionToken = getAuthToken();
+	if (!sessionToken) {
+		return {
+			success: false,
+			error: "認証が必要です。ログインしてください。",
+		};
+	}
+
+	return handleTauriCommand(
+		invoke<boolean>("delete_subscription_receipt_with_auth", {
+			sessionToken,
+			subscriptionId,
+		}),
 	);
 }
