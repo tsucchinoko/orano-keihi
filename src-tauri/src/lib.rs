@@ -11,7 +11,13 @@ use features::{
     auth::commands as auth_commands,
     expenses::commands as expense_commands,
     migrations::{commands as migration_commands, database_update_commands, r2_migration_commands},
-    receipts::commands as receipt_commands,
+    receipts::{
+        auth_commands::{
+            delete_receipt_with_auth, download_receipt_with_auth, extract_path_from_url_with_auth,
+            get_receipt_with_auth, upload_receipt_with_auth,
+        },
+        commands as receipt_commands,
+    },
     security::commands as security_commands,
     subscriptions::commands as subscription_commands,
 };
@@ -254,6 +260,12 @@ pub fn run() {
             receipt_commands::upload_receipt_to_r2,
             receipt_commands::get_receipt_from_r2,
             receipt_commands::delete_receipt_from_r2,
+            // ユーザー認証付きR2領収書コマンド（新規）
+            upload_receipt_with_auth,
+            get_receipt_with_auth,
+            delete_receipt_with_auth,
+            download_receipt_with_auth,
+            extract_path_from_url_with_auth,
             // キャッシュ関連コマンド
             receipt_commands::get_receipt_offline,
             receipt_commands::sync_cache_on_online,

@@ -305,6 +305,20 @@ impl R2Client {
         format!("receipts/{expense_id}/{timestamp}-{uuid}-{filename}")
     }
 
+    /// ユーザー別ファイルキーを生成（新しい構造用）
+    ///
+    /// # 引数
+    /// * `user_id` - ユーザーID
+    /// * `expense_id` - 経費ID
+    /// * `filename` - ファイル名
+    ///
+    /// # 戻り値
+    /// ユーザー別ファイルキー（`users/{user_id}/receipts/{expense_id}/{timestamp}-{uuid}-{filename}`）
+    pub fn generate_user_file_key(user_id: i64, expense_id: i64, filename: &str) -> String {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+        UserPathManager::generate_user_receipt_path(user_id, expense_id, filename)
+    }
+
     /// ファイル形式を検証
     pub fn validate_file_format(filename: &str) -> AppResult<()> {
         let extension = std::path::Path::new(filename)
@@ -543,6 +557,166 @@ impl R2Client {
         } else {
             Err(AppError::Validation(format!("無効なURL形式: {url}")))
         }
+    }
+
+    /// ユーザー認証付きファイルアップロード
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `expense_id` - 経費ID
+    /// * `filename` - ファイル名
+    /// * `file_data` - ファイルデータ
+    /// * `content_type` - Content-Type
+    ///
+    /// # 戻り値
+    /// アップロードされたファイルのURL
+    pub async fn upload_file_with_user_auth(
+        &self,
+        user_id: i64,
+        expense_id: i64,
+        filename: &str,
+        file_data: Vec<u8>,
+        content_type: &str,
+    ) -> AppResult<String> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!(
+            "ユーザー認証付きファイルアップロード開始: user_id={user_id}, expense_id={expense_id}, filename={filename}"
+        );
+
+        // ユーザー別パスを生成
+        let file_path = UserPathManager::generate_user_receipt_path(user_id, expense_id, filename);
+
+        // ファイルをアップロード
+        let url = self
+            .upload_file(&file_path, file_data, content_type)
+            .await?;
+
+        info!(
+            "ユーザー認証付きファイルアップロード成功: user_id={user_id}, path={file_path}, url={url}"
+        );
+
+        Ok(url)
+    }
+
+    /// ユーザー認証付きファイル取得
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `file_path` - ファイルパス
+    ///
+    /// # 戻り値
+    /// ファイルデータ
+    pub async fn download_file_with_user_auth(
+        &self,
+        user_id: i64,
+        file_path: &str,
+    ) -> AppResult<Vec<u8>> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!("ユーザー認証付きファイル取得開始: user_id={user_id}, path={file_path}");
+
+        // ユーザーのアクセス権限を検証
+        UserPathManager::validate_user_access(user_id, file_path)?;
+
+        // ファイルをダウンロード
+        let data = self.download_file(file_path).await?;
+
+        info!(
+            "ユーザー認証付きファイル取得成功: user_id={user_id}, path={file_path}, size={} bytes",
+            data.len()
+        );
+
+        Ok(data)
+    }
+
+    /// ユーザー認証付きファイル削除
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `file_path` - ファイルパス
+    ///
+    /// # 戻り値
+    /// 削除成功の場合はOk(())
+    pub async fn delete_file_with_user_auth(&self, user_id: i64, file_path: &str) -> AppResult<()> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!("ユーザー認証付きファイル削除開始: user_id={user_id}, path={file_path}");
+
+        // ユーザーのアクセス権限を検証
+        UserPathManager::validate_user_access(user_id, file_path)?;
+
+        // ファイルを削除
+        self.delete_file(file_path).await?;
+
+        info!("ユーザー認証付きファイル削除成功: user_id={user_id}, path={file_path}");
+
+        Ok(())
+    }
+
+    /// 管理者権限付きファイルアクセス
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `is_admin` - 管理者フラグ
+    /// * `file_path` - ファイルパス
+    ///
+    /// # 戻り値
+    /// ファイルデータ
+    pub async fn download_file_with_admin_auth(
+        &self,
+        user_id: i64,
+        is_admin: bool,
+        file_path: &str,
+    ) -> AppResult<Vec<u8>> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!(
+            "管理者権限付きファイル取得開始: user_id={user_id}, is_admin={is_admin}, path={file_path}"
+        );
+
+        // 管理者または所有者のアクセス権限を検証
+        UserPathManager::validate_admin_or_user_access(user_id, is_admin, file_path)?;
+
+        // ファイルをダウンロード
+        let data = self.download_file(file_path).await?;
+
+        info!(
+            "管理者権限付きファイル取得成功: user_id={user_id}, path={file_path}, size={} bytes",
+            data.len()
+        );
+
+        Ok(data)
+    }
+
+    /// ユーザー認証付きPresigned URL生成
+    ///
+    /// # 引数
+    /// * `user_id` - 認証されたユーザーID
+    /// * `file_path` - ファイルパス
+    /// * `expires_in` - 有効期限
+    ///
+    /// # 戻り値
+    /// Presigned URL
+    pub async fn generate_presigned_url_with_user_auth(
+        &self,
+        user_id: i64,
+        file_path: &str,
+        expires_in: Duration,
+    ) -> AppResult<String> {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+
+        info!("ユーザー認証付きPresigned URL生成開始: user_id={user_id}, path={file_path}");
+
+        // ユーザーのアクセス権限を検証
+        UserPathManager::validate_user_access(user_id, file_path)?;
+
+        // Presigned URLを生成
+        let url = self.generate_presigned_url(file_path, expires_in).await?;
+
+        info!("ユーザー認証付きPresigned URL生成成功: user_id={user_id}, path={file_path}");
+
+        Ok(url)
     }
 
     /// キャッシュ対応のパフォーマンス統計を取得する
