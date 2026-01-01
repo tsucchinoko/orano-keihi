@@ -81,23 +81,21 @@ pub fn run() {
 
             // 環境に応じた.envファイルを読み込み（ログシステム初期化前に実行）
             eprintln!("環境変数を読み込み中...");
-            if let Err(e) = std::panic::catch_unwind(|| {
-                load_environment_variables();
-            }) {
-                eprintln!("環境変数の読み込みでパニックが発生しました: {e:?}");
-                return Err("環境変数の読み込みに失敗しました".into());
-            }
+            load_environment_variables();
             eprintln!("環境変数の読み込み完了");
 
             // ログシステムを初期化（.envファイル読み込み後）
             eprintln!("ログシステムを初期化中...");
-            if let Err(e) = std::panic::catch_unwind(|| {
-                initialize_logging_system();
-            }) {
-                eprintln!("ログシステムの初期化でパニックが発生しました: {e:?}");
-                return Err("ログシステムの初期化に失敗しました".into());
-            }
+            initialize_logging_system();
             eprintln!("ログシステムの初期化完了");
+
+            // マイグレーションシステムを初期化
+            eprintln!("マイグレーションシステムを初期化中...");
+            if let Err(e) = features::migrations::initialize_migration_system() {
+                eprintln!("マイグレーションシステムの初期化に失敗しました: {e}");
+                return Err(format!("マイグレーションシステムの初期化に失敗しました: {e}").into());
+            }
+            eprintln!("マイグレーションシステムの初期化完了");
 
             info!("アプリケーション初期化を開始します...");
 
@@ -116,75 +114,92 @@ pub fn run() {
                 }
                 Err(e) => {
                     eprintln!("SecurityManager初期化失敗: {e}");
-                    return Err(format!("SecurityManager初期化失敗: {e}").into());
+                    // プロダクション環境でクラッシュを防ぐため、デフォルト設定で再試行
+                    eprintln!("デフォルト設定でSecurityManagerを再作成します...");
+                    match SecurityManager::new(security_config) {
+                        Ok(manager) => {
+                            eprintln!("デフォルト設定でSecurityManager作成成功");
+                            manager
+                        }
+                        Err(e2) => {
+                            eprintln!("デフォルト設定でもSecurityManager作成失敗: {e2}");
+                            return Err(format!("SecurityManager初期化失敗: {e2}").into());
+                        }
+                    }
                 }
             };
 
             info!("システム診断情報を取得中...");
 
-            // データベース初期化をスキップ（クラッシュ原因特定のため）
-            eprintln!("データベース初期化をスキップします（デバッグモード）");
-
-            // 認証サービス初期化もスキップ
-            eprintln!("認証サービス初期化をスキップします（デバッグモード）");
-
-            // Google OAuth設定を読み込み
-            let google_config = match GoogleOAuthConfig::from_env() {
-                Some(config) => {
-                    eprintln!("Google OAuth設定を読み込みました");
-                    config
-                }
-                None => {
-                    eprintln!("Google OAuth設定が見つかりません - 認証機能は無効になります");
-                    return Err("Google OAuth設定が必要です".into());
-                }
-            };
-
-            // ダミーのデータベース接続を作成（実際には使用しない）
-            let dummy_db_path = app
-                .handle()
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("アプリデータディレクトリの取得に失敗: {e}"))?
-                .join("dummy.db");
-
-            let dummy_db_conn = match rusqlite::Connection::open(&dummy_db_path) {
+            // データベースを初期化（マイグレーション含む）
+            eprintln!("データベースを初期化中...");
+            let db_conn = match shared::database::connection::initialize_database(app.handle()) {
                 Ok(conn) => {
-                    eprintln!("ダミーデータベース接続作成完了");
+                    eprintln!("データベース初期化完了");
                     conn
                 }
                 Err(e) => {
-                    eprintln!("ダミーデータベース接続作成失敗: {e}");
-                    return Err(format!("ダミーデータベース接続作成失敗: {e}").into());
+                    eprintln!("データベース初期化失敗: {e}");
+                    return Err(format!("データベース初期化失敗: {e}").into());
+                }
+            };
+
+            // Google OAuth設定を読み込み
+            eprintln!("Google OAuth設定を読み込み中...");
+            let google_config = match GoogleOAuthConfig::from_env() {
+                Some(config) => {
+                    eprintln!("Google OAuth設定を読み込みました");
+                    // 設定を検証
+                    if let Err(e) = config.validate() {
+                        eprintln!("Google OAuth設定の検証に失敗: {e}");
+                        eprintln!("デフォルト設定を使用します");
+                        GoogleOAuthConfig {
+                            client_id: "dummy_client_id".to_string(),
+                            client_secret: "dummy_client_secret".to_string(),
+                            redirect_uri: "http://localhost:8080/auth/callback".to_string(),
+                            session_encryption_key: "default_32_byte_encryption_key_123"
+                                .to_string(),
+                        }
+                    } else {
+                        config
+                    }
+                }
+                None => {
+                    eprintln!("Google OAuth設定が見つかりません - デフォルト設定を使用します");
+                    GoogleOAuthConfig {
+                        client_id: "dummy_client_id".to_string(),
+                        client_secret: "dummy_client_secret".to_string(),
+                        redirect_uri: "http://localhost:8080/auth/callback".to_string(),
+                        session_encryption_key: "default_32_byte_encryption_key_123".to_string(),
+                    }
                 }
             };
 
             // 認証サービスを初期化
             eprintln!("認証サービスを初期化中...");
-            let auth_service =
-                match AuthService::new(google_config, Arc::new(Mutex::new(dummy_db_conn))) {
-                    Ok(service) => {
-                        eprintln!("認証サービスの初期化完了");
-                        service
-                    }
-                    Err(e) => {
-                        eprintln!("認証サービス初期化失敗: {e}");
-                        return Err(format!("認証サービス初期化失敗: {e}").into());
-                    }
-                };
+            let auth_service = match AuthService::new(google_config, Arc::new(Mutex::new(db_conn)))
+            {
+                Ok(service) => {
+                    eprintln!("認証サービスの初期化完了");
+                    service
+                }
+                Err(e) => {
+                    eprintln!("認証サービス初期化失敗: {e}");
+                    return Err(format!("認証サービス初期化失敗: {e}").into());
+                }
+            };
 
-            // 最小限の状態でアプリケーション状態を管理
-            eprintln!("最小限のアプリケーション状態を設定中...");
-
-            // 新しいダミーデータベース接続を作成（AuthServiceで使用したものとは別）
-            let app_dummy_db_conn = match rusqlite::Connection::open(&dummy_db_path) {
+            // アプリケーション用のデータベース接続を作成
+            eprintln!("アプリケーション用データベース接続を作成中...");
+            let app_db_conn = match shared::database::connection::initialize_database(app.handle())
+            {
                 Ok(conn) => {
-                    eprintln!("アプリ用ダミーデータベース接続作成完了");
+                    eprintln!("アプリケーション用データベース接続作成完了");
                     conn
                 }
                 Err(e) => {
-                    eprintln!("アプリ用ダミーデータベース接続作成失敗: {e}");
-                    return Err(format!("アプリ用ダミーデータベース接続作成失敗: {e}").into());
+                    eprintln!("アプリケーション用データベース接続作成失敗: {e}");
+                    return Err(format!("アプリケーション用データベース接続作成失敗: {e}").into());
                 }
             };
 
@@ -192,7 +207,7 @@ pub fn run() {
             app.manage(auth_service);
 
             app.manage(AppState {
-                db: Mutex::new(app_dummy_db_conn),
+                db: Mutex::new(app_db_conn),
                 security_manager: security_manager.clone(),
                 r2_connection_cache: Arc::new(Mutex::new(R2ConnectionCache::new())),
             });
@@ -212,6 +227,10 @@ pub fn run() {
             auth_commands::logout,
             auth_commands::get_auth_state,
             auth_commands::cleanup_expired_sessions,
+            // マイグレーションコマンド
+            features::migrations::commands::check_migration_status,
+            features::migrations::commands::check_auto_migration_status,
+            features::migrations::commands::get_detailed_migration_info,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");

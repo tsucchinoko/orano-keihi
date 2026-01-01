@@ -52,18 +52,47 @@ pub async fn get_database_connection() -> AppResult<Connection> {
 /// 4. テーブル作成とマイグレーションの実行
 /// 5. 自動マイグレーションシステムの実行（要件3.1）
 pub fn initialize_database(app_handle: &AppHandle) -> AppResult<Connection> {
+    eprintln!("データベース初期化を開始します...");
+
     // データベースファイルパスを取得
     let database_path = get_database_path(app_handle)?;
+    eprintln!("データベースパス: {database_path:?}");
 
     // データベース接続を開く
-    let conn = Connection::open(&database_path).map_err(|e| AppError::Database(e.to_string()))?;
+    eprintln!("データベース接続を開いています...");
+    let conn = Connection::open(&database_path).map_err(|e| {
+        eprintln!("データベース接続失敗: {e}");
+        eprintln!("データベースパス: {database_path:?}");
+        eprintln!("ファイル存在確認: {}", database_path.exists());
+
+        // 親ディレクトリの権限を確認
+        if let Some(parent) = database_path.parent() {
+            eprintln!("親ディレクトリ: {parent:?}");
+            eprintln!("親ディレクトリ存在確認: {}", parent.exists());
+
+            // ディレクトリの作成を再試行
+            if !parent.exists() {
+                eprintln!("親ディレクトリが存在しないため、作成を試行します...");
+                if let Err(create_err) = std::fs::create_dir_all(parent) {
+                    eprintln!("ディレクトリ作成失敗: {create_err}");
+                } else {
+                    eprintln!("ディレクトリ作成成功");
+                }
+            }
+        }
+
+        AppError::Database(format!("データベース接続失敗: {e}"))
+    })?;
 
     // テーブルを作成
+    eprintln!("テーブルを作成中...");
     create_tables(&conn)?;
 
     // 自動マイグレーションシステムを実行（要件3.1, 3.4, 3.5）
+    eprintln!("自動マイグレーションシステムを実行中...");
     execute_auto_migration_system(&conn)?;
 
+    eprintln!("データベース初期化完了: {database_path:?}");
     log::info!("データベースを初期化しました: {database_path:?}");
 
     Ok(conn)

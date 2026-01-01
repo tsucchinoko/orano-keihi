@@ -5,11 +5,10 @@
 use super::errors::MigrationError;
 use super::models::MigrationExecutionResult;
 use crate::features::migrations::service::{
-    create_backup, migrate_receipt_path_to_url, migrate_user_authentication, run_migrations,
+    migrate_receipt_path_to_url, migrate_user_authentication, run_migrations,
 };
 use chrono::Utc;
-use chrono_tz::Asia::Tokyo;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use std::time::Instant;
 
 /// マイグレーション実行トレイト
@@ -50,9 +49,7 @@ impl MigrationExecutor {
 
     /// マイグレーションを安全に実行
     ///
-    /// トランザクション管理とエラー時のロールバック機能を含みます。
-    /// 要件3.3（バックアップ作成）、6.1（トランザクションロールバック）、
-    /// 6.2（詳細エラーメッセージ）、6.3（バックアップ場所通知）を満たします。
+    /// 既存のテーブルがある場合はスキップし、マイグレーション記録のみ追加します。
     ///
     /// # 引数
     /// * `conn` - データベース接続
@@ -72,20 +69,7 @@ impl MigrationExecutor {
             executable_migration.name()
         );
 
-        // 1. バックアップを作成（要件3.3）
-        let backup_path = match self.create_backup(conn) {
-            Ok(path) => {
-                log::info!("バックアップを作成しました: {}", path);
-                Some(path)
-            }
-            Err(e) => {
-                let error_msg = format!("バックアップ作成に失敗しました: {}", e);
-                log::error!("{}", error_msg);
-                return Ok(MigrationExecutionResult::failure(error_msg, None));
-            }
-        };
-
-        // 2. マイグレーションを実行（既存の関数を直接呼び出し）
+        // マイグレーションを実行（バックアップなし）
         let migration_result = executable_migration.execute(conn);
 
         match migration_result {
@@ -101,60 +85,19 @@ impl MigrationExecutor {
                 Ok(MigrationExecutionResult::success(
                     success_msg,
                     execution_time,
-                    backup_path,
+                    None, // バックアップパスなし
                 ))
             }
             Err(e) => {
-                // 詳細なエラーメッセージをログに出力（要件6.2）
                 log::error!("マイグレーション実行エラー: {}", e);
 
-                // バックアップファイルの場所を通知（要件6.3）
-                let error_msg = if let Some(ref backup) = backup_path {
-                    format!(
-                        "マイグレーション '{}' の実行に失敗しました: {}。バックアップファイル: {}",
-                        executable_migration.name(),
-                        e,
-                        backup
-                    )
-                } else {
-                    format!(
-                        "マイグレーション '{}' の実行に失敗しました: {}",
-                        executable_migration.name(),
-                        e
-                    )
-                };
+                let error_msg = format!(
+                    "マイグレーション '{}' の実行に失敗しました: {}",
+                    executable_migration.name(),
+                    e
+                );
 
-                Ok(MigrationExecutionResult::failure(error_msg, backup_path))
-            }
-        }
-    }
-
-    /// バックアップを作成
-    ///
-    /// JST（日本標準時）を使用してタイムスタンプ付きのバックアップファイルを作成します。
-    ///
-    /// # 引数
-    /// * `conn` - データベース接続
-    ///
-    /// # 戻り値
-    /// バックアップファイルのパス
-    pub fn create_backup(&self, conn: &Connection) -> Result<String, MigrationError> {
-        // JST（日本標準時）でタイムスタンプを生成
-        let now_jst = Utc::now().with_timezone(&Tokyo);
-        let backup_path = format!("database_backup_{}.db", now_jst.timestamp());
-
-        log::info!("データベースバックアップを作成中: {}", backup_path);
-
-        // 既存のバックアップ機能を使用
-        match create_backup(conn, &backup_path) {
-            Ok(_) => {
-                log::info!("バックアップ作成完了: {}", backup_path);
-                Ok(backup_path)
-            }
-            Err(e) => {
-                let error_msg = format!("バックアップ作成に失敗しました: {}", e);
-                log::error!("{}", error_msg);
-                Err(MigrationError::system(error_msg, Some(e.to_string())))
+                Ok(MigrationExecutionResult::failure(error_msg, None))
             }
         }
     }
@@ -175,6 +118,30 @@ pub struct BasicSchemaMigrationExecutor;
 impl MigrationExecutorTrait for BasicSchemaMigrationExecutor {
     fn execute(&self, conn: &Connection) -> Result<(), String> {
         log::info!("基本スキーママイグレーションを実行中...");
+
+        // 既存のテーブルをチェック
+        let expenses_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='expenses'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("テーブル存在チェックエラー: {}", e))?;
+
+        if expenses_exists > 0 {
+            log::info!("基本テーブルは既に存在しています。マイグレーション記録を追加します。");
+
+            // マイグレーション記録を追加
+            let now_jst = Utc::now().with_timezone(&chrono_tz::Asia::Tokyo);
+            let applied_at = now_jst.to_rfc3339();
+
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO migrations (name, applied_at, checksum) VALUES (?1, ?2, ?3)",
+                params![self.name(), applied_at, "existing_schema"],
+            );
+
+            return Ok(());
+        }
 
         run_migrations(conn).map_err(|e| {
             let error_msg = format!("基本スキーママイグレーション実行エラー: {}", e);
@@ -200,6 +167,30 @@ pub struct UserAuthMigrationExecutor;
 impl MigrationExecutorTrait for UserAuthMigrationExecutor {
     fn execute(&self, conn: &Connection) -> Result<(), String> {
         log::info!("ユーザー認証マイグレーションを実行中...");
+
+        // 既存のusersテーブルをチェック
+        let users_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("usersテーブル存在チェックエラー: {}", e))?;
+
+        if users_exists > 0 {
+            log::info!("usersテーブルは既に存在しています。マイグレーション記録を追加します。");
+
+            // マイグレーション記録を追加
+            let now_jst = Utc::now().with_timezone(&chrono_tz::Asia::Tokyo);
+            let applied_at = now_jst.to_rfc3339();
+
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO migrations (name, applied_at, checksum) VALUES (?1, ?2, ?3)",
+                params![self.name(), applied_at, "existing_users_table"],
+            );
+
+            return Ok(());
+        }
 
         let result = migrate_user_authentication(conn).map_err(|e| {
             let error_msg = format!("ユーザー認証マイグレーション実行エラー: {}", e);
@@ -235,6 +226,25 @@ impl MigrationExecutorTrait for ReceiptUrlMigrationExecutor {
     fn execute(&self, conn: &Connection) -> Result<(), String> {
         log::info!("receipt_urlマイグレーションを実行中...");
 
+        // 既存のreceipt_urlカラムをチェック
+        let has_receipt_url = check_column_exists(conn, "expenses", "receipt_url");
+        let has_receipt_path = check_column_exists(conn, "expenses", "receipt_path");
+
+        if has_receipt_url && !has_receipt_path {
+            log::info!("receipt_urlマイグレーションは既に完了しています。マイグレーション記録を追加します。");
+
+            // マイグレーション記録を追加
+            let now_jst = Utc::now().with_timezone(&chrono_tz::Asia::Tokyo);
+            let applied_at = now_jst.to_rfc3339();
+
+            let _ = conn.execute(
+                "INSERT OR IGNORE INTO migrations (name, applied_at, checksum) VALUES (?1, ?2, ?3)",
+                params![self.name(), applied_at, "existing_receipt_url"],
+            );
+
+            return Ok(());
+        }
+
         let result = migrate_receipt_path_to_url(conn).map_err(|e| {
             let error_msg = format!("receipt_urlマイグレーション実行エラー: {}", e);
             log::error!("{}", error_msg);
@@ -256,6 +266,39 @@ impl MigrationExecutorTrait for ReceiptUrlMigrationExecutor {
 
     fn name(&self) -> &str {
         "003_migrate_receipt_url"
+    }
+}
+
+/// テーブルに指定されたカラムが存在するかチェックする
+///
+/// # 引数
+/// * `conn` - データベース接続
+/// * `table_name` - テーブル名
+/// * `column_name` - カラム名
+///
+/// # 戻り値
+/// カラムが存在する場合はtrue、存在しないかエラーの場合はfalse
+fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -> bool {
+    let query = format!("PRAGMA table_info({table_name})");
+
+    match conn.prepare(&query) {
+        Ok(mut stmt) => {
+            match stmt.query_map([], |row| {
+                let col_name: String = row.get(1)?;
+                Ok(col_name)
+            }) {
+                Ok(rows) => {
+                    for col_name in rows.flatten() {
+                        if col_name == column_name {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                Err(_) => false,
+            }
+        }
+        Err(_) => false,
     }
 }
 
@@ -307,27 +350,6 @@ mod tests {
         let executor = MigrationExecutor::new();
         // 基本的な作成テスト
         let _ = executor;
-    }
-
-    #[test]
-    fn test_create_backup() {
-        let executor = MigrationExecutor::new();
-        let conn = create_test_db();
-
-        // テストテーブルを作成
-        conn.execute(
-            "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
-            [],
-        )
-        .unwrap();
-
-        // バックアップ作成テスト
-        let result = executor.create_backup(&conn);
-        assert!(result.is_ok());
-
-        let backup_path = result.unwrap();
-        assert!(backup_path.starts_with("database_backup_"));
-        assert!(backup_path.ends_with(".db"));
     }
 
     #[test]
