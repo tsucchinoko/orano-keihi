@@ -3,6 +3,9 @@
 //! R2ユーザーディレクトリ移行のためのバッチ処理機能を提供します。
 //! 並列処理制御、一時停止・再開・停止機能、ファイルハッシュ計算・検証を含みます。
 
+use super::error_handler::handle_migration_error;
+use super::errors::MigrationError;
+use super::logging::log_migration_info;
 use super::r2_user_directory_migration::{create_migration_item, update_migration_item_status};
 use crate::features::receipts::service::R2Client;
 use crate::shared::errors::{AppError, AppResult};
@@ -438,10 +441,23 @@ impl BatchProcessor {
                     AppError::concurrency("データベースワーカーからの応答を受信できませんでした")
                 })??;
 
-                info!("ファイル移行完了: {} -> {}", item.old_path, item.new_path);
+                log_migration_info(
+                    "file_migration",
+                    &format!("ファイル移行完了: {} -> {}", item.old_path, item.new_path),
+                    Some(migration_log_id),
+                );
                 Ok(())
             }
             Err(e) => {
+                // エラーハンドリング機能を使用
+                let _handling_result = handle_migration_error(
+                    &e,
+                    Some(migration_log_id),
+                    Some(item.user_id),
+                    Some("file_migration"),
+                )
+                .await;
+
                 error!("ファイル移行失敗: {}, エラー: {}", item.old_path, e);
 
                 // 失敗ステータスに更新
@@ -460,7 +476,7 @@ impl BatchProcessor {
                     AppError::concurrency("データベースワーカーからの応答を受信できませんでした")
                 })??;
 
-                Err(e)
+                Err(e.into())
             }
         }
     }
@@ -476,7 +492,7 @@ impl BatchProcessor {
     async fn execute_file_migration(
         r2_client: &R2Client,
         item: &MigrationItem,
-    ) -> AppResult<String> {
+    ) -> Result<String, MigrationError> {
         // 1. 元ファイルをダウンロード
         let file_data = Self::download_file_from_r2(r2_client, &item.old_path).await?;
 
@@ -487,17 +503,26 @@ impl BatchProcessor {
         let content_type = R2Client::get_content_type(&item.old_path);
         let _new_url = r2_client
             .upload_file(&item.new_path, file_data.clone(), &content_type)
-            .await?;
+            .await
+            .map_err(|e| MigrationError::R2Operation {
+                message: format!("ファイルアップロードに失敗: {}", e),
+                operation: "upload".to_string(),
+                bucket: "unknown".to_string(),
+                key: item.new_path.clone(),
+                status_code: None,
+            })?;
 
         // 4. アップロードしたファイルの整合性を確認
         let uploaded_data = Self::download_file_from_r2(r2_client, &item.new_path).await?;
         let uploaded_hash = Self::calculate_file_hash(&uploaded_data);
 
         if original_hash != uploaded_hash {
-            return Err(AppError::validation(format!(
-                "ファイルハッシュが一致しません: {}",
-                item.old_path
-            )));
+            return Err(MigrationError::IntegrityValidation {
+                message: format!("ファイルハッシュが一致しません: {}", item.old_path),
+                validation_type: "file_hash".to_string(),
+                expected: original_hash,
+                actual: uploaded_hash,
+            });
         }
 
         Ok(original_hash)
@@ -511,11 +536,23 @@ impl BatchProcessor {
     ///
     /// # 戻り値
     /// ファイルデータ
-    async fn download_file_from_r2(r2_client: &R2Client, key: &str) -> AppResult<Vec<u8>> {
+    async fn download_file_from_r2(
+        r2_client: &R2Client,
+        key: &str,
+    ) -> Result<Vec<u8>, MigrationError> {
         debug!("R2からファイルをダウンロード中: {}", key);
 
         // R2Clientのdownload_fileメソッドを呼び出し
-        r2_client.download_file(key).await
+        r2_client
+            .download_file(key)
+            .await
+            .map_err(|e| MigrationError::R2Operation {
+                message: format!("ファイルダウンロードに失敗: {}", e),
+                operation: "download".to_string(),
+                bucket: "unknown".to_string(),
+                key: key.to_string(),
+                status_code: None,
+            })
     }
 
     /// ファイルハッシュを計算

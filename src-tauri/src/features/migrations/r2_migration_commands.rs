@@ -24,12 +24,14 @@ static CURRENT_MIGRATION_ID: Lazy<Arc<Mutex<Option<i64>>>> =
 
 /// 簡易R2移行サービス（プレースホルダー実装）
 pub struct SimpleR2MigrationService {
-    r2_client: Arc<R2Client>,
+    _r2_client: Arc<R2Client>,
 }
 
 impl SimpleR2MigrationService {
     pub fn new(r2_client: Arc<R2Client>) -> Self {
-        Self { r2_client }
+        Self {
+            _r2_client: r2_client,
+        }
     }
 
     pub async fn execute_migration(

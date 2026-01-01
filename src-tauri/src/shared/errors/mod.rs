@@ -45,7 +45,7 @@ pub enum AppError {
 }
 
 /// エラーの重要度を表す列挙型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ErrorSeverity {
     /// 低重要度（ユーザー入力エラーなど）
     Low,

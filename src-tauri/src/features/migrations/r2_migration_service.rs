@@ -3,10 +3,14 @@
 //! R2ユーザーディレクトリ移行の全体的な制御を行うサービス
 
 use super::batch_processor::{BatchProcessor, MigrationItem, MigrationResult, R2FileInfo};
+use super::error_handler::{handle_migration_error, ErrorHandlingResult};
+use super::errors::MigrationError;
+use super::logging::{log_migration_info, StructuredLogger};
 use super::r2_user_directory_migration::{
     create_migration_log_entry, get_migration_progress, update_migration_log_status,
     MigrationProgress,
 };
+use super::security_audit::log_migration_security_error;
 use crate::features::receipts::service::R2Client;
 use crate::features::receipts::user_path_manager::UserPathManager;
 use crate::shared::database::connection::get_database_connection;
@@ -61,19 +65,44 @@ impl R2MigrationService {
         batch_size: usize,
         created_by: &str,
     ) -> AppResult<(MigrationResult, i64)> {
-        info!(
-            "R2移行プロセスを開始します (dry_run: {}, batch_size: {})",
-            dry_run, batch_size
+        log_migration_info(
+            "migration_lifecycle",
+            &format!("R2移行プロセスを開始します (dry_run: {}, batch_size: {})", dry_run, batch_size),
+            None,
         );
 
         let start_time = Instant::now();
 
         // 1. 事前検証
-        self.pre_migration_validation().await?;
+        if let Err(e) = self.pre_migration_validation().await {
+            let migration_error = MigrationError::PreValidation {
+                message: e.to_string(),
+                details: "事前検証でエラーが発生しました".to_string(),
+            };
+            
+            let _result = handle_migration_error(&migration_error, None, None, Some("pre_validation")).await;
+            return Err(e);
+        }
 
         // 2. 移行対象ファイルの特定
-        let migration_items = self.identify_migration_targets().await?;
-        info!("移行対象ファイル数: {}", migration_items.len());
+        let migration_items = match self.identify_migration_targets().await {
+            Ok(items) => items,
+            Err(e) => {
+                let migration_error = MigrationError::TargetIdentification {
+                    message: e.to_string(),
+                    file_count: 0,
+                };
+                
+                let _result = handle_migration_error(&migration_error, None, None, Some("target_identification")).await;
+                return Err(e);
+            }
+        };
+
+        log_migration_info(
+            "migration_lifecycle",
+            &format!("移行対象ファイル数: {}", migration_items.len()),
+            None,
+        );
 
         // 3. 移行ログエントリを作成
         let conn = get_database_connection().await?;
@@ -94,7 +123,11 @@ impl R2MigrationService {
 
         if dry_run {
             // ドライランモード: 実際の移行は行わない
-            info!("ドライランモード: 移行対象の特定のみ実行");
+            log_migration_info(
+                "migration_lifecycle",
+                "ドライランモード: 移行対象の特定のみ実行",
+                Some(migration_log_id),
+            );
 
             update_migration_log_status(
                 &conn,
@@ -115,7 +148,17 @@ impl R2MigrationService {
         }
 
         // 4. データベースバックアップ
-        self.create_database_backup().await?;
+        if let Err(e) = self.create_database_backup().await {
+            let migration_error = MigrationError::DatabaseUpdate {
+                message: e.to_string(),
+                table_name: "backup".to_string(),
+                operation: "create_backup".to_string(),
+                affected_rows: None,
+            };
+            
+            let _result = handle_migration_error(&migration_error, Some(migration_log_id), None, Some("database_backup")).await;
+            return Err(e);
+        }
 
         // 5. 移行ログを進行中に更新
         update_migration_log_status(&conn, migration_log_id, "in_progress", 0, 0, 0, None)?;
@@ -130,7 +173,17 @@ impl R2MigrationService {
 
         // 7. 移行後検証
         if result.error_count == 0 {
-            self.post_migration_validation().await?;
+            if let Err(e) = self.post_migration_validation().await {
+                let migration_error = MigrationError::IntegrityValidation {
+                    message: e.to_string(),
+                    validation_type: "post_migration".to_string(),
+                    expected: "no_errors".to_string(),
+                    actual: "validation_failed".to_string(),
+                };
+                
+                let _result = handle_migration_error(&migration_error, Some(migration_log_id), None, Some("post_validation")).await;
+                warn!("移行後検証でエラーが発生しましたが、移行は続行します: {}", e);
+            }
         }
 
         // 8. 移行ログを完了に更新
@@ -153,9 +206,13 @@ impl R2MigrationService {
             }).to_string()),
         )?;
 
-        info!(
-            "R2移行プロセスが完了しました: 成功={}, エラー={}, 実行時間={:?}",
-            result.success_count, result.error_count, result.duration
+        log_migration_info(
+            "migration_lifecycle",
+            &format!(
+                "R2移行プロセスが完了しました: 成功={}, エラー={}, 実行時間={:?}",
+                result.success_count, result.error_count, result.duration
+            ),
+            Some(migration_log_id),
         );
 
         Ok((result, migration_log_id))
