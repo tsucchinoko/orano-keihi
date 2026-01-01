@@ -25,6 +25,10 @@ use tokio::sync::mpsc;
 
 /// 領収書ファイルをR2にアップロードする（統一エラーハンドリング版）
 ///
+/// # 非推奨
+/// このコマンドはレガシーパス構造を使用するため非推奨です。
+/// 代わりに `upload_receipt_with_auth` を使用してください。
+///
 /// # 引数
 /// * `expense_id` - 経費ID
 /// * `file_path` - 元のファイルパス
@@ -32,6 +36,7 @@ use tokio::sync::mpsc;
 ///
 /// # 戻り値
 /// アップロードされた領収書のHTTPS URL、または失敗時はエラーメッセージ
+#[deprecated(note = "レガシーパス構造のため非推奨。upload_receipt_with_authを使用してください")]
 #[tauri::command]
 pub async fn upload_receipt_to_r2(
     expense_id: i64,

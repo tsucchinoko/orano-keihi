@@ -113,19 +113,31 @@ pub async fn update_expense(
 ///
 /// # 引数
 /// * `id` - 経費ID
+/// * `session_token` - セッショントークン
 /// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+/// * `auth_service` - 認証サービス
 ///
 /// # 戻り値
 /// 成功時は空、失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn delete_expense(
     id: i64,
+    session_token: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+    auth_service: State<'_, crate::features::auth::service::AuthService>,
 ) -> Result<(), String> {
     use chrono::Utc;
     use chrono_tz::Asia::Tokyo;
+
+    // 認証チェック
+    let _user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/expenses/delete")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
 
     // 現在のreceipt_urlを取得
     let current_receipt_url = {
@@ -139,10 +151,11 @@ pub async fn delete_expense(
 
     // 領収書がR2に存在する場合は削除
     if let Some(receipt_url) = current_receipt_url {
-        // R2からファイルを削除（トランザクション的な削除処理：R2→DB順）
-        let deletion_result = crate::features::receipts::commands::delete_receipt_from_r2(
+        // 認証付きR2削除コマンドを使用（経費IDではなくreceipt_urlを渡す）
+        let deletion_result = crate::features::receipts::auth_commands::delete_receipt_with_auth(
+            session_token.unwrap_or_default(),
             receipt_url.clone(),
-            app.clone(),
+            auth_service,
             state.clone(),
         )
         .await;

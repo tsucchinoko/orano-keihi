@@ -319,6 +319,24 @@ impl R2Client {
         UserPathManager::generate_user_receipt_path(user_id, expense_id, filename)
     }
 
+    /// サブスクリプション用のユーザー別ファイルキーを生成
+    ///
+    /// # 引数
+    /// * `user_id` - ユーザーID
+    /// * `subscription_id` - サブスクリプションID
+    /// * `filename` - ファイル名
+    ///
+    /// # 戻り値
+    /// ユーザー別サブスクリプションファイルキー（`users/{user_id}/subscriptions/{subscription_id}/{timestamp}-{uuid}-{filename}`）
+    pub fn generate_user_subscription_key(
+        user_id: i64,
+        subscription_id: i64,
+        filename: &str,
+    ) -> String {
+        use crate::features::receipts::user_path_manager::UserPathManager;
+        UserPathManager::generate_user_subscription_path(user_id, subscription_id, filename)
+    }
+
     /// ファイル形式を検証
     pub fn validate_file_format(filename: &str) -> AppResult<()> {
         let extension = std::path::Path::new(filename)

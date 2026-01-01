@@ -275,6 +275,9 @@ pub fn run() {
             receipt_auth_commands::delete_receipt_with_auth,
             receipt_auth_commands::download_receipt_with_auth,
             receipt_auth_commands::extract_path_from_url_with_auth,
+            // サブスクリプション領収書コマンド（認証付き）
+            receipt_auth_commands::upload_subscription_receipt_with_auth,
+            receipt_auth_commands::delete_subscription_receipt_with_auth,
             // 領収書コマンド（通常）
             receipt_commands::upload_receipt_to_r2,
             receipt_commands::get_receipt_from_r2,

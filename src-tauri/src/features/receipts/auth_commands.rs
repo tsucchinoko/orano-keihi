@@ -9,7 +9,7 @@ use crate::features::security::service::SecurityManager;
 use crate::shared::config::environment::R2Config;
 use crate::shared::errors::AppError;
 use crate::AppState;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -485,4 +485,302 @@ async fn create_auth_middleware(
     let security_service = Arc::new(security_manager.clone());
 
     Ok(AuthMiddleware::new(auth_service, security_service))
+}
+
+/// サブスクリプション用ユーザー認証付きファイルアップロード
+///
+/// # 引数
+/// * `session_token` - セッショントークン
+/// * `subscription_id` - サブスクリプションID
+/// * `file_path` - ローカルファイルパス
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// アップロードされたファイルのURL
+#[tauri::command]
+pub async fn upload_subscription_receipt_with_auth(
+    session_token: String,
+    subscription_id: i64,
+    file_path: String,
+    auth_service: State<'_, AuthService>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    info!(
+        "サブスクリプション用ユーザー認証付きファイルアップロード開始: subscription_id={subscription_id}, file_path={file_path}"
+    );
+
+    // 認証ミドルウェアを初期化
+    let auth_middleware = create_auth_middleware(&auth_service, &state.security_manager).await?;
+
+    // 認証を実行
+    let user = auth_middleware
+        .authenticate_request(Some(&session_token), "/subscriptions/upload")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    info!("認証成功: user_id={}", user.id);
+
+    // アップロード処理を実行
+    let result =
+        upload_subscription_receipt_internal(user.id, subscription_id, file_path, state).await;
+
+    match result {
+        Ok(url) => {
+            info!(
+                "サブスクリプション用ユーザー認証付きファイルアップロード成功: user_id={}, subscription_id={subscription_id}, url={url}",
+                user.id
+            );
+            Ok(url)
+        }
+        Err(app_error) => {
+            let user_message = app_error.user_message();
+            error!(
+                "サブスクリプション用ユーザー認証付きファイルアップロード失敗: user_id={}, subscription_id={subscription_id}, error={app_error}",
+                user.id
+            );
+            Err(user_message.to_string())
+        }
+    }
+}
+
+/// サブスクリプション用内部的なアップロード処理
+async fn upload_subscription_receipt_internal(
+    user_id: i64,
+    subscription_id: i64,
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, AppError> {
+    // ファイルパスの検証
+    let source_path = Path::new(&file_path);
+    if !source_path.exists() {
+        return Err(AppError::NotFound(format!(
+            "指定されたファイルが存在しません: {file_path}"
+        )));
+    }
+
+    // ファイル名を取得
+    let filename = source_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| {
+            AppError::Validation(format!("ファイル名の取得に失敗しました: {file_path}"))
+        })?;
+
+    debug!("ファイル名を取得しました: {filename}");
+
+    // ファイル形式の事前検証
+    R2Client::validate_file_format(filename)?;
+
+    // ファイルサイズの事前検証
+    let metadata = fs::metadata(source_path)
+        .map_err(|e| AppError::ExternalService(format!("ファイル情報取得失敗: {e}")))?;
+
+    let file_size = metadata.len();
+    debug!("ファイルサイズ: {file_size} bytes");
+
+    R2Client::validate_file_size(file_size)?;
+
+    // ファイルを読み込み
+    let file_data = fs::read(source_path)
+        .map_err(|e| AppError::ExternalService(format!("ファイル読み込み失敗: {e}")))?;
+
+    info!("ファイルを読み込みました: {} bytes", file_data.len());
+
+    // R2設定を読み込み
+    let config = R2Config::from_env().ok_or_else(|| {
+        AppError::Configuration(
+            "R2設定読み込み失敗: 必要な環境変数が設定されていません".to_string(),
+        )
+    })?;
+
+    // R2クライアントを初期化
+    let client = R2Client::new(config).await?;
+
+    // サブスクリプション用ユーザーファイルキーを生成
+    let file_key = R2Client::generate_user_subscription_key(user_id, subscription_id, filename);
+    debug!("サブスクリプション用ファイルキーを生成しました: {file_key}");
+
+    // Content-Typeを取得
+    let content_type = R2Client::get_content_type(filename);
+    debug!("Content-Type: {content_type}");
+
+    // 現在のreceipt_pathを保存（ロールバック用）
+    let original_receipt_path = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
+
+        use crate::features::subscriptions::repository;
+        repository::get_receipt_path(&db, subscription_id, user_id)?
+    };
+
+    // リトライ機能付きでR2にアップロード（最大3回リトライ）
+    let receipt_url = client
+        .upload_file_with_retry(&file_key, file_data, &content_type, 3)
+        .await?;
+
+    info!("R2アップロードが成功しました: {receipt_url}");
+
+    // データベースにreceipt_pathを保存（失敗時は状態を保持）
+    let db_result = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
+
+        use crate::features::subscriptions::repository;
+        repository::set_receipt_path(&db, subscription_id, receipt_url.clone(), user_id)
+    };
+
+    match db_result {
+        Ok(_) => {
+            info!(
+                "データベースへの保存が完了しました: subscription_id={subscription_id}, receipt_url={receipt_url}"
+            );
+            Ok(receipt_url)
+        }
+        Err(db_error) => {
+            // データベース保存に失敗した場合、R2からファイルを削除してロールバック
+            warn!(
+                "データベース保存に失敗しました。R2からファイルを削除してロールバックします: {db_error}"
+            );
+
+            if let Err(delete_error) = client.delete_file(&file_key).await {
+                error!("ロールバック中のR2ファイル削除に失敗しました: {delete_error}");
+            }
+
+            // 元のreceipt_pathを復元（もしあれば）
+            if let Some(original_path) = original_receipt_path {
+                let db = state.db.lock().map_err(|e| {
+                    AppError::Database(format!("ロールバック時のデータベースロック取得エラー: {e}"))
+                })?;
+
+                use crate::features::subscriptions::repository;
+                if let Err(restore_error) =
+                    repository::set_receipt_path(&db, subscription_id, original_path, user_id)
+                {
+                    error!("元のreceipt_pathの復元に失敗しました: {restore_error}");
+                }
+            }
+
+            Err(db_error)
+        }
+    }
+}
+
+/// サブスクリプション用ユーザー認証付きファイル削除
+///
+/// # 引数
+/// * `session_token` - セッショントークン
+/// * `subscription_id` - サブスクリプションID
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 削除成功の場合はtrue
+#[tauri::command]
+pub async fn delete_subscription_receipt_with_auth(
+    session_token: String,
+    subscription_id: i64,
+    auth_service: State<'_, AuthService>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    info!(
+        "サブスクリプション用ユーザー認証付きファイル削除開始: subscription_id={subscription_id}"
+    );
+
+    // 認証ミドルウェアを初期化
+    let auth_middleware = create_auth_middleware(&auth_service, &state.security_manager).await?;
+
+    // 認証を実行
+    let user = auth_middleware
+        .authenticate_request(Some(&session_token), "/subscriptions/delete")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    info!("認証成功: user_id={}", user.id);
+
+    // 削除処理を実行
+    let result = delete_subscription_receipt_internal(user.id, subscription_id, state).await;
+
+    match result {
+        Ok(success) => {
+            info!(
+                "サブスクリプション用ユーザー認証付きファイル削除成功: user_id={}, subscription_id={subscription_id}",
+                user.id
+            );
+            Ok(success)
+        }
+        Err(app_error) => {
+            let user_message = app_error.user_message();
+            error!(
+                "サブスクリプション用ユーザー認証付きファイル削除失敗: user_id={}, subscription_id={subscription_id}, error={app_error}",
+                user.id
+            );
+            Err(user_message.to_string())
+        }
+    }
+}
+
+/// サブスクリプション用内部的な削除処理
+async fn delete_subscription_receipt_internal(
+    user_id: i64,
+    subscription_id: i64,
+    state: State<'_, AppState>,
+) -> Result<bool, AppError> {
+    // 現在のreceipt_pathを取得
+    let receipt_path = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
+
+        use crate::features::subscriptions::repository;
+        repository::get_receipt_path(&db, subscription_id, user_id)?
+    };
+
+    let receipt_path = match receipt_path {
+        Some(path) => path,
+        None => {
+            info!("削除対象のreceipt_pathが存在しません: subscription_id={subscription_id}");
+            return Ok(true); // 既に削除済みとして成功扱い
+        }
+    };
+
+    // R2設定を読み込み
+    let config = R2Config::from_env().ok_or_else(|| {
+        AppError::Configuration(
+            "R2設定読み込み失敗: 必要な環境変数が設定されていません".to_string(),
+        )
+    })?;
+
+    // R2クライアントを初期化
+    let client = R2Client::new(config).await?;
+
+    // URLからパスを抽出
+    let file_key = client.extract_path_from_url(&receipt_path)?;
+    debug!("抽出されたファイルキー: {file_key}");
+
+    // ユーザーアクセス権限を検証
+    use crate::features::receipts::user_path_manager::UserPathManager;
+    UserPathManager::validate_user_access(user_id, &file_key)?;
+
+    // R2からファイルを削除
+    client.delete_file(&file_key).await?;
+    info!("R2からファイルを削除しました: {file_key}");
+
+    // データベースからreceipt_pathを削除
+    {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
+
+        use crate::features::subscriptions::repository;
+        repository::set_receipt_path(&db, subscription_id, String::new(), user_id)?;
+    }
+
+    info!("データベースからreceipt_pathを削除しました: subscription_id={subscription_id}");
+
+    Ok(true)
 }

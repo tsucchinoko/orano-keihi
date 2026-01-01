@@ -127,7 +127,116 @@ impl UserPathManager {
         regex.is_match(path)
     }
 
-    /// パスからexpense_idを抽出（ユーザーパス用）
+    /// サブスクリプション用のユーザー別ファイルパスを生成
+    ///
+    /// # 引数
+    /// * `user_id` - ユーザーID
+    /// * `subscription_id` - サブスクリプションID
+    /// * `filename` - ファイル名
+    ///
+    /// # 戻り値
+    /// 新しいユーザー別パス（`users/{user_id}/subscriptions/{subscription_id}/{timestamp}-{uuid}-{filename}`）
+    pub fn generate_user_subscription_path(
+        user_id: i64,
+        subscription_id: i64,
+        filename: &str,
+    ) -> String {
+        let timestamp = chrono::Utc::now().timestamp();
+        let uuid = uuid::Uuid::new_v4();
+        format!("users/{user_id}/subscriptions/{subscription_id}/{timestamp}-{uuid}-{filename}")
+    }
+
+    /// サブスクリプションのレガシーパスからユーザーパスに変換
+    ///
+    /// # 引数
+    /// * `legacy_path` - レガシーパス（`subscriptions/{subscription_id}/...`）
+    /// * `user_id` - 変換先のユーザーID
+    ///
+    /// # 戻り値
+    /// 新しいユーザーパス、または変換エラー
+    ///
+    /// # 例
+    /// ```
+    /// let legacy = "subscriptions/123/timestamp-uuid-filename.pdf";
+    /// let user_path = UserPathManager::convert_legacy_subscription_to_user_path(legacy, 456)?;
+    /// // => "users/456/subscriptions/123/timestamp-uuid-filename.pdf"
+    /// ```
+    pub fn convert_legacy_subscription_to_user_path(
+        legacy_path: &str,
+        user_id: i64,
+    ) -> AppResult<String> {
+        if let Some(stripped) = legacy_path.strip_prefix("subscriptions/") {
+            Ok(format!("users/{user_id}/subscriptions/{stripped}"))
+        } else {
+            Err(AppError::Validation(format!(
+                "無効なレガシーサブスクリプションパス: {legacy_path}"
+            )))
+        }
+    }
+
+    /// サブスクリプションパスからsubscription_idを抽出（ユーザーパス用）
+    ///
+    /// # 引数
+    /// * `path` - ユーザーパス（`users/{user_id}/subscriptions/{subscription_id}/...`）
+    ///
+    /// # 戻り値
+    /// サブスクリプションID、または抽出エラー
+    ///
+    /// # 例
+    /// ```
+    /// let path = "users/123/subscriptions/456/file.pdf";
+    /// let subscription_id = UserPathManager::extract_subscription_id_from_user_path(path)?;
+    /// // => 456
+    /// ```
+    pub fn extract_subscription_id_from_user_path(path: &str) -> AppResult<i64> {
+        let regex = Regex::new(r"^users/\d+/subscriptions/(\d+)/")
+            .map_err(|e| AppError::validation(format!("正規表現エラー: {e}")))?;
+
+        if let Some(captures) = regex.captures(path) {
+            captures[1]
+                .parse::<i64>()
+                .map_err(|_| AppError::validation("サブスクリプションIDの解析に失敗"))
+        } else {
+            Err(AppError::validation(
+                "ユーザーサブスクリプションパス形式が無効",
+            ))
+        }
+    }
+
+    /// サブスクリプションのレガシーパスかどうかを判定
+    ///
+    /// # 引数
+    /// * `path` - 判定対象のパス
+    ///
+    /// # 戻り値
+    /// レガシーサブスクリプションパスの場合はtrue
+    ///
+    /// # 例
+    /// ```
+    /// assert!(UserPathManager::is_legacy_subscription_path("subscriptions/123/file.pdf"));
+    /// assert!(!UserPathManager::is_legacy_subscription_path("users/456/subscriptions/123/file.pdf"));
+    /// ```
+    pub fn is_legacy_subscription_path(path: &str) -> bool {
+        path.starts_with("subscriptions/") && !path.starts_with("subscriptions/users/")
+    }
+
+    /// サブスクリプションのユーザーパスかどうかを判定
+    ///
+    /// # 引数
+    /// * `path` - 判定対象のパス
+    ///
+    /// # 戻り値
+    /// ユーザーサブスクリプションパスの場合はtrue
+    ///
+    /// # 例
+    /// ```
+    /// assert!(UserPathManager::is_user_subscription_path("users/123/subscriptions/456/file.pdf"));
+    /// assert!(!UserPathManager::is_user_subscription_path("subscriptions/123/file.pdf"));
+    /// ```
+    pub fn is_user_subscription_path(path: &str) -> bool {
+        let regex = Regex::new(r"^users/\d+/subscriptions/").unwrap();
+        regex.is_match(path)
+    }
     ///
     /// # 引数
     /// * `path` - ユーザーパス
