@@ -45,6 +45,57 @@ const envSchema = z.object({
 });
 
 /**
+ * R2設定の詳細バリデーション
+ * @param r2Config R2設定オブジェクト
+ * @returns バリデーション結果
+ */
+export function validateR2Config(r2Config: R2Config): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // エンドポイントの形式チェック
+  if (!r2Config.endpoint) {
+    errors.push("R2_ENDPOINTが設定されていません");
+  } else if (!r2Config.endpoint.includes(".") && r2Config.endpoint.length < 32) {
+    // アカウントIDの形式チェック（32文字のハッシュまたはドメイン形式）
+    errors.push(
+      "R2_ENDPOINTの形式が正しくありません（アカウントIDまたは完全なエンドポイントURLを指定してください）",
+    );
+  }
+
+  // アクセスキーの形式チェック
+  if (!r2Config.accessKeyId) {
+    errors.push("R2_ACCESS_KEY_IDが設定されていません");
+  } else if (r2Config.accessKeyId.length < 20) {
+    errors.push("R2_ACCESS_KEY_IDの形式が正しくありません");
+  }
+
+  // シークレットキーの形式チェック
+  if (!r2Config.secretAccessKey) {
+    errors.push("R2_SECRET_ACCESS_KEYが設定されていません");
+  } else if (r2Config.secretAccessKey.length < 40) {
+    errors.push("R2_SECRET_ACCESS_KEYの形式が正しくありません");
+  }
+
+  // バケット名の形式チェック
+  if (!r2Config.bucketName) {
+    errors.push("R2_BUCKET_NAMEが設定されていません");
+  } else if (
+    !/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(r2Config.bucketName) ||
+    r2Config.bucketName.length < 3 ||
+    r2Config.bucketName.length > 63
+  ) {
+    errors.push(
+      "R2_BUCKET_NAMEの形式が正しくありません（3-63文字、小文字・数字・ハイフンのみ、先頭末尾は英数字）",
+    );
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
  * 環境変数を検証して設定オブジェクトを作成
  */
 export function loadConfig(): ApiServerConfig {
@@ -58,6 +109,16 @@ export function loadConfig(): ApiServerConfig {
       bucketName: env.R2_BUCKET_NAME,
       region: env.R2_REGION,
     };
+
+    // R2設定の詳細バリデーション
+    const r2Validation = validateR2Config(r2Config);
+    if (!r2Validation.isValid) {
+      console.error("R2設定に問題があります:");
+      r2Validation.errors.forEach((error) => {
+        console.error(`- ${error}`);
+      });
+      process.exit(1);
+    }
 
     const config: ApiServerConfig = {
       port: env.PORT,
@@ -99,4 +160,22 @@ export function loadConfig(): ApiServerConfig {
     }
     process.exit(1);
   }
+}
+
+/**
+ * 設定情報を安全に表示（機密情報をマスク）
+ * @param config APIサーバー設定
+ * @returns 表示用設定オブジェクト
+ */
+export function getConfigForDisplay(config: ApiServerConfig) {
+  return {
+    ...config,
+    r2: {
+      ...config.r2,
+      secretAccessKey: "[HIDDEN]",
+    },
+    auth: {
+      jwtSecret: "[HIDDEN]",
+    },
+  };
 }

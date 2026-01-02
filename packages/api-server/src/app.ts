@@ -9,12 +9,17 @@ import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import type { ApiServerConfig } from "./types/config.js";
 import { logger } from "./utils/logger.js";
+import { createR2Client, createR2TestService } from "./services/index.js";
 
 /**
  * Honoアプリケーションを作成
  */
 export function createApp(config: ApiServerConfig): Hono {
   const app = new Hono();
+
+  // R2クライアントとテストサービスを初期化
+  const r2Client = createR2Client(config.r2);
+  const r2TestService = createR2TestService(r2Client);
 
   // ログミドルウェア
   app.use(
@@ -53,6 +58,76 @@ export function createApp(config: ApiServerConfig): Hono {
       version: "0.1.0",
       environment: config.nodeEnv,
     });
+  });
+
+  // R2接続テストエンドポイント
+  app.get("/api/v1/system/r2/test", async (c) => {
+    try {
+      const testResult = await r2TestService.runComprehensiveTest();
+
+      if (testResult.success) {
+        logger.info("R2接続テストが成功しました", testResult.details);
+        return c.json({
+          status: "success",
+          message: testResult.message,
+          details: testResult.details,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        logger.warn("R2接続テストが失敗しました", { error: testResult.error });
+        return c.json(
+          {
+            status: "error",
+            message: testResult.message,
+            error: testResult.error,
+            timestamp: new Date().toISOString(),
+          },
+          503,
+        );
+      }
+    } catch (error) {
+      logger.error("R2接続テストでエラーが発生しました", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return c.json(
+        {
+          error: {
+            code: "R2_TEST_ERROR",
+            message: "R2接続テストでエラーが発生しました",
+            details: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+            requestId: crypto.randomUUID(),
+          },
+        },
+        500,
+      );
+    }
+  });
+
+  // R2簡単接続確認エンドポイント
+  app.get("/api/v1/system/r2/ping", async (c) => {
+    try {
+      const isConnected = await r2TestService.quickConnectionTest();
+
+      return c.json({
+        status: isConnected ? "connected" : "disconnected",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error("R2接続確認でエラーが発生しました", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return c.json(
+        {
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString(),
+        },
+        500,
+      );
+    }
   });
 
   // 404ハンドラー
