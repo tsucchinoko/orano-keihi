@@ -81,3 +81,62 @@ export interface ValidationResult {
   user?: User;
   error?: string;
 }
+
+/**
+ * ファイルアップロード関連の型定義
+ */
+
+export interface UploadMetadata {
+  expenseId: number;
+  userId: number;
+  description?: string;
+  category?: string;
+}
+
+export interface UploadRequest {
+  file: File;
+  expenseId: number;
+  userId: number;
+  metadata?: {
+    description?: string;
+    category?: string;
+  };
+}
+
+export interface UploadResponse {
+  success: boolean;
+  fileUrl?: string;
+  fileKey: string;
+  fileSize: number;
+  contentType: string;
+  uploadedAt: string;
+  error?: string;
+}
+
+export interface MultipleUploadResponse {
+  totalFiles: number;
+  successfulUploads: number;
+  failedUploads: number;
+  results: UploadResponse[];
+  totalDurationMs: number;
+}
+
+export interface FileValidationResult {
+  isValid: boolean;
+  error?: string;
+  details?: {
+    field?: string;
+    value?: any;
+    constraint?: string;
+  };
+}
+
+export interface ErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    details?: any;
+    timestamp: string;
+    requestId: string;
+  };
+}

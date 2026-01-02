@@ -7,8 +7,13 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { ApiServerConfig } from "./types/config.js";
-import { logger, enhancedLogger, alertSystem, AlertLevel } from "./utils/logger.js";
-import { createR2Client, createR2TestService, createAuthService } from "./services/index.js";
+import { logger, enhancedLogger, alertSystem, AlertLevel } from "./utils/logger";
+import {
+  createR2Client,
+  createR2TestService,
+  createAuthService,
+  createFileUploadService,
+} from "./services/index";
 import {
   createAuthMiddleware,
   createPermissionMiddleware,
@@ -30,6 +35,9 @@ export function createApp(config: ApiServerConfig): Hono {
 
   // 認証サービスを初期化
   const authService = createAuthService(config.auth);
+
+  // ファイルアップロードサービスを初期化
+  const fileUploadService = createFileUploadService(r2Client, config.fileUpload);
 
   // 認証ミドルウェアを作成
   const authMiddleware = createAuthMiddleware(authService);
@@ -215,6 +223,349 @@ export function createApp(config: ApiServerConfig): Hono {
       total: alerts.length,
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // ファイルアップロード関連エンドポイント
+
+  // 単一ファイルアップロード
+  app.post("/api/v1/receipts/upload", authMiddleware, fileUploadPermissionMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const body = await c.req.parseBody();
+
+      // ファイルとメタデータを取得
+      const file = body.file as File;
+      const expenseId = parseInt(body.expenseId as string, 10);
+      const description = body.description as string;
+      const category = body.category as string;
+
+      if (!file) {
+        return c.json(
+          {
+            error: {
+              code: "MISSING_FILE",
+              message: "アップロードするファイルが指定されていません",
+              timestamp: new Date().toISOString(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
+            },
+          },
+          400,
+        );
+      }
+
+      if (!expenseId || isNaN(expenseId)) {
+        return c.json(
+          {
+            error: {
+              code: "INVALID_EXPENSE_ID",
+              message: "有効な経費IDが指定されていません",
+              timestamp: new Date().toISOString(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
+            },
+          },
+          400,
+        );
+      }
+
+      // メタデータを構築
+      const metadata = {
+        expenseId,
+        userId: user.id,
+        description,
+        category,
+      };
+
+      // ファイルアップロード実行
+      const result = await fileUploadService.uploadFile(file, metadata);
+
+      if (result.success) {
+        logger.info("ファイルアップロードが成功しました", {
+          userId: user.id,
+          expenseId,
+          fileKey: result.fileKey,
+          fileSize: result.fileSize,
+        });
+
+        return c.json(result);
+      } else {
+        logger.warn("ファイルアップロードが失敗しました", {
+          userId: user.id,
+          expenseId,
+          error: result.error,
+        });
+
+        return c.json(
+          {
+            error: {
+              code: "UPLOAD_FAILED",
+              message: result.error || "ファイルアップロードに失敗しました",
+              timestamp: new Date().toISOString(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
+            },
+          },
+          400,
+        );
+      }
+    } catch (error) {
+      logError(c, error, { context: "単一ファイルアップロード" });
+
+      return c.json(
+        {
+          error: {
+            code: "UPLOAD_ERROR",
+            message: "ファイルアップロード中にエラーが発生しました",
+            details: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+            requestId: c.get("requestId") || crypto.randomUUID(),
+          },
+        },
+        500,
+      );
+    }
+  });
+
+  // 複数ファイル並列アップロード
+  app.post(
+    "/api/v1/receipts/upload/multiple",
+    authMiddleware,
+    fileUploadPermissionMiddleware,
+    async (c) => {
+      try {
+        const user = c.get("user");
+        const body = await c.req.parseBody();
+
+        // ファイル配列を取得
+        const files: File[] = [];
+        const metadata: any[] = [];
+
+        // multipart/form-dataから複数ファイルを抽出
+        for (const [key, value] of Object.entries(body)) {
+          if (key.startsWith("file_") && value instanceof File) {
+            const index = parseInt(key.replace("file_", ""), 10);
+            files[index] = value;
+          } else if (key.startsWith("expenseId_")) {
+            const index = parseInt(key.replace("expenseId_", ""), 10);
+            if (!metadata[index]) metadata[index] = {};
+            metadata[index].expenseId = parseInt(value as string, 10);
+          } else if (key.startsWith("description_")) {
+            const index = parseInt(key.replace("description_", ""), 10);
+            if (!metadata[index]) metadata[index] = {};
+            metadata[index].description = value as string;
+          } else if (key.startsWith("category_")) {
+            const index = parseInt(key.replace("category_", ""), 10);
+            if (!metadata[index]) metadata[index] = {};
+            metadata[index].category = value as string;
+          }
+        }
+
+        if (files.length === 0) {
+          return c.json(
+            {
+              error: {
+                code: "NO_FILES",
+                message: "アップロードするファイルが指定されていません",
+                timestamp: new Date().toISOString(),
+                requestId: c.get("requestId") || crypto.randomUUID(),
+              },
+            },
+            400,
+          );
+        }
+
+        // メタデータにユーザーIDを追加
+        const uploadMetadata = metadata.map((meta) => ({
+          ...meta,
+          userId: user.id,
+        }));
+
+        // 複数ファイルアップロード実行
+        const result = await fileUploadService.uploadMultipleFiles(files, uploadMetadata);
+
+        logger.info("複数ファイルアップロードが完了しました", {
+          userId: user.id,
+          totalFiles: result.totalFiles,
+          successfulUploads: result.successfulUploads,
+          failedUploads: result.failedUploads,
+          totalDurationMs: result.totalDurationMs,
+        });
+
+        return c.json(result);
+      } catch (error) {
+        logError(c, error, { context: "複数ファイルアップロード" });
+
+        return c.json(
+          {
+            error: {
+              code: "MULTIPLE_UPLOAD_ERROR",
+              message: "複数ファイルアップロード中にエラーが発生しました",
+              details: error instanceof Error ? error.message : String(error),
+              timestamp: new Date().toISOString(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
+            },
+          },
+          500,
+        );
+      }
+    },
+  );
+
+  // ファイル削除
+  app.delete(
+    "/api/v1/receipts/:fileKey",
+    authMiddleware,
+    fileUploadPermissionMiddleware,
+    async (c) => {
+      try {
+        const user = c.get("user");
+        const fileKey = c.req.param("fileKey");
+
+        if (!fileKey) {
+          return c.json(
+            {
+              error: {
+                code: "MISSING_FILE_KEY",
+                message: "削除するファイルキーが指定されていません",
+                timestamp: new Date().toISOString(),
+                requestId: c.get("requestId") || crypto.randomUUID(),
+              },
+            },
+            400,
+          );
+        }
+
+        // デコードされたファイルキー（URLエンコードされている可能性があるため）
+        const decodedFileKey = decodeURIComponent(fileKey);
+
+        // ファイルキーがユーザーのものかチェック（セキュリティ）
+        if (!decodedFileKey.startsWith(`receipts/${user.id}/`)) {
+          logSecurityEvent(c, "UNAUTHORIZED_FILE_DELETE", {
+            userId: user.id,
+            fileKey: decodedFileKey,
+          });
+
+          return c.json(
+            {
+              error: {
+                code: "UNAUTHORIZED",
+                message: "このファイルを削除する権限がありません",
+                timestamp: new Date().toISOString(),
+                requestId: c.get("requestId") || crypto.randomUUID(),
+              },
+            },
+            403,
+          );
+        }
+
+        // ファイル削除実行
+        await fileUploadService.deleteFile(decodedFileKey);
+
+        logger.info("ファイル削除が完了しました", {
+          userId: user.id,
+          fileKey: decodedFileKey,
+        });
+
+        return c.json({
+          success: true,
+          message: "ファイルが正常に削除されました",
+          fileKey: decodedFileKey,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        logError(c, error, { context: "ファイル削除" });
+
+        return c.json(
+          {
+            error: {
+              code: "DELETE_ERROR",
+              message: "ファイル削除中にエラーが発生しました",
+              details: error instanceof Error ? error.message : String(error),
+              timestamp: new Date().toISOString(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
+            },
+          },
+          500,
+        );
+      }
+    },
+  );
+
+  // ファイル取得（プリサインドURL）
+  app.get("/api/v1/receipts/:fileKey/url", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const fileKey = c.req.param("fileKey");
+      const expiresIn = parseInt(c.req.query("expiresIn") || "3600", 10);
+
+      if (!fileKey) {
+        return c.json(
+          {
+            error: {
+              code: "MISSING_FILE_KEY",
+              message: "ファイルキーが指定されていません",
+              timestamp: new Date().toISOString(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
+            },
+          },
+          400,
+        );
+      }
+
+      // デコードされたファイルキー
+      const decodedFileKey = decodeURIComponent(fileKey);
+
+      // ファイルキーがユーザーのものかチェック（セキュリティ）
+      if (!decodedFileKey.startsWith(`receipts/${user.id}/`)) {
+        logSecurityEvent(c, "UNAUTHORIZED_FILE_ACCESS", {
+          userId: user.id,
+          fileKey: decodedFileKey,
+        });
+
+        return c.json(
+          {
+            error: {
+              code: "UNAUTHORIZED",
+              message: "このファイルにアクセスする権限がありません",
+              timestamp: new Date().toISOString(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
+            },
+          },
+          403,
+        );
+      }
+
+      // プリサインドURL生成
+      const presignedUrl = await r2Client.generatePresignedUrl(decodedFileKey, expiresIn);
+
+      logger.debug("プリサインドURLを生成しました", {
+        userId: user.id,
+        fileKey: decodedFileKey,
+        expiresIn,
+      });
+
+      return c.json({
+        success: true,
+        fileKey: decodedFileKey,
+        presignedUrl,
+        expiresIn,
+        expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logError(c, error, { context: "プリサインドURL生成" });
+
+      return c.json(
+        {
+          error: {
+            code: "PRESIGNED_URL_ERROR",
+            message: "プリサインドURL生成中にエラーが発生しました",
+            details: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString(),
+            requestId: c.get("requestId") || crypto.randomUUID(),
+          },
+        },
+        500,
+      );
+    }
   });
 
   // 404ハンドラー
