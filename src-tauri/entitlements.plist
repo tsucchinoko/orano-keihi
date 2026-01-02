@@ -37,5 +37,17 @@
 	<!-- プリント機能（将来の機能拡張用） -->
 	<key>com.apple.security.print</key>
 	<true/>
+	
+	<!-- Hardened Runtime用の追加権限 -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<false/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<false/>
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<false/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<false/>
+	<key>com.apple.security.cs.disable-executable-page-protection</key>
+	<false/>
 </dict>
 </plist>

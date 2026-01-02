@@ -2,6 +2,13 @@
 # デフォルトのマニフェストパスを設定
 target-dir = "src-tauri/target"
 
+# macOS用のターゲット設定
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,@loader_path"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,@loader_path"]
+
 [alias]
 # エイリアスを定義してコマンドを短縮
 tauri-build = "build --manifest-path src-tauri/Cargo.toml"

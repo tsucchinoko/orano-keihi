@@ -84,3 +84,12 @@ tempfile = "3.8"
 quickcheck = "1.0"
 quickcheck_macros = "1.0"
 
+[profile.release]
+# リリースビルドの最適化設定
+opt-level = 3
+debug = false
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+
