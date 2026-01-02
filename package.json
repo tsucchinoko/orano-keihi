@@ -24,8 +24,5 @@
 		"lint": "pnpm --filter desktop lint",
 		"lint:check": "pnpm --filter desktop lint:check"
 	},
-	"license": "MIT",
-	"devDependencies": {
-		"@biomejs/biome": "^2.3.7"
-	}
+	"license": "MIT"
 }
