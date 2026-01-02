@@ -167,6 +167,35 @@ pub struct MultipleFileUpload {
     pub expense_id: i64,
 }
 
+/// フォールバック状態のファイル情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FallbackFile {
+    pub expense_id: i64,
+    pub file_path: String,
+    pub fallback_url: String,
+    pub created_at: String,
+}
+
+/// フォールバック状態ファイルの同期結果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncResult {
+    pub total_files: usize,
+    pub successful_syncs: usize,
+    pub failed_syncs: usize,
+    pub results: Vec<SyncFileResult>,
+}
+
+/// 単一ファイルの同期結果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncFileResult {
+    pub expense_id: i64,
+    pub original_path: String,
+    pub success: bool,
+    pub new_url: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

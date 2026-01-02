@@ -1,8 +1,11 @@
 // APIサーバー経由でのファイルアップロードコマンド
 
 use super::{
-    api_client::{ApiClient, ApiClientConfig},
-    models::{MultipleFileUploadInput, MultipleUploadResult, SingleUploadResult},
+    api_client::{ApiClient, ApiClientConfig, HealthCheckResult},
+    models::{
+        FallbackFile, MultipleFileUploadInput, MultipleUploadResult, SingleUploadResult,
+        SyncFileResult, SyncResult,
+    },
 };
 use crate::features::expenses::repository as expense_operations;
 use crate::features::security::models::SecurityConfig;
@@ -14,7 +17,7 @@ use std::fs;
 use std::path::Path;
 use tauri::State;
 
-/// APIサーバー経由で領収書ファイルをアップロードする
+/// APIサーバー経由で領収書ファイルをアップロードする（フォールバック機能付き）
 ///
 /// # 引数
 /// * `expense_id` - 経費ID
@@ -40,7 +43,7 @@ pub async fn upload_receipt_via_api(
         SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
 
     // 統一エラーハンドリングを使用してアップロード処理を実行
-    let result = upload_receipt_via_api_internal(expense_id, file_path, state).await;
+    let result = upload_receipt_via_api_with_fallback(expense_id, file_path, state).await;
 
     match result {
         Ok(url) => {
@@ -53,6 +56,87 @@ pub async fn upload_receipt_via_api(
             Err(user_message.to_string())
         }
     }
+}
+
+/// フォールバック機能付きのAPIサーバー経由アップロード処理
+async fn upload_receipt_via_api_with_fallback(
+    expense_id: i64,
+    file_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, AppError> {
+    // APIクライアント設定を読み込み
+    let api_config = ApiClientConfig::from_env();
+    let api_client = ApiClient::new(api_config)?;
+
+    // APIサーバーのヘルスチェック
+    let health_result = api_client.health_check_detailed().await?;
+
+    if health_result.is_healthy {
+        // APIサーバーが利用可能な場合は通常の処理
+        info!("APIサーバーが利用可能です。通常のアップロード処理を実行します");
+        upload_receipt_via_api_internal(expense_id, file_path, state).await
+    } else {
+        // APIサーバーが利用できない場合はフォールバック処理
+        warn!(
+            "APIサーバーが利用できません: {:?}。フォールバック処理を実行します",
+            health_result.error_message
+        );
+
+        // フォールバック処理: 一時的にローカルに保存し、後でリトライ
+        handle_api_server_unavailable_fallback(expense_id, file_path, state, health_result).await
+    }
+}
+
+/// APIサーバー利用不可時のフォールバック処理
+async fn handle_api_server_unavailable_fallback(
+    expense_id: i64,
+    file_path: String,
+    state: State<'_, AppState>,
+    health_result: HealthCheckResult,
+) -> Result<String, AppError> {
+    info!("APIサーバー利用不可時のフォールバック処理を開始: expense_id={expense_id}");
+
+    // ファイルパスの検証
+    let source_path = Path::new(&file_path);
+    if !source_path.exists() {
+        return Err(AppError::NotFound(format!(
+            "指定されたファイルが存在しません: {file_path}"
+        )));
+    }
+
+    // ファイル名を取得
+    let filename = source_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| {
+            AppError::Validation(format!("ファイル名の取得に失敗しました: {file_path}"))
+        })?;
+
+    // フォールバック用の一時的なURL（ローカルファイルパス）を生成
+    let fallback_url = format!("file://{}", file_path);
+
+    // データベースに一時的なURLを保存（後でAPIサーバー経由でアップロードするためのマーク付き）
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
+
+    // 特別なプレフィックスを付けてフォールバック状態であることを示す
+    let temp_url = format!("FALLBACK:{}", fallback_url);
+    expense_operations::set_receipt_url(&db, expense_id, temp_url.clone(), 1i64)?;
+
+    // フォールバック情報をログに記録
+    warn!(
+        "APIサーバー利用不可のため一時的なURLを設定: expense_id={}, temp_url={}, health_check_error={:?}",
+        expense_id, temp_url, health_result.error_message
+    );
+
+    // ユーザーに分かりやすいメッセージを含むエラーを返す
+    Err(AppError::ExternalService(format!(
+        "APIサーバーが一時的に利用できません（{}）。ファイルは一時的に保存されました。後でアプリを再起動するか、「同期」ボタンを押してアップロードを完了してください。ファイル: {}",
+        health_result.error_message.unwrap_or_else(|| "不明なエラー".to_string()),
+        filename
+    )))
 }
 
 /// 内部的なAPIサーバー経由アップロード処理
@@ -415,6 +499,304 @@ pub async fn check_api_server_health(_state: State<'_, AppState>) -> Result<bool
 
     info!("APIサーバーヘルスチェックが成功しました");
     Ok(true)
+}
+
+/// フォールバック状態のファイルを同期する
+///
+/// # 引数
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// 同期結果
+#[tauri::command]
+pub async fn sync_fallback_files(state: State<'_, AppState>) -> Result<SyncResult, String> {
+    info!("フォールバック状態のファイル同期を開始します");
+
+    let security_config = SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    };
+    let _security_manager =
+        SecurityManager::new(security_config).expect("SecurityManager初期化失敗");
+
+    // APIクライアント設定を読み込み
+    let api_config = ApiClientConfig::from_env();
+    let api_client = ApiClient::new(api_config).map_err(|e| {
+        let error_msg = format!("APIクライアントの初期化に失敗しました: {e}");
+        error!("{error_msg}");
+        error_msg
+    })?;
+
+    // APIサーバーのヘルスチェック
+    let health_result = api_client.health_check_detailed().await.map_err(|e| {
+        let error_msg = format!("ヘルスチェックに失敗しました: {e}");
+        error!("{error_msg}");
+        error_msg
+    })?;
+
+    if !health_result.is_healthy {
+        let error_msg = format!(
+            "APIサーバーがまだ利用できません: {:?}",
+            health_result.error_message
+        );
+        warn!("{error_msg}");
+        return Err(error_msg);
+    }
+
+    // データベースからフォールバック状態のファイルを取得
+    let fallback_files = {
+        let db = state
+            .db
+            .lock()
+            .map_err(|e| format!("データベースロック取得エラー: {e}"))?;
+
+        get_fallback_files(&db).map_err(|e| format!("フォールバック状態ファイル取得エラー: {e}"))?
+    };
+
+    if fallback_files.is_empty() {
+        info!("同期が必要なフォールバック状態のファイルはありません");
+        return Ok(SyncResult {
+            total_files: 0,
+            successful_syncs: 0,
+            failed_syncs: 0,
+            results: vec![],
+        });
+    }
+
+    info!(
+        "{}個のフォールバック状態ファイルを同期します",
+        fallback_files.len()
+    );
+
+    // 認証トークンを取得
+    let auth_token = get_auth_token().await.map_err(|e| {
+        let error_msg = format!("認証トークンの取得に失敗しました: {e}");
+        error!("{error_msg}");
+        error_msg
+    })?;
+
+    let mut sync_results = Vec::new();
+    let mut successful_syncs = 0;
+    let mut failed_syncs = 0;
+    let total_files = fallback_files.len(); // 長さを事前に保存
+
+    // 各ファイルを順次同期
+    for fallback_file in fallback_files {
+        let sync_start = std::time::Instant::now();
+
+        match sync_single_fallback_file(&api_client, &fallback_file, &auth_token, &state).await {
+            Ok(new_url) => {
+                successful_syncs += 1;
+                sync_results.push(SyncFileResult {
+                    expense_id: fallback_file.expense_id,
+                    original_path: fallback_file.file_path.clone(),
+                    success: true,
+                    new_url: Some(new_url),
+                    error: None,
+                    duration_ms: sync_start.elapsed().as_millis() as u64,
+                });
+                info!("ファイル同期成功: expense_id={}", fallback_file.expense_id);
+            }
+            Err(e) => {
+                failed_syncs += 1;
+                sync_results.push(SyncFileResult {
+                    expense_id: fallback_file.expense_id,
+                    original_path: fallback_file.file_path.clone(),
+                    success: false,
+                    new_url: None,
+                    error: Some(e.to_string()),
+                    duration_ms: sync_start.elapsed().as_millis() as u64,
+                });
+                error!(
+                    "ファイル同期失敗: expense_id={}, error={}",
+                    fallback_file.expense_id, e
+                );
+            }
+        }
+    }
+
+    info!(
+        "フォールバック状態ファイル同期完了: 成功={}, 失敗={}",
+        successful_syncs, failed_syncs
+    );
+
+    Ok(SyncResult {
+        total_files,
+        successful_syncs,
+        failed_syncs,
+        results: sync_results,
+    })
+}
+
+/// データベースからフォールバック状態のファイルを取得
+fn get_fallback_files(db: &rusqlite::Connection) -> Result<Vec<FallbackFile>, AppError> {
+    let mut stmt = db.prepare(
+        "SELECT id, receipt_url FROM expenses WHERE receipt_url LIKE 'FALLBACK:%' ORDER BY updated_at DESC"
+    )?;
+
+    let fallback_files = stmt
+        .query_map([], |row| {
+            let expense_id: i64 = row.get(0)?;
+            let fallback_url: String = row.get(1)?;
+
+            // FALLBACK:file:///path/to/file から file:///path/to/file を抽出
+            let file_path = fallback_url
+                .strip_prefix("FALLBACK:file://")
+                .unwrap_or(&fallback_url)
+                .to_string();
+
+            Ok(FallbackFile {
+                expense_id,
+                file_path,
+                fallback_url,
+                created_at: chrono::Utc::now().to_rfc3339(),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(fallback_files)
+}
+
+/// 単一のフォールバック状態ファイルを同期
+async fn sync_single_fallback_file(
+    api_client: &ApiClient,
+    fallback_file: &FallbackFile,
+    auth_token: &str,
+    state: &State<'_, AppState>,
+) -> Result<String, AppError> {
+    info!(
+        "単一ファイル同期開始: expense_id={}",
+        fallback_file.expense_id
+    );
+
+    // ファイルパスの検証
+    let source_path = Path::new(&fallback_file.file_path);
+    if !source_path.exists() {
+        return Err(AppError::NotFound(format!(
+            "フォールバック状態のファイルが見つかりません: {}",
+            fallback_file.file_path
+        )));
+    }
+
+    // ファイル名を取得
+    let filename = source_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| {
+            AppError::Validation(format!(
+                "ファイル名の取得に失敗しました: {}",
+                fallback_file.file_path
+            ))
+        })?;
+
+    // ファイルを読み込み
+    let file_data = fs::read(source_path)
+        .map_err(|e| AppError::ExternalService(format!("ファイル読み込み失敗: {e}")))?;
+
+    // APIサーバー経由でアップロード
+    let upload_response = api_client
+        .upload_file(
+            fallback_file.expense_id,
+            &fallback_file.file_path,
+            file_data,
+            filename,
+            auth_token,
+        )
+        .await?;
+
+    if !upload_response.success {
+        return Err(AppError::ExternalService(format!(
+            "APIサーバーでのアップロードに失敗しました: {:?}",
+            upload_response.error
+        )));
+    }
+
+    let receipt_url = upload_response.file_url.ok_or_else(|| {
+        AppError::ExternalService("APIサーバーからファイルURLが返されませんでした".to_string())
+    })?;
+
+    // データベースを更新（フォールバック状態を解除）
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| AppError::Database(format!("データベースロック取得エラー: {e}")))?;
+
+    expense_operations::set_receipt_url(&db, fallback_file.expense_id, receipt_url.clone(), 1i64)?;
+
+    info!(
+        "フォールバック状態ファイルの同期完了: expense_id={}, new_url={}",
+        fallback_file.expense_id, receipt_url
+    );
+
+    Ok(receipt_url)
+}
+
+/// フォールバック状態のファイル数を取得する
+///
+/// # 引数
+/// * `state` - アプリケーション状態
+///
+/// # 戻り値
+/// フォールバック状態のファイル数
+#[tauri::command]
+pub async fn get_fallback_file_count(state: State<'_, AppState>) -> Result<usize, String> {
+    debug!("フォールバック状態のファイル数を取得します");
+
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロック取得エラー: {e}"))?;
+
+    let count = get_fallback_files(&db)
+        .map_err(|e| format!("フォールバック状態ファイル取得エラー: {e}"))?
+        .len();
+
+    debug!("フォールバック状態のファイル数: {count}");
+    Ok(count)
+}
+
+/// APIサーバーの詳細ヘルスチェックを実行する
+///
+/// # 引数
+/// * `_state` - アプリケーション状態
+///
+/// # 戻り値
+/// 詳細なヘルスチェック結果
+#[tauri::command]
+pub async fn check_api_server_health_detailed(
+    _state: State<'_, AppState>,
+) -> Result<HealthCheckResult, String> {
+    info!("APIサーバー詳細ヘルスチェックを開始します");
+
+    let _security_manager = SecurityManager::new(SecurityConfig {
+        encryption_key: "default_key_32_bytes_long_enough".to_string(),
+        max_token_age_hours: 24,
+        enable_audit_logging: true,
+    })
+    .unwrap_or_else(|_| panic!("SecurityManager初期化失敗"));
+
+    // APIクライアント設定を読み込み
+    let api_config = ApiClientConfig::from_env();
+    let api_client = ApiClient::new(api_config).map_err(|e| {
+        let error_msg = format!("APIクライアントの初期化に失敗しました: {e}");
+        error!("{error_msg}");
+        error_msg
+    })?;
+
+    // 詳細ヘルスチェックを実行
+    let health_result = api_client.health_check_detailed().await.map_err(|e| {
+        let error_msg = format!("APIサーバー詳細ヘルスチェックに失敗しました: {e}");
+        error!("{error_msg}");
+        error_msg
+    })?;
+
+    info!(
+        "APIサーバー詳細ヘルスチェックが完了しました: healthy={}, response_time={}ms",
+        health_result.is_healthy, health_result.response_time_ms
+    );
+
+    Ok(health_result)
 }
 
 /// 認証トークンを取得する（TODO: 実際の認証システムと連携）

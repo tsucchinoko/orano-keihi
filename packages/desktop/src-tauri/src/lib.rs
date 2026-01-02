@@ -276,6 +276,9 @@ pub fn run() {
             receipt_api_commands::upload_receipt_via_api,
             receipt_api_commands::upload_multiple_receipts_via_api,
             receipt_api_commands::check_api_server_health,
+            receipt_api_commands::check_api_server_health_detailed,
+            receipt_api_commands::sync_fallback_files,
+            receipt_api_commands::get_fallback_file_count,
             // 領収書コマンド（認証付き）
             receipt_auth_commands::upload_receipt_with_auth,
             receipt_auth_commands::get_receipt_with_auth,

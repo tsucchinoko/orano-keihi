@@ -89,6 +89,16 @@ pub struct ErrorDetail {
     pub request_id: String,
 }
 
+/// ヘルスチェック結果
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HealthCheckResult {
+    pub is_healthy: bool,
+    pub response_time_ms: u64,
+    pub status_code: u16,
+    pub error_message: Option<String>,
+    pub details: Option<serde_json::Value>,
+}
+
 /// APIクライアント
 pub struct ApiClient {
     client: Client,
@@ -316,34 +326,95 @@ impl ApiClient {
         }
     }
 
-    /// APIサーバーのヘルスチェック
-    pub async fn health_check(&self) -> Result<bool, AppError> {
-        debug!("APIサーバーヘルスチェック開始");
+    /// APIサーバーのヘルスチェック（詳細版）
+    pub async fn health_check_detailed(&self) -> Result<HealthCheckResult, AppError> {
+        debug!("APIサーバー詳細ヘルスチェック開始");
 
         let url = format!("{}/api/v1/health", self.config.base_url);
+        let start_time = std::time::Instant::now();
 
         match self.client.get(&url).send().await {
             Ok(response) => {
+                let duration = start_time.elapsed();
+                let status_code = response.status().as_u16();
+
                 if response.status().is_success() {
-                    debug!("APIサーバーヘルスチェック成功");
-                    Ok(true)
+                    // レスポンスボディを解析してより詳細な情報を取得
+                    let health_info = response
+                        .json::<serde_json::Value>()
+                        .await
+                        .unwrap_or_else(|_| serde_json::json!({"status": "ok"}));
+
+                    debug!("APIサーバー詳細ヘルスチェック成功: duration={:?}", duration);
+                    Ok(HealthCheckResult {
+                        is_healthy: true,
+                        response_time_ms: duration.as_millis() as u64,
+                        status_code,
+                        error_message: None,
+                        details: Some(health_info),
+                    })
                 } else {
-                    warn!("APIサーバーヘルスチェック失敗: HTTP {}", response.status());
-                    Ok(false)
+                    warn!(
+                        "APIサーバー詳細ヘルスチェック失敗: HTTP {}, duration={:?}",
+                        status_code, duration
+                    );
+                    Ok(HealthCheckResult {
+                        is_healthy: false,
+                        response_time_ms: duration.as_millis() as u64,
+                        status_code,
+                        error_message: Some(format!("HTTPステータス: {}", status_code)),
+                        details: None,
+                    })
                 }
             }
             Err(e) => {
-                error!("APIサーバーヘルスチェックエラー: {e}");
-                Err(AppError::ExternalService(format!(
-                    "APIサーバーへの接続に失敗しました: {e}"
-                )))
+                let duration = start_time.elapsed();
+                error!(
+                    "APIサーバー詳細ヘルスチェックエラー: {}, duration={:?}",
+                    e, duration
+                );
+
+                // エラーの種類に基づいて詳細な情報を提供
+                let error_message = if e.is_timeout() {
+                    "接続タイムアウト".to_string()
+                } else if e.is_connect() {
+                    "接続失敗（サーバーが起動していない可能性があります）".to_string()
+                } else if e.is_request() {
+                    "リクエスト送信失敗".to_string()
+                } else {
+                    format!("不明なエラー: {}", e)
+                };
+
+                Ok(HealthCheckResult {
+                    is_healthy: false,
+                    response_time_ms: duration.as_millis() as u64,
+                    status_code: 0,
+                    error_message: Some(error_message),
+                    details: None,
+                })
             }
         }
     }
 
-    /// エラーレスポンスを処理
+    /// APIサーバーのヘルスチェック
+    pub async fn health_check(&self) -> Result<bool, AppError> {
+        let result = self.health_check_detailed().await?;
+        Ok(result.is_healthy)
+    }
+
+    /// エラーレスポンスを処理し、詳細なエラー情報を提供
     async fn handle_error_response(&self, response: Response) -> Result<ErrorResponse, AppError> {
         let status = response.status();
+        let status_code = status.as_u16();
+
+        // レスポンスヘッダーからリクエストIDを取得
+        let request_id = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown")
+            .to_string();
+
         let response_text = response
             .text()
             .await
@@ -351,16 +422,60 @@ impl ApiClient {
 
         // JSONエラーレスポンスの解析を試行
         if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&response_text) {
+            // APIサーバーからの構造化エラーレスポンス
+            info!(
+                "APIサーバーから構造化エラーレスポンスを受信: code={}, message={}",
+                error_response.error.code, error_response.error.message
+            );
             Ok(error_response)
         } else {
             // JSONでない場合は汎用エラーレスポンスを作成
+            let (error_code, user_message) = match status_code {
+                400 => ("BAD_REQUEST", "リクエストの形式が正しくありません"),
+                401 => (
+                    "UNAUTHORIZED",
+                    "認証に失敗しました。再度ログインしてください",
+                ),
+                403 => ("FORBIDDEN", "この操作を実行する権限がありません"),
+                404 => ("NOT_FOUND", "指定されたリソースが見つかりません"),
+                413 => (
+                    "PAYLOAD_TOO_LARGE",
+                    "ファイルサイズが制限を超えています（最大10MB）",
+                ),
+                415 => (
+                    "UNSUPPORTED_MEDIA_TYPE",
+                    "サポートされていないファイル形式です",
+                ),
+                429 => (
+                    "TOO_MANY_REQUESTS",
+                    "リクエストが多すぎます。しばらく待ってから再試行してください",
+                ),
+                500 => ("INTERNAL_SERVER_ERROR", "サーバー内部エラーが発生しました"),
+                502 => ("BAD_GATEWAY", "APIサーバーとの通信でエラーが発生しました"),
+                503 => ("SERVICE_UNAVAILABLE", "APIサーバーが一時的に利用できません"),
+                504 => (
+                    "GATEWAY_TIMEOUT",
+                    "APIサーバーからの応答がタイムアウトしました",
+                ),
+                _ => ("UNKNOWN_ERROR", "不明なエラーが発生しました"),
+            };
+
+            warn!(
+                "APIサーバーから非構造化エラーレスポンス: status={}, body={}",
+                status_code, response_text
+            );
+
             Ok(ErrorResponse {
                 error: ErrorDetail {
-                    code: format!("HTTP_{}", status.as_u16()),
-                    message: response_text,
-                    details: None,
+                    code: error_code.to_string(),
+                    message: user_message.to_string(),
+                    details: Some(serde_json::json!({
+                        "http_status": status_code,
+                        "raw_response": response_text,
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    })),
                     timestamp: chrono::Utc::now().to_rfc3339(),
-                    request_id: "unknown".to_string(),
+                    request_id,
                 },
             })
         }

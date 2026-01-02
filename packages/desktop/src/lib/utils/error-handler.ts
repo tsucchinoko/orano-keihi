@@ -14,7 +14,99 @@ export class ErrorHandler {
    * Tauriコマンドエラーをユーザーフレンドリーなエラーに変換
    */
   static handleTauriError(error: string): UserFriendlyError {
-    // エラーメッセージの内容に基づいて適切なエラー情報を生成
+    // APIサーバー関連のエラー
+    if (error.includes('APIサーバーが一時的に利用できません')) {
+      return {
+        title: 'APIサーバー接続エラー',
+        message: error,
+        canRetry: true,
+        severity: 'warning',
+        actions: [
+          {
+            label: '同期を試行',
+            action: async () => {
+              try {
+                const { syncFallbackFiles } =
+                  await import('$lib/types/api-client');
+                const result = await syncFallbackFiles();
+                if (result.successful_syncs > 0) {
+                  alert(`${result.successful_syncs}個のファイルを同期しました`);
+                } else {
+                  alert('同期が必要なファイルはありません');
+                }
+              } catch (e) {
+                alert(`同期に失敗しました: ${e}`);
+              }
+            },
+            primary: true,
+          },
+          {
+            label: '後で再試行',
+            action: () => {
+              console.info('後で再試行してください');
+            },
+          },
+        ],
+      };
+    }
+
+    if (error.includes('APIサーバーへの接続に失敗')) {
+      return {
+        title: 'APIサーバー接続失敗',
+        message:
+          'APIサーバーに接続できません。サーバーが起動していることを確認してください。',
+        canRetry: true,
+        severity: 'error',
+        actions: [
+          {
+            label: 'ヘルスチェック',
+            action: async () => {
+              try {
+                const { checkApiServerHealthDetailed } =
+                  await import('$lib/types/api-client');
+                const result = await checkApiServerHealthDetailed();
+                if (result.is_healthy) {
+                  alert('APIサーバーは正常に動作しています');
+                } else {
+                  alert(
+                    `APIサーバーエラー: ${result.error_message || '不明なエラー'}`
+                  );
+                }
+              } catch (e) {
+                alert(`ヘルスチェックに失敗しました: ${e}`);
+              }
+            },
+            primary: true,
+          },
+          {
+            label: '再試行',
+            action: () => window.location.reload(),
+          },
+        ],
+      };
+    }
+
+    // 認証関連のエラー
+    if (error.includes('認証に失敗') || error.includes('401')) {
+      return {
+        title: '認証エラー',
+        message: '認証に失敗しました。再度ログインしてください。',
+        canRetry: false,
+        severity: 'critical',
+        actions: [
+          {
+            label: '再ログイン',
+            action: () => {
+              // 認証画面にリダイレクト
+              window.location.href = '/auth/login';
+            },
+            primary: true,
+          },
+        ],
+      };
+    }
+
+    // ファイル関連のエラー
     if (error.includes('ネットワーク') || error.includes('接続')) {
       return {
         title: 'ネットワークエラー',
@@ -30,7 +122,6 @@ export class ErrorHandler {
           {
             label: 'ネットワーク設定を確認',
             action: () => {
-              // ネットワーク設定のヘルプページを開く等
               console.info('ネットワーク設定の確認が必要です');
             },
           },
@@ -77,17 +168,16 @@ export class ErrorHandler {
       };
     }
 
-    if (error.includes('認証') || error.includes('管理者')) {
+    if (error.includes('権限') || error.includes('403')) {
       return {
-        title: '認証エラー',
-        message: error,
+        title: '権限エラー',
+        message: 'この操作を実行する権限がありません。',
         canRetry: false,
         severity: 'critical',
         actions: [
           {
             label: '管理者に連絡',
             action: () => {
-              // 管理者連絡フォームを開く等
               console.info('管理者への連絡が必要です');
             },
             primary: true,
