@@ -18,6 +18,8 @@ export interface CorsConfig {
 
 export interface AuthConfig {
   jwtSecret: string;
+  sessionEncryptionKey: string;
+  sessionExpirationDays: number;
 }
 
 export interface FileUploadConfig {
@@ -46,4 +48,36 @@ export interface ApiServerConfig {
   fileUpload: FileUploadConfig;
   rateLimit: RateLimitConfig;
   logging: LoggingConfig;
+}
+/**
+ * 認証関連の型定義
+ */
+
+export interface User {
+  id: number;
+  googleId: string;
+  email: string;
+  name: string;
+  pictureUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Session {
+  id: string;
+  userId: number;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface AuthResult {
+  success: boolean;
+  user?: User;
+  error?: string;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  user?: User;
+  error?: string;
 }

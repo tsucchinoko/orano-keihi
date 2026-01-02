@@ -9,7 +9,8 @@ import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import type { ApiServerConfig } from "./types/config.js";
 import { logger } from "./utils/logger.js";
-import { createR2Client, createR2TestService } from "./services/index.js";
+import { createR2Client, createR2TestService, createAuthService } from "./services/index.js";
+import { createAuthMiddleware, createPermissionMiddleware } from "./middleware/index.js";
 
 /**
  * Honoアプリケーションを作成
@@ -20,6 +21,13 @@ export function createApp(config: ApiServerConfig): Hono {
   // R2クライアントとテストサービスを初期化
   const r2Client = createR2Client(config.r2);
   const r2TestService = createR2TestService(r2Client);
+
+  // 認証サービスを初期化
+  const authService = createAuthService(config.auth);
+
+  // 認証ミドルウェアを作成
+  const authMiddleware = createAuthMiddleware(authService);
+  const fileUploadPermissionMiddleware = createPermissionMiddleware(authService, "file_upload");
 
   // ログミドルウェア
   app.use(
@@ -60,8 +68,8 @@ export function createApp(config: ApiServerConfig): Hono {
     });
   });
 
-  // R2接続テストエンドポイント
-  app.get("/api/v1/system/r2/test", async (c) => {
+  // R2接続テストエンドポイント（認証が必要）
+  app.get("/api/v1/system/r2/test", authMiddleware, async (c) => {
     try {
       const testResult = await r2TestService.runComprehensiveTest();
 
@@ -128,6 +136,37 @@ export function createApp(config: ApiServerConfig): Hono {
         500,
       );
     }
+  });
+
+  // 認証テスト用エンドポイント
+  app.get("/api/v1/auth/test", authMiddleware, (c) => {
+    const user = c.get("user");
+
+    return c.json({
+      message: "認証が成功しました",
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // 権限テスト用エンドポイント
+  app.get("/api/v1/auth/permission-test", authMiddleware, fileUploadPermissionMiddleware, (c) => {
+    const user = c.get("user");
+
+    return c.json({
+      message: "権限チェックが成功しました",
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+      },
+      resource: "file_upload",
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // 404ハンドラー
