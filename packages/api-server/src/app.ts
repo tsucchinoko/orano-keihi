@@ -5,12 +5,18 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import type { ApiServerConfig } from "./types/config.js";
-import { logger } from "./utils/logger.js";
+import { logger, enhancedLogger, alertSystem, AlertLevel } from "./utils/logger.js";
 import { createR2Client, createR2TestService, createAuthService } from "./services/index.js";
-import { createAuthMiddleware, createPermissionMiddleware } from "./middleware/index.js";
+import {
+  createAuthMiddleware,
+  createPermissionMiddleware,
+  createRateLimitMiddleware,
+  createLoggingMiddleware,
+  logError,
+  logSecurityEvent,
+} from "./middleware/index.js";
 
 /**
  * Honoアプリケーションを作成
@@ -29,13 +35,17 @@ export function createApp(config: ApiServerConfig): Hono {
   const authMiddleware = createAuthMiddleware(authService);
   const fileUploadPermissionMiddleware = createPermissionMiddleware(authService, "file_upload");
 
-  // ログミドルウェア
-  app.use(
-    "*",
-    honoLogger((message) => {
-      logger.info(message);
-    }),
-  );
+  // レート制限ミドルウェアを作成
+  const rateLimitMiddleware = createRateLimitMiddleware(config.rateLimit);
+
+  // ログミドルウェアを作成
+  const loggingMiddleware = createLoggingMiddleware();
+
+  // ログミドルウェア（最初に適用）
+  app.use("*", loggingMiddleware);
+
+  // レート制限ミドルウェア
+  app.use("*", rateLimitMiddleware);
 
   // セキュリティヘッダー
   app.use(
@@ -82,7 +92,10 @@ export function createApp(config: ApiServerConfig): Hono {
           timestamp: new Date().toISOString(),
         });
       } else {
-        logger.warn("R2接続テストが失敗しました", { error: testResult.error });
+        enhancedLogger.systemFailure("R2接続テストが失敗しました", {
+          error: testResult.error,
+          details: testResult.details,
+        });
         return c.json(
           {
             status: "error",
@@ -94,9 +107,7 @@ export function createApp(config: ApiServerConfig): Hono {
         );
       }
     } catch (error) {
-      logger.error("R2接続テストでエラーが発生しました", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logError(c, error, { context: "R2接続テスト" });
 
       return c.json(
         {
@@ -105,7 +116,7 @@ export function createApp(config: ApiServerConfig): Hono {
             message: "R2接続テストでエラーが発生しました",
             details: error instanceof Error ? error.message : String(error),
             timestamp: new Date().toISOString(),
-            requestId: crypto.randomUUID(),
+            requestId: c.get("requestId") || crypto.randomUUID(),
           },
         },
         500,
@@ -123,9 +134,7 @@ export function createApp(config: ApiServerConfig): Hono {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      logger.error("R2接続確認でエラーが発生しました", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logError(c, error, { context: "R2接続確認" });
 
       return c.json(
         {
@@ -169,11 +178,51 @@ export function createApp(config: ApiServerConfig): Hono {
     });
   });
 
+  // システム統計エンドポイント
+  app.get("/api/v1/system/stats", authMiddleware, (c) => {
+    const alertStats = alertSystem.getAlertStats();
+    const recentAlerts = alertSystem.getRecentAlerts(10);
+
+    return c.json({
+      system: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        version: "0.1.0",
+        environment: config.nodeEnv,
+      },
+      alerts: {
+        stats: alertStats,
+        recent: recentAlerts,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // アラート一覧エンドポイント
+  app.get("/api/v1/system/alerts", authMiddleware, (c) => {
+    const level = c.req.query("level") as keyof typeof AlertLevel;
+    const limit = parseInt(c.req.query("limit") || "50", 10);
+
+    let alerts;
+    if (level && Object.values(AlertLevel).includes(level as AlertLevel)) {
+      alerts = alertSystem.getAlertsByLevel(level as AlertLevel, limit);
+    } else {
+      alerts = alertSystem.getRecentAlerts(limit);
+    }
+
+    return c.json({
+      alerts,
+      total: alerts.length,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // 404ハンドラー
   app.notFound((c) => {
-    logger.warn("存在しないエンドポイントへのアクセス", {
+    logSecurityEvent(c, "NOT_FOUND_ACCESS", {
       path: c.req.path,
       method: c.req.method,
+      userAgent: c.req.header("user-agent"),
     });
 
     return c.json(
@@ -182,7 +231,7 @@ export function createApp(config: ApiServerConfig): Hono {
           code: "NOT_FOUND",
           message: "エンドポイントが見つかりません",
           timestamp: new Date().toISOString(),
-          requestId: crypto.randomUUID(),
+          requestId: c.get("requestId") || crypto.randomUUID(),
         },
       },
       404,
@@ -191,12 +240,7 @@ export function createApp(config: ApiServerConfig): Hono {
 
   // エラーハンドラー
   app.onError((error, c) => {
-    logger.error("予期しないエラーが発生しました", {
-      error: error.message,
-      stack: error.stack,
-      path: c.req.path,
-      method: c.req.method,
-    });
+    logError(c, error, { context: "グローバルエラーハンドラー" });
 
     return c.json(
       {
@@ -204,7 +248,7 @@ export function createApp(config: ApiServerConfig): Hono {
           code: "INTERNAL_SERVER_ERROR",
           message: "内部サーバーエラーが発生しました",
           timestamp: new Date().toISOString(),
-          requestId: crypto.randomUUID(),
+          requestId: c.get("requestId") || crypto.randomUUID(),
         },
       },
       500,

@@ -5,7 +5,8 @@
 
 import type { Context, Next } from "hono";
 import type { AuthService } from "../services/auth-service.js";
-import { logger } from "../utils/logger.js";
+import { enhancedLogger } from "../utils/logger.js";
+import { logSecurityEvent } from "./logging-middleware.js";
 
 /**
  * 認証されたユーザー情報をコンテキストに追加する型拡張
@@ -21,6 +22,7 @@ declare module "hono" {
       createdAt: string;
       updatedAt: string;
     };
+    requestId: string;
   }
 }
 
@@ -36,7 +38,8 @@ export function createAuthMiddleware(authService: AuthService) {
       const authHeader = c.req.header("Authorization");
 
       if (!authHeader) {
-        logger.warn("認証ヘッダーが見つかりません", {
+        logSecurityEvent(c, "MISSING_AUTH_HEADER", {
+          severity: "medium",
           path: c.req.path,
           method: c.req.method,
         });
@@ -47,7 +50,7 @@ export function createAuthMiddleware(authService: AuthService) {
               code: "MISSING_AUTH_HEADER",
               message: "認証ヘッダーが必要です",
               timestamp: new Date().toISOString(),
-              requestId: crypto.randomUUID(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
             },
           },
           401,
@@ -57,8 +60,9 @@ export function createAuthMiddleware(authService: AuthService) {
       // Bearer トークンの形式をチェック
       const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/);
       if (!tokenMatch) {
-        logger.warn("無効な認証ヘッダー形式", {
-          authHeader,
+        logSecurityEvent(c, "INVALID_AUTH_HEADER", {
+          severity: "medium",
+          authHeaderFormat: "invalid",
           path: c.req.path,
           method: c.req.method,
         });
@@ -69,7 +73,7 @@ export function createAuthMiddleware(authService: AuthService) {
               code: "INVALID_AUTH_HEADER",
               message: "認証ヘッダーの形式が正しくありません（Bearer <token>）",
               timestamp: new Date().toISOString(),
-              requestId: crypto.randomUUID(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
             },
           },
           401,
@@ -82,7 +86,8 @@ export function createAuthMiddleware(authService: AuthService) {
       const validationResult = await authService.validateToken(token);
 
       if (!validationResult.isValid || !validationResult.user) {
-        logger.warn("トークン検証に失敗しました", {
+        logSecurityEvent(c, "INVALID_TOKEN", {
+          severity: "high",
           error: validationResult.error,
           path: c.req.path,
           method: c.req.method,
@@ -94,7 +99,7 @@ export function createAuthMiddleware(authService: AuthService) {
               code: "INVALID_TOKEN",
               message: validationResult.error || "無効なトークンです",
               timestamp: new Date().toISOString(),
-              requestId: crypto.randomUUID(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
             },
           },
           401,
@@ -104,7 +109,7 @@ export function createAuthMiddleware(authService: AuthService) {
       // 認証されたユーザー情報をコンテキストに設定
       c.set("user", validationResult.user);
 
-      logger.debug("認証が成功しました", {
+      enhancedLogger.debug("認証が成功しました", {
         userId: validationResult.user.id,
         email: validationResult.user.email,
         path: c.req.path,
@@ -113,7 +118,7 @@ export function createAuthMiddleware(authService: AuthService) {
 
       await next();
     } catch (error) {
-      logger.error("認証ミドルウェアでエラーが発生しました", {
+      enhancedLogger.systemFailure("認証ミドルウェアでエラーが発生しました", {
         error: error instanceof Error ? error.message : String(error),
         path: c.req.path,
         method: c.req.method,
@@ -125,7 +130,7 @@ export function createAuthMiddleware(authService: AuthService) {
             code: "AUTH_MIDDLEWARE_ERROR",
             message: "認証処理でエラーが発生しました",
             timestamp: new Date().toISOString(),
-            requestId: crypto.randomUUID(),
+            requestId: c.get("requestId") || crypto.randomUUID(),
           },
         },
         500,
@@ -146,7 +151,7 @@ export function createPermissionMiddleware(authService: AuthService, resource: s
       const user = c.get("user");
 
       if (!user) {
-        logger.error("権限チェック時にユーザー情報が見つかりません", {
+        enhancedLogger.systemFailure("権限チェック時にユーザー情報が見つかりません", {
           path: c.req.path,
           method: c.req.method,
           resource,
@@ -158,7 +163,7 @@ export function createPermissionMiddleware(authService: AuthService, resource: s
               code: "USER_NOT_FOUND",
               message: "ユーザー情報が見つかりません",
               timestamp: new Date().toISOString(),
-              requestId: crypto.randomUUID(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
             },
           },
           401,
@@ -169,7 +174,8 @@ export function createPermissionMiddleware(authService: AuthService, resource: s
       const hasPermission = await authService.checkPermission(user.id, resource);
 
       if (!hasPermission) {
-        logger.warn("権限が不足しています", {
+        logSecurityEvent(c, "INSUFFICIENT_PERMISSIONS", {
+          severity: "high",
           userId: user.id,
           resource,
           path: c.req.path,
@@ -182,14 +188,14 @@ export function createPermissionMiddleware(authService: AuthService, resource: s
               code: "INSUFFICIENT_PERMISSIONS",
               message: `リソース '${resource}' へのアクセス権限がありません`,
               timestamp: new Date().toISOString(),
-              requestId: crypto.randomUUID(),
+              requestId: c.get("requestId") || crypto.randomUUID(),
             },
           },
           403,
         );
       }
 
-      logger.debug("権限チェックが成功しました", {
+      enhancedLogger.debug("権限チェックが成功しました", {
         userId: user.id,
         resource,
         path: c.req.path,
@@ -198,7 +204,7 @@ export function createPermissionMiddleware(authService: AuthService, resource: s
 
       await next();
     } catch (error) {
-      logger.error("権限チェックミドルウェアでエラーが発生しました", {
+      enhancedLogger.systemFailure("権限チェックミドルウェアでエラーが発生しました", {
         error: error instanceof Error ? error.message : String(error),
         resource,
         path: c.req.path,
@@ -211,7 +217,7 @@ export function createPermissionMiddleware(authService: AuthService, resource: s
             code: "PERMISSION_MIDDLEWARE_ERROR",
             message: "権限チェック処理でエラーが発生しました",
             timestamp: new Date().toISOString(),
-            requestId: crypto.randomUUID(),
+            requestId: c.get("requestId") || crypto.randomUUID(),
           },
         },
         500,
