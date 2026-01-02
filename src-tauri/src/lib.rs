@@ -293,10 +293,7 @@ pub fn run() {
             features::migrations::commands::get_detailed_migration_info,
             features::migrations::commands::execute_user_authentication_migration,
             features::migrations::commands::execute_receipt_url_migration,
-            features::migrations::commands::restore_database_from_backup,
             features::migrations::commands::drop_receipt_path_column_command,
-            features::migrations::commands::list_backup_files_command,
-            features::migrations::commands::create_manual_backup,
             features::migrations::commands::check_database_integrity,
             // R2マイグレーションコマンド
             features::migrations::r2_migration_commands::start_r2_migration,

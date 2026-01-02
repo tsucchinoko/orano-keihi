@@ -44,11 +44,9 @@ pub use batch_processor::{
 
 pub use commands::{
     check_auto_migration_status, check_database_integrity, check_migration_status,
-    create_manual_backup, drop_receipt_path_column_command,
-    execute_comprehensive_data_migration_command, execute_receipt_url_migration,
-    execute_user_authentication_migration, get_database_stats, get_detailed_migration_info,
-    list_backup_files_command, restore_database_from_backup, DatabaseStats, DetailedMigrationInfo,
-    MigrationInfo,
+    drop_receipt_path_column_command, execute_comprehensive_data_migration_command,
+    execute_receipt_url_migration, execute_user_authentication_migration, get_database_stats,
+    get_detailed_migration_info, DatabaseStats, DetailedMigrationInfo, MigrationInfo,
 };
 
 pub use database_update_commands::{
@@ -91,10 +89,10 @@ pub use security_audit::{
 };
 
 pub use service::{
-    create_backup, drop_receipt_path_column, execute_comprehensive_data_migration,
+    drop_receipt_path_column, execute_comprehensive_data_migration,
     is_receipt_url_migration_complete, is_user_authentication_migration_complete,
-    list_backup_files, migrate_receipt_path_to_url, migrate_user_authentication,
-    restore_from_backup, run_migrations, DataMigrationResult, MigrationStatus, RestoreResult,
+    migrate_receipt_path_to_url, migrate_user_authentication, run_migrations, DataMigrationResult,
+    MigrationStatus,
 };
 
 // 統合エラーハンドリングとログ機能の初期化

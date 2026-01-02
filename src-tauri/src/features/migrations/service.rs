@@ -207,43 +207,30 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
 /// # 戻り値
 /// マイグレーション結果
 pub fn migrate_receipt_path_to_url(conn: &Connection) -> Result<MigrationResult, AppError> {
-    // バックアップパスを生成（JST使用）
-    let now_jst = Utc::now().with_timezone(&Tokyo);
-    let backup_path = format!("database_backup_{}.db", now_jst.timestamp());
-
-    // 1. バックアップを作成
-    if let Err(e) = create_backup(conn, &backup_path) {
-        return Ok(MigrationResult {
-            success: false,
-            message: format!("バックアップ作成に失敗しました: {e}"),
-            backup_path: None,
-        });
-    }
-
-    // 2. トランザクション内でマイグレーションを実行
+    // トランザクション内でマイグレーションを実行
     let tx = conn.unchecked_transaction()?;
 
     match execute_receipt_url_migration(&tx) {
         Ok(_) => {
-            // 3. マイグレーション検証
+            // マイグレーション検証
             if let Err(e) = validate_migration(&tx) {
                 // 検証失敗時はロールバック
                 tx.rollback()?;
                 return Ok(MigrationResult {
                     success: false,
                     message: format!("マイグレーション検証に失敗しました: {e}"),
-                    backup_path: Some(backup_path),
+                    backup_path: None,
                 });
             }
 
-            // 4. コミット
+            // コミット
             tx.commit()?;
 
             Ok(MigrationResult {
                 success: true,
                 message: "receipt_pathからreceipt_urlへのマイグレーションが完了しました"
                     .to_string(),
-                backup_path: Some(backup_path),
+                backup_path: None,
             })
         }
         Err(e) => {
@@ -252,28 +239,10 @@ pub fn migrate_receipt_path_to_url(conn: &Connection) -> Result<MigrationResult,
             Ok(MigrationResult {
                 success: false,
                 message: format!("マイグレーション実行に失敗しました: {e}"),
-                backup_path: Some(backup_path),
+                backup_path: None,
             })
         }
     }
-}
-
-/// データベースのバックアップを作成する
-///
-/// # 引数
-/// * `conn` - データベース接続
-/// * `backup_path` - バックアップファイルのパス
-///
-/// # 戻り値
-/// 成功時はOk(())、失敗時はエラー
-pub fn create_backup(conn: &Connection, backup_path: &str) -> Result<(), AppError> {
-    let mut backup_conn = rusqlite::Connection::open(backup_path)?;
-
-    // SQLiteのバックアップAPI使用
-    let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)?;
-    backup.run_to_completion(5, std::time::Duration::from_millis(250), None)?;
-
-    Ok(())
 }
 
 /// receipt_urlマイグレーションを実行する
@@ -415,6 +384,21 @@ fn validate_migration(tx: &Transaction) -> Result<(), AppError> {
         ));
     }
 
+    Ok(())
+}
+
+/// データベースのバックアップを作成する
+///
+/// # 引数
+/// * `conn` - データベース接続
+/// * `backup_path` - バックアップファイルのパス
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+pub fn create_backup(conn: &Connection, backup_path: &str) -> Result<(), AppError> {
+    let mut backup_conn = rusqlite::Connection::open(backup_path)?;
+    let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)?;
+    backup.run_to_completion(5, std::time::Duration::from_millis(250), None)?;
     Ok(())
 }
 
