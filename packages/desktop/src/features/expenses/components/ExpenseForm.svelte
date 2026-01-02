@@ -2,7 +2,8 @@
 import type { Expense } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
-import { uploadReceiptToR2, getReceiptFromR2 } from "$lib/utils/tauri";
+import { getReceiptFromR2 } from "$lib/utils/tauri";
+import { uploadReceiptViaApi } from "$lib/types/api-client";
 import { open } from "@tauri-apps/plugin-dialog";
 
 // Props
@@ -230,19 +231,15 @@ async function handleSubmit(event: Event) {
 
 			isUploading = true;
 			try {
-				const uploadResult = await uploadReceiptToR2(
+				const uploadResult = await uploadReceiptViaApi(
 					targetExpenseId,
 					receiptFile,
 				);
-				if (uploadResult.error) {
-					console.warn("領収書アップロードエラー:", uploadResult.error);
-					toastStore.warning(
-						"経費は保存されましたが、領収書のアップロードに失敗しました",
-					);
-				} else {
+				// 成功時はstringのURLが返される
+				if (uploadResult) {
 					// 経費データを更新してreceipt_urlを設定
 					await expenseStore.modifyExpense(targetExpenseId, {
-						receipt_url: uploadResult.data,
+						receipt_url: uploadResult,
 					});
 					toastStore.success("経費と領収書を保存しました");
 				}
@@ -273,7 +270,7 @@ async function handleSubmit(event: Event) {
 </script>
 
 <div class="card max-w-2xl mx-auto">
-	<h2 class="text-2xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+	<h2 class="text-2xl font-bold mb-6 bg-linear-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
 		{expense ? '経費を編集' : '新しい経費を追加'}
 	</h2>
 
