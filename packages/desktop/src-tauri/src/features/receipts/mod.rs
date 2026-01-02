@@ -1,5 +1,7 @@
 // 領収書機能モジュール
 
+pub mod api_client;
+pub mod api_commands;
 pub mod auth_commands;
 pub mod cache;
 pub mod commands;
@@ -24,6 +26,16 @@ pub use user_path_manager::UserPathManager;
 
 // キャッシュマネージャー
 pub use cache::CacheManager;
+
+// APIクライアント
+pub use api_client::{
+    ApiClient, ApiClientConfig, ErrorResponse, MultipleUploadResponse, UploadResponse,
+};
+
+// APIコマンド（APIサーバー経由）
+pub use api_commands::{
+    check_api_server_health, upload_multiple_receipts_via_api, upload_receipt_via_api,
+};
 
 // コマンド（Tauriコマンドハンドラー）
 pub use commands::{
@@ -84,8 +96,8 @@ pub fn get_feature_stats() -> std::collections::HashMap<String, String> {
     stats.insert("version".to_string(), "1.0.0".to_string());
     stats.insert("status".to_string(), "active".to_string());
 
-    // 利用可能なコマンド数（既存9 + 新規5 = 14）
-    stats.insert("available_commands".to_string(), "14".to_string());
+    // 利用可能なコマンド数（既存9 + 新規5 + API経由3 = 17）
+    stats.insert("available_commands".to_string(), "17".to_string());
 
     // サポートされるファイル形式
     stats.insert(
@@ -138,7 +150,7 @@ mod tests {
         assert_eq!(stats.get("feature_name"), Some(&"receipts".to_string()));
         assert_eq!(stats.get("version"), Some(&"1.0.0".to_string()));
         assert_eq!(stats.get("status"), Some(&"active".to_string()));
-        assert_eq!(stats.get("available_commands"), Some(&"14".to_string()));
+        assert_eq!(stats.get("available_commands"), Some(&"17".to_string()));
         assert_eq!(
             stats.get("supported_formats"),
             Some(&"PNG,JPG,JPEG,PDF".to_string())

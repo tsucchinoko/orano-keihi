@@ -10,7 +10,10 @@ use features::security::service::SecurityManager;
 use features::{
     auth::commands as auth_commands,
     expenses::commands as expense_commands,
-    receipts::{auth_commands as receipt_auth_commands, commands as receipt_commands},
+    receipts::{
+        api_commands as receipt_api_commands, auth_commands as receipt_auth_commands,
+        commands as receipt_commands,
+    },
     security::commands as security_commands,
     subscriptions::commands as subscription_commands,
 };
@@ -269,6 +272,10 @@ pub fn run() {
             subscription_commands::update_subscription,
             subscription_commands::toggle_subscription_status,
             subscription_commands::get_monthly_subscription_total,
+            // 領収書コマンド（APIサーバー経由）
+            receipt_api_commands::upload_receipt_via_api,
+            receipt_api_commands::upload_multiple_receipts_via_api,
+            receipt_api_commands::check_api_server_health,
             // 領収書コマンド（認証付き）
             receipt_auth_commands::upload_receipt_with_auth,
             receipt_auth_commands::get_receipt_with_auth,

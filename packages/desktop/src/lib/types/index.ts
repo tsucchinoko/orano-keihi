@@ -358,3 +358,10 @@ export interface ValidateSessionResponse {
   user: User;
   is_authenticated: boolean;
 }
+
+// ========================================
+// APIサーバー統合関連型
+// ========================================
+
+// APIサーバー経由でのファイルアップロード関連の型定義
+export * from './api-client';
