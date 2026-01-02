@@ -1,0 +1,56 @@
+# Cloudflare Workers設定ファイル
+name = "oranokeihi-api-server"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 環境変数の設定
+[env.production.vars]
+NODE_ENV = "production"
+CORS_ORIGIN = "https://yourdomain.com"
+SESSION_EXPIRATION_DAYS = "30"
+MAX_FILE_SIZE = "10485760"
+ALLOWED_FILE_TYPES = "image/jpeg,image/png,image/gif,application/pdf"
+MAX_FILES_PER_REQUEST = "10"
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "100"
+LOG_LEVEL = "info"
+
+# 開発環境用の設定
+[env.development.vars]
+NODE_ENV = "development"
+CORS_ORIGIN = "http://localhost:1420,tauri://localhost"
+SESSION_EXPIRATION_DAYS = "30"
+MAX_FILE_SIZE = "10485760"
+ALLOWED_FILE_TYPES = "image/jpeg,image/png,image/gif,application/pdf"
+MAX_FILES_PER_REQUEST = "10"
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "100"
+LOG_LEVEL = "debug"
+
+# R2バケットのバインディング
+[[env.production.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "REPLACE_WITH_PRODUCTION_BUCKET_NAME"
+
+[[env.development.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "REPLACE_WITH_DEVELOPMENT_BUCKET_NAME"
+
+# KVストレージのバインディング（セッション管理用）
+[[env.production.kv_namespaces]]
+binding = "KV_SESSIONS"
+id = "REPLACE_WITH_PRODUCTION_KV_ID"
+
+[[env.development.kv_namespaces]]
+binding = "KV_SESSIONS"
+id = "REPLACE_WITH_DEVELOPMENT_KV_ID"
+
+# Durableオブジェクト（必要に応じて）
+# [[durable_objects.bindings]]
+# name = "RATE_LIMITER"
+# class_name = "RateLimiter"
+
+# ワーカーの制限設定
+[limits]
+cpu_ms = 30000

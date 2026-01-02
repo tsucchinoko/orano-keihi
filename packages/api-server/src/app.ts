@@ -17,7 +17,7 @@ import {
 } from "./utils/error-handler.js";
 import { retryStatsTracker } from "./utils/retry.js";
 import {
-  createR2Client,
+  createEnvironmentAwareR2Client,
   createR2TestService,
   createAuthService,
   createFileUploadService,
@@ -33,12 +33,14 @@ import {
 
 /**
  * Honoアプリケーションを作成
+ * @param config API サーバー設定
+ * @param r2Bucket Workers環境でのR2バケットバインディング（オプション）
  */
-export function createApp(config: ApiServerConfig): Hono {
+export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
   const app = new Hono();
 
-  // R2クライアントとテストサービスを初期化
-  const r2Client = createR2Client(config.r2);
+  // 環境に応じたR2クライアントを初期化
+  const r2Client = createEnvironmentAwareR2Client(config.r2, r2Bucket);
   const r2TestService = createR2TestService(r2Client);
 
   // 認証サービスを初期化
