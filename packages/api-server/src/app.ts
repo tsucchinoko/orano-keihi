@@ -7,13 +7,21 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { ApiServerConfig } from "./types/config.js";
-import { logger, enhancedLogger, alertSystem, AlertLevel } from "./utils/logger";
+import { logger, enhancedLogger, alertSystem, AlertLevel } from "./utils/logger.js";
+import {
+  AppError,
+  ErrorCode,
+  handleError,
+  createValidationError,
+  createAuthorizationError,
+} from "./utils/error-handler.js";
+import { retryStatsTracker } from "./utils/retry.js";
 import {
   createR2Client,
   createR2TestService,
   createAuthService,
   createFileUploadService,
-} from "./services/index";
+} from "./services/index.js";
 import {
   createAuthMiddleware,
   createPermissionMiddleware,
@@ -190,6 +198,7 @@ export function createApp(config: ApiServerConfig): Hono {
   app.get("/api/v1/system/stats", authMiddleware, (c) => {
     const alertStats = alertSystem.getAlertStats();
     const recentAlerts = alertSystem.getRecentAlerts(10);
+    const retryStats = retryStatsTracker.getStats();
 
     return c.json({
       system: {
@@ -202,6 +211,7 @@ export function createApp(config: ApiServerConfig): Hono {
         stats: alertStats,
         recent: recentAlerts,
       },
+      retry: retryStats,
       timestamp: new Date().toISOString(),
     });
   });
@@ -240,30 +250,20 @@ export function createApp(config: ApiServerConfig): Hono {
       const category = body.category as string;
 
       if (!file) {
-        return c.json(
-          {
-            error: {
-              code: "MISSING_FILE",
-              message: "アップロードするファイルが指定されていません",
-              timestamp: new Date().toISOString(),
-              requestId: c.get("requestId") || crypto.randomUUID(),
-            },
-          },
-          400,
+        throw createValidationError(
+          "アップロードするファイルが指定されていません",
+          "file",
+          undefined,
+          "required",
         );
       }
 
       if (!expenseId || isNaN(expenseId)) {
-        return c.json(
-          {
-            error: {
-              code: "INVALID_EXPENSE_ID",
-              message: "有効な経費IDが指定されていません",
-              timestamp: new Date().toISOString(),
-              requestId: c.get("requestId") || crypto.randomUUID(),
-            },
-          },
-          400,
+        throw createValidationError(
+          "有効な経費IDが指定されていません",
+          "expenseId",
+          expenseId,
+          "valid number required",
         );
       }
 
@@ -294,33 +294,15 @@ export function createApp(config: ApiServerConfig): Hono {
           error: result.error,
         });
 
-        return c.json(
-          {
-            error: {
-              code: "UPLOAD_FAILED",
-              message: result.error || "ファイルアップロードに失敗しました",
-              timestamp: new Date().toISOString(),
-              requestId: c.get("requestId") || crypto.randomUUID(),
-            },
-          },
-          400,
+        throw new AppError(
+          ErrorCode.UPLOAD_FAILED,
+          result.error || "ファイルアップロードに失敗しました",
         );
       }
     } catch (error) {
-      logError(c, error, { context: "単一ファイルアップロード" });
-
-      return c.json(
-        {
-          error: {
-            code: "UPLOAD_ERROR",
-            message: "ファイルアップロード中にエラーが発生しました",
-            details: error instanceof Error ? error.message : String(error),
-            timestamp: new Date().toISOString(),
-            requestId: c.get("requestId") || crypto.randomUUID(),
-          },
-        },
-        500,
-      );
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "単一ファイルアップロード",
+      });
     }
   });
 
@@ -359,16 +341,11 @@ export function createApp(config: ApiServerConfig): Hono {
         }
 
         if (files.length === 0) {
-          return c.json(
-            {
-              error: {
-                code: "NO_FILES",
-                message: "アップロードするファイルが指定されていません",
-                timestamp: new Date().toISOString(),
-                requestId: c.get("requestId") || crypto.randomUUID(),
-              },
-            },
-            400,
+          throw createValidationError(
+            "アップロードするファイルが指定されていません",
+            "files",
+            files.length,
+            "at least one file required",
           );
         }
 
@@ -391,20 +368,9 @@ export function createApp(config: ApiServerConfig): Hono {
 
         return c.json(result);
       } catch (error) {
-        logError(c, error, { context: "複数ファイルアップロード" });
-
-        return c.json(
-          {
-            error: {
-              code: "MULTIPLE_UPLOAD_ERROR",
-              message: "複数ファイルアップロード中にエラーが発生しました",
-              details: error instanceof Error ? error.message : String(error),
-              timestamp: new Date().toISOString(),
-              requestId: c.get("requestId") || crypto.randomUUID(),
-            },
-          },
-          500,
-        );
+        return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+          context: "複数ファイルアップロード",
+        });
       }
     },
   );
@@ -420,16 +386,11 @@ export function createApp(config: ApiServerConfig): Hono {
         const fileKey = c.req.param("fileKey");
 
         if (!fileKey) {
-          return c.json(
-            {
-              error: {
-                code: "MISSING_FILE_KEY",
-                message: "削除するファイルキーが指定されていません",
-                timestamp: new Date().toISOString(),
-                requestId: c.get("requestId") || crypto.randomUUID(),
-              },
-            },
-            400,
+          throw createValidationError(
+            "削除するファイルキーが指定されていません",
+            "fileKey",
+            fileKey,
+            "required",
           );
         }
 
@@ -443,17 +404,7 @@ export function createApp(config: ApiServerConfig): Hono {
             fileKey: decodedFileKey,
           });
 
-          return c.json(
-            {
-              error: {
-                code: "UNAUTHORIZED",
-                message: "このファイルを削除する権限がありません",
-                timestamp: new Date().toISOString(),
-                requestId: c.get("requestId") || crypto.randomUUID(),
-              },
-            },
-            403,
-          );
+          throw createAuthorizationError("このファイルを削除する権限がありません");
         }
 
         // ファイル削除実行
@@ -471,20 +422,9 @@ export function createApp(config: ApiServerConfig): Hono {
           timestamp: new Date().toISOString(),
         });
       } catch (error) {
-        logError(c, error, { context: "ファイル削除" });
-
-        return c.json(
-          {
-            error: {
-              code: "DELETE_ERROR",
-              message: "ファイル削除中にエラーが発生しました",
-              details: error instanceof Error ? error.message : String(error),
-              timestamp: new Date().toISOString(),
-              requestId: c.get("requestId") || crypto.randomUUID(),
-            },
-          },
-          500,
-        );
+        return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+          context: "ファイル削除",
+        });
       }
     },
   );
@@ -497,16 +437,11 @@ export function createApp(config: ApiServerConfig): Hono {
       const expiresIn = parseInt(c.req.query("expiresIn") || "3600", 10);
 
       if (!fileKey) {
-        return c.json(
-          {
-            error: {
-              code: "MISSING_FILE_KEY",
-              message: "ファイルキーが指定されていません",
-              timestamp: new Date().toISOString(),
-              requestId: c.get("requestId") || crypto.randomUUID(),
-            },
-          },
-          400,
+        throw createValidationError(
+          "ファイルキーが指定されていません",
+          "fileKey",
+          fileKey,
+          "required",
         );
       }
 
@@ -520,17 +455,7 @@ export function createApp(config: ApiServerConfig): Hono {
           fileKey: decodedFileKey,
         });
 
-        return c.json(
-          {
-            error: {
-              code: "UNAUTHORIZED",
-              message: "このファイルにアクセスする権限がありません",
-              timestamp: new Date().toISOString(),
-              requestId: c.get("requestId") || crypto.randomUUID(),
-            },
-          },
-          403,
-        );
+        throw createAuthorizationError("このファイルにアクセスする権限がありません");
       }
 
       // プリサインドURL生成
@@ -551,20 +476,9 @@ export function createApp(config: ApiServerConfig): Hono {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      logError(c, error, { context: "プリサインドURL生成" });
-
-      return c.json(
-        {
-          error: {
-            code: "PRESIGNED_URL_ERROR",
-            message: "プリサインドURL生成中にエラーが発生しました",
-            details: error instanceof Error ? error.message : String(error),
-            timestamp: new Date().toISOString(),
-            requestId: c.get("requestId") || crypto.randomUUID(),
-          },
-        },
-        500,
-      );
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "プリサインドURL生成",
+      });
     }
   });
 
@@ -576,34 +490,14 @@ export function createApp(config: ApiServerConfig): Hono {
       userAgent: c.req.header("user-agent"),
     });
 
-    return c.json(
-      {
-        error: {
-          code: "NOT_FOUND",
-          message: "エンドポイントが見つかりません",
-          timestamp: new Date().toISOString(),
-          requestId: c.get("requestId") || crypto.randomUUID(),
-        },
-      },
-      404,
-    );
+    const error = new AppError(ErrorCode.FILE_NOT_FOUND, "エンドポイントが見つかりません");
+
+    return handleError(c, error);
   });
 
   // エラーハンドラー
   app.onError((error, c) => {
-    logError(c, error, { context: "グローバルエラーハンドラー" });
-
-    return c.json(
-      {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "内部サーバーエラーが発生しました",
-          timestamp: new Date().toISOString(),
-          requestId: c.get("requestId") || crypto.randomUUID(),
-        },
-      },
-      500,
-    );
+    return handleError(c, error, { context: "グローバルエラーハンドラー" });
   });
 
   return app;

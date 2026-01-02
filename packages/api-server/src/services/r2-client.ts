@@ -12,6 +12,8 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { R2Config } from "../types/config.js";
 import { logger } from "../utils/logger.js";
+import { withR2Retry } from "../utils/retry.js";
+import { ErrorCode, createR2Error } from "../utils/error-handler.js";
 
 export interface UploadResult {
   success: boolean;
@@ -71,38 +73,43 @@ export class R2Client implements R2ClientInterface {
    * @returns アップロードされたファイルのURL
    */
   async putObject(key: string, data: Buffer, contentType: string): Promise<string> {
-    try {
-      const command = new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: key,
-        Body: data,
-        ContentType: contentType,
-        // R2でのパブリックアクセス設定
-        ACL: "public-read",
-      });
+    return withR2Retry(async () => {
+      try {
+        const command = new PutObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+          Body: data,
+          ContentType: contentType,
+          // R2でのパブリックアクセス設定
+          ACL: "public-read",
+        });
 
-      await this.s3Client.send(command);
+        await this.s3Client.send(command);
 
-      // パブリックURLを生成
-      const fileUrl = this.generatePublicUrl(key);
+        // パブリックURLを生成
+        const fileUrl = this.generatePublicUrl(key);
 
-      logger.info("ファイルのアップロードが完了しました", {
-        fileKey: key,
-        fileUrl: fileUrl,
-        contentType: contentType,
-        fileSize: data.length,
-      });
+        logger.info("ファイルのアップロードが完了しました", {
+          fileKey: key,
+          fileUrl: fileUrl,
+          contentType: contentType,
+          fileSize: data.length,
+        });
 
-      return fileUrl;
-    } catch (error) {
-      logger.error("ファイルのアップロードに失敗しました", {
-        fileKey: key,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new Error(
-        `R2アップロードエラー: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+        return fileUrl;
+      } catch (error) {
+        logger.error("ファイルのアップロードに失敗しました", {
+          fileKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_UPLOAD_ERROR,
+          `R2アップロードエラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2アップロード: ${key}`);
   }
 
   /**
@@ -110,24 +117,31 @@ export class R2Client implements R2ClientInterface {
    * @param key ファイルキー（パス）
    */
   async deleteObject(key: string): Promise<void> {
-    try {
-      const command = new DeleteObjectCommand({
-        Bucket: this.bucketName,
-        Key: key,
-      });
+    return withR2Retry(async () => {
+      try {
+        const command = new DeleteObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        });
 
-      await this.s3Client.send(command);
+        await this.s3Client.send(command);
 
-      logger.info("ファイルの削除が完了しました", {
-        fileKey: key,
-      });
-    } catch (error) {
-      logger.error("ファイルの削除に失敗しました", {
-        fileKey: key,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new Error(`R2削除エラー: ${error instanceof Error ? error.message : String(error)}`);
-    }
+        logger.info("ファイルの削除が完了しました", {
+          fileKey: key,
+        });
+      } catch (error) {
+        logger.error("ファイルの削除に失敗しました", {
+          fileKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `R2削除エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2削除: ${key}`);
   }
 
   /**
@@ -137,31 +151,36 @@ export class R2Client implements R2ClientInterface {
    * @returns プリサインドURL
    */
   async generatePresignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
-    try {
-      const command = new GetObjectCommand({
-        Bucket: this.bucketName,
-        Key: key,
-      });
+    return withR2Retry(async () => {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        });
 
-      const signedUrl = await getSignedUrl(this.s3Client, command, {
-        expiresIn: expiresIn,
-      });
+        const signedUrl = await getSignedUrl(this.s3Client, command, {
+          expiresIn: expiresIn,
+        });
 
-      logger.debug("プリサインドURLを生成しました", {
-        fileKey: key,
-        expiresIn: expiresIn,
-      });
+        logger.debug("プリサインドURLを生成しました", {
+          fileKey: key,
+          expiresIn: expiresIn,
+        });
 
-      return signedUrl;
-    } catch (error) {
-      logger.error("プリサインドURLの生成に失敗しました", {
-        fileKey: key,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new Error(
-        `プリサインドURL生成エラー: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+        return signedUrl;
+      } catch (error) {
+        logger.error("プリサインドURLの生成に失敗しました", {
+          fileKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `プリサインドURL生成エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `プリサインドURL生成: ${key}`);
   }
 
   /**

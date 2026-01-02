@@ -6,6 +6,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import type { AuthConfig, User, Session, AuthResult, ValidationResult } from "../types/config.js";
 import { logger } from "../utils/logger.js";
+import { withAuthRetry, withDatabaseRetry } from "../utils/retry.js";
+import { AppError, createAuthError } from "../utils/error-handler.js";
 
 /**
  * 認証エラーの種類
@@ -49,61 +51,64 @@ export class AuthService {
    * @returns 検証結果
    */
   async validateToken(token: string): Promise<ValidationResult> {
-    try {
-      // トークンを復号化してセッションIDを取得
-      const sessionId = this.decryptToken(token);
+    return withAuthRetry(async () => {
+      try {
+        // トークンを復号化してセッションIDを取得
+        const sessionId = this.decryptToken(token);
 
-      // TODO: 実際の実装では、データベースからセッション情報を取得する
-      // 現在はモックデータを使用
-      const session = await this.getSessionFromDatabase(sessionId);
+        // TODO: 実際の実装では、データベースからセッション情報を取得する
+        // 現在はモックデータを使用
+        const session = await this.getSessionFromDatabase(sessionId);
 
-      if (!session) {
-        logger.warn("セッションが見つかりません", { sessionId });
+        if (!session) {
+          logger.warn("セッションが見つかりません", { sessionId });
+          return {
+            isValid: false,
+            error: "セッションが見つかりません",
+          };
+        }
+
+        // セッションの有効期限をチェック
+        const expiresAt = new Date(session.expiresAt);
+        if (expiresAt < new Date()) {
+          logger.warn("セッションが期限切れです", { sessionId, expiresAt });
+          return {
+            isValid: false,
+            error: "セッションが期限切れです",
+          };
+        }
+
+        // ユーザー情報を取得
+        const user = await this.getUserById(session.userId);
+        if (!user) {
+          logger.error("ユーザーが見つかりません", { userId: session.userId });
+          return {
+            isValid: false,
+            error: "ユーザーが見つかりません",
+          };
+        }
+
+        logger.debug("トークン検証が成功しました", {
+          userId: user.id,
+          sessionId,
+        });
+
         return {
-          isValid: false,
-          error: "セッションが見つかりません",
+          isValid: true,
+          user,
         };
+      } catch (error) {
+        logger.error("トークン検証でエラーが発生しました", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        if (error instanceof AppError) {
+          throw error;
+        }
+
+        throw createAuthError("トークン検証に失敗しました");
       }
-
-      // セッションの有効期限をチェック
-      const expiresAt = new Date(session.expiresAt);
-      if (expiresAt < new Date()) {
-        logger.warn("セッションが期限切れです", { sessionId, expiresAt });
-        return {
-          isValid: false,
-          error: "セッションが期限切れです",
-        };
-      }
-
-      // ユーザー情報を取得
-      const user = await this.getUserById(session.userId);
-      if (!user) {
-        logger.error("ユーザーが見つかりません", { userId: session.userId });
-        return {
-          isValid: false,
-          error: "ユーザーが見つかりません",
-        };
-      }
-
-      logger.debug("トークン検証が成功しました", {
-        userId: user.id,
-        sessionId,
-      });
-
-      return {
-        isValid: true,
-        user,
-      };
-    } catch (error) {
-      logger.error("トークン検証でエラーが発生しました", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return {
-        isValid: false,
-        error: "トークン検証に失敗しました",
-      };
-    }
+    }, "トークン検証");
   }
 
   /**
@@ -247,20 +252,22 @@ export class AuthService {
    * @returns セッション情報
    */
   private async getSessionFromDatabase(sessionId: string): Promise<Session | null> {
-    // TODO: 実際の実装では、データベースからセッション情報を取得する
-    // 現在はモックデータを返す
+    return withDatabaseRetry(async () => {
+      // TODO: 実際の実装では、データベースからセッション情報を取得する
+      // 現在はモックデータを返す
 
-    // テスト用のモックセッション
-    if (sessionId === "test-session-id") {
-      return {
-        id: sessionId,
-        userId: 1,
-        expiresAt: new Date(Date.now() + this.sessionExpirationMs).toISOString(),
-        createdAt: new Date().toISOString(),
-      };
-    }
+      // テスト用のモックセッション
+      if (sessionId === "test-session-id") {
+        return {
+          id: sessionId,
+          userId: 1,
+          expiresAt: new Date(Date.now() + this.sessionExpirationMs).toISOString(),
+          createdAt: new Date().toISOString(),
+        };
+      }
 
-    return null;
+      return null;
+    }, `セッション取得: ${sessionId}`);
   }
 
   /**
@@ -269,23 +276,25 @@ export class AuthService {
    * @returns ユーザー情報
    */
   private async getUserById(userId: number): Promise<User | null> {
-    // TODO: 実際の実装では、データベースからユーザー情報を取得する
-    // 現在はモックデータを返す
+    return withDatabaseRetry(async () => {
+      // TODO: 実際の実装では、データベースからユーザー情報を取得する
+      // 現在はモックデータを返す
 
-    // テスト用のモックユーザー
-    if (userId === 1) {
-      return {
-        id: userId,
-        googleId: "test-google-id",
-        email: "test@example.com",
-        name: "テストユーザー",
-        pictureUrl: "https://example.com/avatar.jpg",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
+      // テスト用のモックユーザー
+      if (userId === 1) {
+        return {
+          id: userId,
+          googleId: "test-google-id",
+          email: "test@example.com",
+          name: "テストユーザー",
+          pictureUrl: "https://example.com/avatar.jpg",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
 
-    return null;
+      return null;
+    }, `ユーザー取得: ${userId}`);
   }
 }
 

@@ -3,15 +3,16 @@
  * ファイルの検証、アップロード、削除を管理
  */
 
-import type { R2ClientInterface } from "./r2-client";
+import type { R2ClientInterface } from "./r2-client.js";
 import type {
   UploadMetadata,
   UploadResponse,
   MultipleUploadResponse,
   FileValidationResult,
   FileUploadConfig,
-} from "../types/config";
-import { logger, enhancedLogger } from "../utils/logger";
+} from "../types/config.js";
+import { logger, enhancedLogger } from "../utils/logger.js";
+import { ErrorCode, createFileError, createValidationError } from "../utils/error-handler.js";
 
 export interface FileUploadServiceInterface {
   // 単一ファイルアップロード
@@ -230,41 +231,38 @@ export class FileUploadService implements FileUploadServiceInterface {
     try {
       // ファイルサイズチェック
       if (file.size > this.config.maxFileSize) {
-        return {
-          isValid: false,
-          error: `ファイルサイズが制限を超えています（最大: ${this.config.maxFileSize} bytes）`,
-          details: {
+        throw createFileError(
+          ErrorCode.FILE_TOO_LARGE,
+          `ファイルサイズが制限を超えています（最大: ${this.config.maxFileSize} bytes）`,
+          {
             field: "fileSize",
             value: file.size,
             constraint: `maxSize: ${this.config.maxFileSize}`,
           },
-        };
+        );
       }
 
       // 空ファイルチェック
       if (file.size === 0) {
-        return {
-          isValid: false,
-          error: "空のファイルはアップロードできません",
-          details: {
-            field: "fileSize",
-            value: file.size,
-            constraint: "minSize: 1",
-          },
-        };
+        throw createValidationError(
+          "空のファイルはアップロードできません",
+          "fileSize",
+          file.size,
+          "minSize: 1",
+        );
       }
 
       // ファイルタイプチェック
       if (!this.config.allowedTypes.includes(file.type)) {
-        return {
-          isValid: false,
-          error: `許可されていないファイル形式です（許可形式: ${this.config.allowedTypes.join(", ")}）`,
-          details: {
+        throw createFileError(
+          ErrorCode.INVALID_FILE_TYPE,
+          `許可されていないファイル形式です（許可形式: ${this.config.allowedTypes.join(", ")}）`,
+          {
             field: "contentType",
             value: file.type,
             constraint: `allowedTypes: ${this.config.allowedTypes.join(", ")}`,
           },
-        };
+        );
       }
 
       // ファイル名チェック
