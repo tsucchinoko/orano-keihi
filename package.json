@@ -6,10 +6,12 @@
 	"private": true,
 	"scripts": {
 		"dev": "pnpm --filter desktop dev",
+		"dev:api": "pnpm --filter api-server dev",
 		"build": "pnpm --filter desktop build",
+		"build:api": "pnpm --filter api-server build",
 		"build:production": "pnpm --filter desktop build:production",
 		"preview": "pnpm --filter desktop preview",
-		"check": "pnpm --filter desktop check",
+		"check": "pnpm run --recursive check",
 		"check:watch": "pnpm --filter desktop check:watch",
 		"tauri": "pnpm --filter desktop tauri",
 		"tauri:dev": "pnpm --filter desktop tauri:dev",
@@ -19,10 +21,12 @@
 		"tauri:build:dmg": "pnpm --filter desktop tauri:build:dmg",
 		"tauri:build:dmg:production": "pnpm --filter desktop tauri:build:dmg:production",
 		"tauri:build:dmg:production:verbose": "pnpm --filter desktop tauri:build:dmg:production:verbose",
-		"fmt": "pnpm --filter desktop fmt",
-		"fmt:check": "pnpm --filter desktop fmt:check",
-		"lint": "pnpm --filter desktop lint",
-		"lint:check": "pnpm --filter desktop lint:check"
+		"fmt": "pnpm run --recursive fmt",
+		"fmt:check": "pnpm run --recursive fmt:check",
+		"lint": "pnpm run --recursive lint",
+		"lint:check": "pnpm --filter desktop lint:check",
+		"test": "pnpm run --recursive test",
+		"test:api": "pnpm --filter api-server test"
 	},
 	"license": "MIT"
 }
