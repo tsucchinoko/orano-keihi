@@ -22,7 +22,7 @@ onMount(async () => {
 
 // プログラム的なナビゲーション関数
 function navigateTo(path: string) {
-	console.log(`Navigating to: ${path}`);
+	console.info(`Navigating to: ${path}`);
 	goto(path);
 }
 

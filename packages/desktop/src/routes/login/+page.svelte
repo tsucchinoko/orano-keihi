@@ -24,17 +24,17 @@ onMount(async () => {
 // 認証状態の変化を監視してリダイレクト
 $effect(() => {
 	if (isAuthenticated) {
-		console.log("🔘 認証成功を検出しました。メインページにリダイレクトします");
+		console.info("🔘 認証成功を検出しました。メインページにリダイレクトします");
 		goto("/");
 	}
 });
 
 // Googleログインボタンクリック処理
 async function handleGoogleLogin() {
-	console.log("🔘 Googleログインボタンがクリックされました");
+	console.info("🔘 Googleログインボタンがクリックされました");
 	try {
 		await authStore.login();
-		console.log("🔘 authStore.login()が完了しました");
+		console.info("🔘 authStore.login()が完了しました");
 	} catch (error) {
 		console.error("🔘 ログイン処理でエラーが発生しました:", error);
 	}

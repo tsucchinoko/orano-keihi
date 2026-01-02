@@ -1,14 +1,14 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from '@tauri-apps/api/core';
+import { authStore } from '../stores/auth.svelte';
 import type {
-	Expense,
-	CreateExpenseDto,
-	UpdateExpenseDto,
-	Subscription,
-	CreateSubscriptionDto,
-	UpdateSubscriptionDto,
-	TauriResult,
-} from "../types";
-import { authStore } from "../stores/auth.svelte";
+  Expense,
+  CreateExpenseDto,
+  UpdateExpenseDto,
+  Subscription,
+  CreateSubscriptionDto,
+  UpdateSubscriptionDto,
+  TauriResult,
+} from '../types';
 
 /**
  * エラーメッセージをユーザーフレンドリーな形式にフォーマットする
@@ -17,24 +17,24 @@ import { authStore } from "../stores/auth.svelte";
  * @returns フォーマットされたエラーメッセージ
  */
 export function formatErrorMessage(error: unknown): string {
-	if (typeof error === "string") {
-		return error;
-	}
+  if (typeof error === 'string') {
+    return error;
+  }
 
-	if (error instanceof Error) {
-		return error.message;
-	}
+  if (error instanceof Error) {
+    return error.message;
+  }
 
-	// オブジェクトの場合、JSONとして表示
-	if (typeof error === "object" && error !== null) {
-		try {
-			return JSON.stringify(error);
-		} catch {
-			return "不明なエラーが発生しました";
-		}
-	}
+  // オブジェクトの場合、JSONとして表示
+  if (typeof error === 'object' && error !== null) {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return '不明なエラーが発生しました';
+    }
+  }
 
-	return "不明なエラーが発生しました";
+  return '不明なエラーが発生しました';
 }
 
 /**
@@ -44,19 +44,19 @@ export function formatErrorMessage(error: unknown): string {
  * @returns データまたはエラーメッセージを含むオブジェクト
  */
 export async function handleTauriCommand<T>(
-	command: Promise<T>,
+  command: Promise<T>
 ): Promise<TauriResult<T>> {
-	try {
-		console.log("🔧 Tauriコマンドを実行中...");
-		const data = await command;
-		console.log("🔧 Tauriコマンド成功:", data);
-		return { data };
-	} catch (error) {
-		console.error("🔧 Tauriコマンドエラー:", error);
-		const errorMessage = formatErrorMessage(error);
-		console.error("🔧 フォーマット済みエラーメッセージ:", errorMessage);
-		return { error: errorMessage };
-	}
+  try {
+    console.info('🔧 Tauriコマンドを実行中...');
+    const data = await command;
+    console.info('🔧 Tauriコマンド成功:', data);
+    return { data };
+  } catch (error) {
+    console.error('🔧 Tauriコマンドエラー:', error);
+    const errorMessage = formatErrorMessage(error);
+    console.error('🔧 フォーマット済みエラーメッセージ:', errorMessage);
+    return { error: errorMessage };
+  }
 }
 
 /**
@@ -65,7 +65,7 @@ export async function handleTauriCommand<T>(
  * @returns セッショントークンまたはnull
  */
 function getAuthToken(): string | null {
-	return authStore.getSessionToken();
+  return authStore.getSessionToken();
 }
 
 // ========================================
@@ -79,15 +79,15 @@ function getAuthToken(): string | null {
  * @returns 作成された経費データまたはエラー
  */
 export async function createExpense(
-	expense: CreateExpenseDto,
+  expense: CreateExpenseDto
 ): Promise<TauriResult<Expense>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<Expense>("create_expense", {
-			dto: expense,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Expense>('create_expense', {
+      dto: expense,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -98,17 +98,17 @@ export async function createExpense(
  * @returns 経費一覧またはエラー
  */
 export async function getExpenses(
-	month?: string,
-	category?: string,
+  month?: string,
+  category?: string
 ): Promise<TauriResult<Expense[]>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<Expense[]>("get_expenses", {
-			month,
-			category,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Expense[]>('get_expenses', {
+      month,
+      category,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -119,17 +119,17 @@ export async function getExpenses(
  * @returns 更新された経費データまたはエラー
  */
 export async function updateExpense(
-	id: number,
-	expense: UpdateExpenseDto,
+  id: number,
+  expense: UpdateExpenseDto
 ): Promise<TauriResult<Expense>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<Expense>("update_expense", {
-			id,
-			dto: expense,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Expense>('update_expense', {
+      id,
+      dto: expense,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -139,13 +139,13 @@ export async function updateExpense(
  * @returns 成功またはエラー
  */
 export async function deleteExpense(id: number): Promise<TauriResult<void>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<void>("delete_expense", {
-			id,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<void>('delete_expense', {
+      id,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -156,12 +156,12 @@ export async function deleteExpense(id: number): Promise<TauriResult<void>> {
  * @returns 保存されたファイルパスまたはエラー
  */
 export async function saveReceipt(
-	expenseId: number,
-	filePath: string,
+  expenseId: number,
+  filePath: string
 ): Promise<TauriResult<string>> {
-	return handleTauriCommand(
-		invoke<string>("save_receipt", { expenseId, filePath }),
-	);
+  return handleTauriCommand(
+    invoke<string>('save_receipt', { expenseId, filePath })
+  );
 }
 
 // ========================================
@@ -175,15 +175,15 @@ export async function saveReceipt(
  * @returns 作成されたサブスクリプションデータまたはエラー
  */
 export async function createSubscription(
-	subscription: CreateSubscriptionDto,
+  subscription: CreateSubscriptionDto
 ): Promise<TauriResult<Subscription>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<Subscription>("create_subscription", {
-			dto: subscription,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Subscription>('create_subscription', {
+      dto: subscription,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -193,15 +193,15 @@ export async function createSubscription(
  * @returns サブスクリプション一覧またはエラー
  */
 export async function getSubscriptions(
-	activeOnly: boolean = false,
+  activeOnly: boolean = false
 ): Promise<TauriResult<Subscription[]>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<Subscription[]>("get_subscriptions", {
-			activeOnly,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Subscription[]>('get_subscriptions', {
+      activeOnly,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -212,17 +212,17 @@ export async function getSubscriptions(
  * @returns 更新されたサブスクリプションデータまたはエラー
  */
 export async function updateSubscription(
-	id: number,
-	subscription: UpdateSubscriptionDto,
+  id: number,
+  subscription: UpdateSubscriptionDto
 ): Promise<TauriResult<Subscription>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<Subscription>("update_subscription", {
-			id,
-			dto: subscription,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Subscription>('update_subscription', {
+      id,
+      dto: subscription,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -232,15 +232,15 @@ export async function updateSubscription(
  * @returns 更新されたサブスクリプションデータまたはエラー
  */
 export async function toggleSubscriptionStatus(
-	id: number,
+  id: number
 ): Promise<TauriResult<Subscription>> {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<Subscription>("toggle_subscription_status", {
-			id,
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Subscription>('toggle_subscription_status', {
+      id,
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -249,14 +249,14 @@ export async function toggleSubscriptionStatus(
  * @returns 月額合計金額またはエラー
  */
 export async function getMonthlySubscriptionTotal(): Promise<
-	TauriResult<number>
+  TauriResult<number>
 > {
-	const sessionToken = getAuthToken();
-	return handleTauriCommand(
-		invoke<number>("get_monthly_subscription_total", {
-			sessionToken,
-		}),
-	);
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<number>('get_monthly_subscription_total', {
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -267,12 +267,12 @@ export async function getMonthlySubscriptionTotal(): Promise<
  * @returns 保存されたファイルパスまたはエラー
  */
 export async function saveSubscriptionReceipt(
-	subscriptionId: number,
-	filePath: string,
+  subscriptionId: number,
+  filePath: string
 ): Promise<TauriResult<string>> {
-	return handleTauriCommand(
-		invoke<string>("save_subscription_receipt", { subscriptionId, filePath }),
-	);
+  return handleTauriCommand(
+    invoke<string>('save_subscription_receipt', { subscriptionId, filePath })
+  );
 }
 /**
  * 経費の領収書を削除する
@@ -281,9 +281,9 @@ export async function saveSubscriptionReceipt(
  * @returns 成功またはエラー
  */
 export async function deleteReceipt(
-	expenseId: number,
+  expenseId: number
 ): Promise<TauriResult<boolean>> {
-	return handleTauriCommand(invoke<boolean>("delete_receipt", { expenseId }));
+  return handleTauriCommand(invoke<boolean>('delete_receipt', { expenseId }));
 }
 
 /**
@@ -293,11 +293,11 @@ export async function deleteReceipt(
  * @returns 成功またはエラー
  */
 export async function deleteSubscriptionReceipt(
-	subscriptionId: number,
+  subscriptionId: number
 ): Promise<TauriResult<boolean>> {
-	return handleTauriCommand(
-		invoke<boolean>("delete_subscription_receipt", { subscriptionId }),
-	);
+  return handleTauriCommand(
+    invoke<boolean>('delete_subscription_receipt', { subscriptionId })
+  );
 }
 
 // ========================================
@@ -312,24 +312,24 @@ export async function deleteSubscriptionReceipt(
  * @returns アップロードされたHTTPS URLまたはエラー
  */
 export async function uploadReceiptToR2(
-	expenseId: number,
-	filePath: string,
+  expenseId: number,
+  filePath: string
 ): Promise<TauriResult<string>> {
-	const sessionToken = getAuthToken();
-	if (!sessionToken) {
-		return {
-			success: false,
-			error: "認証が必要です。ログインしてください。",
-		};
-	}
+  const sessionToken = getAuthToken();
+  if (!sessionToken) {
+    return {
+      success: false,
+      error: '認証が必要です。ログインしてください。',
+    };
+  }
 
-	return handleTauriCommand(
-		invoke<string>("upload_receipt_with_auth", {
-			sessionToken,
-			expenseId,
-			filePath,
-		}),
-	);
+  return handleTauriCommand(
+    invoke<string>('upload_receipt_with_auth', {
+      sessionToken,
+      expenseId,
+      filePath,
+    })
+  );
 }
 
 /**
@@ -339,22 +339,22 @@ export async function uploadReceiptToR2(
  * @returns Base64エンコードされたファイルデータまたはエラー
  */
 export async function getReceiptFromR2(
-	receiptUrl: string,
+  receiptUrl: string
 ): Promise<TauriResult<string>> {
-	const sessionToken = getAuthToken();
-	if (!sessionToken) {
-		return {
-			success: false,
-			error: "認証が必要です。ログインしてください。",
-		};
-	}
+  const sessionToken = getAuthToken();
+  if (!sessionToken) {
+    return {
+      success: false,
+      error: '認証が必要です。ログインしてください。',
+    };
+  }
 
-	return handleTauriCommand(
-		invoke<string>("get_receipt_with_auth", {
-			sessionToken,
-			receiptUrl,
-		}),
-	);
+  return handleTauriCommand(
+    invoke<string>('get_receipt_with_auth', {
+      sessionToken,
+      receiptUrl,
+    })
+  );
 }
 
 /**
@@ -364,22 +364,22 @@ export async function getReceiptFromR2(
  * @returns 成功またはエラー
  */
 export async function deleteReceiptFromR2(
-	expenseId: number,
+  expenseId: number
 ): Promise<TauriResult<boolean>> {
-	const sessionToken = getAuthToken();
-	if (!sessionToken) {
-		return {
-			success: false,
-			error: "認証が必要です。ログインしてください。",
-		};
-	}
+  const sessionToken = getAuthToken();
+  if (!sessionToken) {
+    return {
+      success: false,
+      error: '認証が必要です。ログインしてください。',
+    };
+  }
 
-	return handleTauriCommand(
-		invoke<boolean>("delete_receipt_with_auth", {
-			sessionToken,
-			expenseId,
-		}),
-	);
+  return handleTauriCommand(
+    invoke<boolean>('delete_receipt_with_auth', {
+      sessionToken,
+      expenseId,
+    })
+  );
 }
 
 /**
@@ -388,7 +388,7 @@ export async function deleteReceiptFromR2(
  * @returns 接続成功またはエラー
  */
 export async function testR2Connection(): Promise<TauriResult<boolean>> {
-	return handleTauriCommand(invoke<boolean>("test_r2_connection"));
+  return handleTauriCommand(invoke<boolean>('test_r2_connection'));
 }
 
 // ========================================
@@ -402,11 +402,11 @@ export async function testR2Connection(): Promise<TauriResult<boolean>> {
  * @returns Base64エンコードされたキャッシュファイルデータまたはエラー
  */
 export async function getReceiptOffline(
-	receiptUrl: string,
+  receiptUrl: string
 ): Promise<TauriResult<string>> {
-	return handleTauriCommand(
-		invoke<string>("get_receipt_offline", { receiptUrl }),
-	);
+  return handleTauriCommand(
+    invoke<string>('get_receipt_offline', { receiptUrl })
+  );
 }
 
 /**
@@ -415,7 +415,7 @@ export async function getReceiptOffline(
  * @returns 同期されたキャッシュ数またはエラー
  */
 export async function syncCacheOnOnline(): Promise<TauriResult<number>> {
-	return handleTauriCommand(invoke<number>("sync_cache_on_online"));
+  return handleTauriCommand(invoke<number>('sync_cache_on_online'));
 }
 
 /**
@@ -424,11 +424,11 @@ export async function syncCacheOnOnline(): Promise<TauriResult<number>> {
  * @returns キャッシュ統計情報またはエラー
  */
 export async function getCacheStats(): Promise<
-	TauriResult<import("../types").CacheStats>
+  TauriResult<import('../types').CacheStats>
 > {
-	return handleTauriCommand(
-		invoke<import("../types").CacheStats>("get_cache_stats"),
-	);
+  return handleTauriCommand(
+    invoke<import('../types').CacheStats>('get_cache_stats')
+  );
 }
 
 // ========================================
@@ -443,15 +443,15 @@ export async function getCacheStats(): Promise<
  * @returns アップロード結果またはエラー
  */
 export async function uploadMultipleReceiptsToR2(
-	files: import("../types").MultipleFileUploadInput[],
-	maxConcurrent?: number,
-): Promise<TauriResult<import("../types").MultipleUploadResult>> {
-	return handleTauriCommand(
-		invoke<import("../types").MultipleUploadResult>(
-			"upload_multiple_receipts_to_r2",
-			{ files, maxConcurrent },
-		),
-	);
+  files: import('../types').MultipleFileUploadInput[],
+  maxConcurrent?: number
+): Promise<TauriResult<import('../types').MultipleUploadResult>> {
+  return handleTauriCommand(
+    invoke<import('../types').MultipleUploadResult>(
+      'upload_multiple_receipts_to_r2',
+      { files, maxConcurrent }
+    )
+  );
 }
 
 /**
@@ -461,9 +461,9 @@ export async function uploadMultipleReceiptsToR2(
  * @returns キャンセル成功またはエラー
  */
 export async function cancelUpload(
-	uploadId: string,
+  uploadId: string
 ): Promise<TauriResult<boolean>> {
-	return handleTauriCommand(invoke<boolean>("cancel_upload", { uploadId }));
+  return handleTauriCommand(invoke<boolean>('cancel_upload', { uploadId }));
 }
 
 /**
@@ -472,11 +472,11 @@ export async function cancelUpload(
  * @returns パフォーマンス統計またはエラー
  */
 export async function getR2PerformanceStats(): Promise<
-	TauriResult<import("../types").PerformanceStats>
+  TauriResult<import('../types').PerformanceStats>
 > {
-	return handleTauriCommand(
-		invoke<import("../types").PerformanceStats>("get_r2_performance_stats"),
-	);
+  return handleTauriCommand(
+    invoke<import('../types').PerformanceStats>('get_r2_performance_stats')
+  );
 }
 
 // ========================================
@@ -489,13 +489,13 @@ export async function getR2PerformanceStats(): Promise<
  * @returns 詳細なテスト結果またはエラー
  */
 export async function testR2ConnectionDetailed(): Promise<
-	TauriResult<import("../types").R2ConnectionTestResult>
+  TauriResult<import('../types').R2ConnectionTestResult>
 > {
-	return handleTauriCommand(
-		invoke<import("../types").R2ConnectionTestResult>(
-			"test_r2_connection_detailed",
-		),
-	);
+  return handleTauriCommand(
+    invoke<import('../types').R2ConnectionTestResult>(
+      'test_r2_connection_detailed'
+    )
+  );
 }
 
 /**
@@ -504,11 +504,11 @@ export async function testR2ConnectionDetailed(): Promise<
  * @returns 使用量監視情報またはエラー
  */
 export async function getR2UsageMonitoring(): Promise<
-	TauriResult<import("../types").R2UsageInfo>
+  TauriResult<import('../types').R2UsageInfo>
 > {
-	return handleTauriCommand(
-		invoke<import("../types").R2UsageInfo>("get_r2_usage_monitoring"),
-	);
+  return handleTauriCommand(
+    invoke<import('../types').R2UsageInfo>('get_r2_usage_monitoring')
+  );
 }
 
 /**
@@ -517,11 +517,11 @@ export async function getR2UsageMonitoring(): Promise<
  * @returns デバッグ情報またはエラー
  */
 export async function getR2DebugInfo(): Promise<
-	TauriResult<import("../types").R2DebugInfo>
+  TauriResult<import('../types').R2DebugInfo>
 > {
-	return handleTauriCommand(
-		invoke<import("../types").R2DebugInfo>("get_r2_debug_info"),
-	);
+  return handleTauriCommand(
+    invoke<import('../types').R2DebugInfo>('get_r2_debug_info')
+  );
 }
 
 // ========================================
@@ -534,14 +534,14 @@ export async function getR2DebugInfo(): Promise<
  * @returns 認証開始情報またはエラー
  */
 export async function startOAuthFlow(): Promise<
-	TauriResult<import("../types").StartAuthResponse>
+  TauriResult<import('../types').StartAuthResponse>
 > {
-	console.log("🚀 startOAuthFlow() Tauriコマンドを呼び出します");
-	const result = await handleTauriCommand(
-		invoke<import("../types").StartAuthResponse>("start_oauth_flow"),
-	);
-	console.log("🚀 startOAuthFlow() Tauriコマンド結果:", result);
-	return result;
+  console.info('🚀 startOAuthFlow() Tauriコマンドを呼び出します');
+  const result = await handleTauriCommand(
+    invoke<import('../types').StartAuthResponse>('start_oauth_flow')
+  );
+  console.info('🚀 startOAuthFlow() Tauriコマンド結果:', result);
+  return result;
 }
 
 /**
@@ -550,14 +550,14 @@ export async function startOAuthFlow(): Promise<
  * @returns 認証結果またはエラー
  */
 export async function waitForAuthCompletion(): Promise<
-	TauriResult<import("../types").WaitForAuthResponse>
+  TauriResult<import('../types').WaitForAuthResponse>
 > {
-	console.log("🚀 waitForAuthCompletion() Tauriコマンドを呼び出します");
-	const result = await handleTauriCommand(
-		invoke<import("../types").WaitForAuthResponse>("wait_for_auth_completion"),
-	);
-	console.log("🚀 waitForAuthCompletion() Tauriコマンド結果:", result);
-	return result;
+  console.info('🚀 waitForAuthCompletion() Tauriコマンドを呼び出します');
+  const result = await handleTauriCommand(
+    invoke<import('../types').WaitForAuthResponse>('wait_for_auth_completion')
+  );
+  console.info('🚀 waitForAuthCompletion() Tauriコマンド結果:', result);
+  return result;
 }
 
 /**
@@ -567,13 +567,13 @@ export async function waitForAuthCompletion(): Promise<
  * @returns セッション検証結果またはエラー
  */
 export async function validateSession(
-	sessionToken: string,
-): Promise<TauriResult<import("../types").ValidateSessionResponse>> {
-	return handleTauriCommand(
-		invoke<import("../types").ValidateSessionResponse>("validate_session", {
-			sessionToken,
-		}),
-	);
+  sessionToken: string
+): Promise<TauriResult<import('../types').ValidateSessionResponse>> {
+  return handleTauriCommand(
+    invoke<import('../types').ValidateSessionResponse>('validate_session', {
+      sessionToken,
+    })
+  );
 }
 
 /**
@@ -583,7 +583,7 @@ export async function validateSession(
  * @returns ログアウト結果またはエラー
  */
 export async function logout(sessionToken: string): Promise<TauriResult<void>> {
-	return handleTauriCommand(invoke<void>("logout", { sessionToken }));
+  return handleTauriCommand(invoke<void>('logout', { sessionToken }));
 }
 
 /**
@@ -593,11 +593,11 @@ export async function logout(sessionToken: string): Promise<TauriResult<void>> {
  * @returns 認証状態またはエラー
  */
 export async function getAuthState(
-	sessionToken?: string,
-): Promise<TauriResult<import("../types").AuthState>> {
-	return handleTauriCommand(
-		invoke<import("../types").AuthState>("get_auth_state", { sessionToken }),
-	);
+  sessionToken?: string
+): Promise<TauriResult<import('../types').AuthState>> {
+  return handleTauriCommand(
+    invoke<import('../types').AuthState>('get_auth_state', { sessionToken })
+  );
 }
 
 // ========================================
@@ -612,24 +612,24 @@ export async function getAuthState(
  * @returns アップロードされたHTTPS URLまたはエラー
  */
 export async function uploadSubscriptionReceiptToR2(
-	subscriptionId: number,
-	filePath: string,
+  subscriptionId: number,
+  filePath: string
 ): Promise<TauriResult<string>> {
-	const sessionToken = getAuthToken();
-	if (!sessionToken) {
-		return {
-			success: false,
-			error: "認証が必要です。ログインしてください。",
-		};
-	}
+  const sessionToken = getAuthToken();
+  if (!sessionToken) {
+    return {
+      success: false,
+      error: '認証が必要です。ログインしてください。',
+    };
+  }
 
-	return handleTauriCommand(
-		invoke<string>("upload_subscription_receipt_with_auth", {
-			sessionToken,
-			subscriptionId,
-			filePath,
-		}),
-	);
+  return handleTauriCommand(
+    invoke<string>('upload_subscription_receipt_with_auth', {
+      sessionToken,
+      subscriptionId,
+      filePath,
+    })
+  );
 }
 
 /**
@@ -639,20 +639,20 @@ export async function uploadSubscriptionReceiptToR2(
  * @returns 成功またはエラー
  */
 export async function deleteSubscriptionReceiptFromR2(
-	subscriptionId: number,
+  subscriptionId: number
 ): Promise<TauriResult<boolean>> {
-	const sessionToken = getAuthToken();
-	if (!sessionToken) {
-		return {
-			success: false,
-			error: "認証が必要です。ログインしてください。",
-		};
-	}
+  const sessionToken = getAuthToken();
+  if (!sessionToken) {
+    return {
+      success: false,
+      error: '認証が必要です。ログインしてください。',
+    };
+  }
 
-	return handleTauriCommand(
-		invoke<boolean>("delete_subscription_receipt_with_auth", {
-			sessionToken,
-			subscriptionId,
-		}),
-	);
+  return handleTauriCommand(
+    invoke<boolean>('delete_subscription_receipt_with_auth', {
+      sessionToken,
+      subscriptionId,
+    })
+  );
 }
