@@ -18,8 +18,6 @@ export interface CorsConfig {
 
 export interface AuthConfig {
   jwtSecret: string;
-  sessionEncryptionKey: string;
-  sessionExpirationDays: number;
 }
 
 export interface FileUploadConfig {

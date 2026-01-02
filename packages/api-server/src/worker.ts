@@ -15,9 +15,6 @@ export interface Env {
   // R2バケット（バインディング）
   R2_BUCKET: R2Bucket;
 
-  // KVストレージ（バインディング）
-  KV_SESSIONS: KVNamespace;
-
   // R2設定（環境変数）
   R2_ENDPOINT?: string;
   R2_ACCESS_KEY_ID?: string;
@@ -27,8 +24,6 @@ export interface Env {
 
   // 認証設定（機密情報）
   JWT_SECRET?: string;
-  SESSION_ENCRYPTION_KEY?: string;
-  SESSION_EXPIRATION_DAYS?: string;
 
   // CORS設定
   CORS_ORIGIN?: string;

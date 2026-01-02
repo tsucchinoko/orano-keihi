@@ -27,8 +27,6 @@ export function loadWorkerConfig(env: Env): ApiServerConfig {
     // 認証設定
     auth: {
       jwtSecret: env.JWT_SECRET || "default-secret-change-in-production",
-      sessionEncryptionKey: env.SESSION_ENCRYPTION_KEY || "default-key-change-in-production-32b",
-      sessionExpirationDays: parseInt(env.SESSION_EXPIRATION_DAYS || "30"),
     },
 
     // CORS設定
@@ -79,8 +77,6 @@ export function getWorkerConfigForDisplay(config: ApiServerConfig) {
     },
     auth: {
       jwtSecret: config.auth.jwtSecret ? "***設定済み***" : "未設定",
-      sessionEncryptionKey: config.auth.sessionEncryptionKey ? "***設定済み***" : "未設定",
-      sessionExpirationDays: config.auth.sessionExpirationDays,
     },
     cors: config.cors,
     fileUpload: config.fileUpload,

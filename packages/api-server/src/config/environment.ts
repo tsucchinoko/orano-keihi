@@ -29,8 +29,6 @@ const envSchema = z.object({
 
   // 認証設定
   JWT_SECRET: z.string(),
-  SESSION_ENCRYPTION_KEY: z.string(),
-  SESSION_EXPIRATION_DAYS: z.string().default("30").transform(Number),
 
   // ファイルアップロード設定
   MAX_FILE_SIZE: z.string().default("10485760").transform(Number), // 10MB
@@ -134,8 +132,6 @@ export function loadConfig(): ApiServerConfig {
       r2: r2Config,
       auth: {
         jwtSecret: env.JWT_SECRET,
-        sessionEncryptionKey: env.SESSION_ENCRYPTION_KEY,
-        sessionExpirationDays: env.SESSION_EXPIRATION_DAYS,
       },
       fileUpload: {
         maxFileSize: env.MAX_FILE_SIZE,
@@ -180,7 +176,6 @@ export function getConfigForDisplay(config: ApiServerConfig) {
     },
     auth: {
       jwtSecret: "[HIDDEN]",
-      sessionEncryptionKey: "[HIDDEN]",
     },
   };
 }

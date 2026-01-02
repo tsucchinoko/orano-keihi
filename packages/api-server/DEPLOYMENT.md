@@ -44,11 +44,9 @@ LOG_LEVEL = debug
 ```bash
 # 本番環境の機密情報を設定
 wrangler secret put JWT_SECRET --env production
-wrangler secret put SESSION_ENCRYPTION_KEY --env production
 
 # 開発環境の機密情報を設定
 wrangler secret put JWT_SECRET --env development
-wrangler secret put SESSION_ENCRYPTION_KEY --env development
 ```
 
 ### 3. 環境変数の優先順位
