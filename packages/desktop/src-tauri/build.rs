@@ -32,13 +32,8 @@ fn main() {
     println!("cargo:rustc-env=ENVIRONMENT={}", environment);
 
     // API設定
-    let api_server_url = env::var("API_SERVER_URL").unwrap_or_else(|_| {
-        if environment == "production" {
-            "https://orano-keihi.ccya2211.workers.dev".to_string()
-        } else {
-            "http://localhost:3000".to_string()
-        }
-    });
+    let api_server_url =
+        env::var("API_SERVER_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     let api_timeout = env::var("API_TIMEOUT_SECONDS").unwrap_or_else(|_| "30".to_string());
     let api_max_retries = env::var("API_MAX_RETRIES").unwrap_or_else(|_| "3".to_string());

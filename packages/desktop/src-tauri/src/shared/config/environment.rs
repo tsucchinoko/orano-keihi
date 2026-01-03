@@ -263,11 +263,7 @@ impl ApiConfig {
                 })
             })
             .unwrap_or_else(|| {
-                let default_url = if get_environment() == Environment::Production {
-                    "https://orano-keihi.ccya2211.workers.dev"
-                } else {
-                    "http://localhost:3000"
-                };
+                let default_url = "http://localhost:3000";
                 log::debug!(
                     "API_SERVER_URL が設定されていないため、デフォルト値を使用: {default_url}"
                 );
