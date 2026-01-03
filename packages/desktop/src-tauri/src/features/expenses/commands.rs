@@ -384,6 +384,7 @@ mod tests {
             amount: Some(1500.0),
             category: Some("交通費".to_string()),
             description: Some("更新されたテスト経費".to_string()),
+            receipt_url: None,
         };
 
         assert!(validate_update_expense_dto(&dto).is_ok());
@@ -397,6 +398,7 @@ mod tests {
             amount: Some(2000.0),
             category: None,
             description: None,
+            receipt_url: None,
         };
 
         assert!(validate_update_expense_dto(&dto).is_ok());
@@ -410,6 +412,7 @@ mod tests {
             amount: Some(-500.0),
             category: None,
             description: None,
+            receipt_url: None,
         };
 
         let result = validate_update_expense_dto(&dto);

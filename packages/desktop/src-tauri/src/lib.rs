@@ -289,24 +289,9 @@ pub fn run() {
             receipt_api_commands::sync_fallback_files,
             receipt_api_commands::get_fallback_file_count,
             receipt_api_commands::get_receipt_via_api,
-            // 領収書コマンド（認証付き）
-            receipt_auth_commands::upload_receipt_with_auth,
-            receipt_auth_commands::get_receipt_with_auth,
-            receipt_auth_commands::delete_receipt_with_auth,
-            receipt_auth_commands::download_receipt_with_auth,
-            receipt_auth_commands::extract_path_from_url_with_auth,
-            // サブスクリプション領収書コマンド（認証付き）
-            receipt_auth_commands::upload_subscription_receipt_with_auth,
-            receipt_auth_commands::delete_subscription_receipt_with_auth,
-            // 領収書コマンド（通常）
-            receipt_commands::get_receipt_from_r2,
-            receipt_commands::delete_receipt_from_r2,
             receipt_commands::get_receipt_offline,
             receipt_commands::sync_cache_on_online,
             receipt_commands::get_cache_stats,
-            receipt_commands::upload_multiple_receipts_to_r2,
-            receipt_commands::test_r2_connection,
-            receipt_commands::get_r2_performance_stats,
             // マイグレーションコマンド
             features::migrations::commands::check_migration_status,
             features::migrations::commands::check_auto_migration_status,
@@ -315,13 +300,6 @@ pub fn run() {
             features::migrations::commands::execute_receipt_url_migration,
             features::migrations::commands::drop_receipt_path_column_command,
             features::migrations::commands::check_database_integrity,
-            // R2マイグレーションコマンド
-            features::migrations::r2_migration_commands::start_r2_migration,
-            features::migrations::r2_migration_commands::get_r2_migration_status,
-            features::migrations::r2_migration_commands::pause_r2_migration,
-            features::migrations::r2_migration_commands::resume_r2_migration,
-            features::migrations::r2_migration_commands::stop_r2_migration,
-            features::migrations::r2_migration_commands::validate_r2_migration_integrity,
             // データベース更新コマンド
             features::migrations::database_update_commands::detect_legacy_receipt_urls,
             features::migrations::database_update_commands::execute_database_update,

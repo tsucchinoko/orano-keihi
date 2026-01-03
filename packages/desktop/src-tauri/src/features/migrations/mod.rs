@@ -4,20 +4,15 @@
 //! バックアップの作成と復元、マイグレーション状態の確認を提供します。
 
 pub mod auto_migration;
-pub mod batch_processor;
 pub mod commands;
 pub mod database_update_commands;
 pub mod database_updater;
 pub mod error_handler;
 pub mod errors;
 pub mod logging;
-pub mod r2_migration_commands;
 pub mod r2_user_directory_migration;
 pub mod security_audit;
 pub mod service;
-
-#[cfg(test)]
-mod batch_processor_test;
 
 #[cfg(test)]
 mod commands_test;
@@ -28,18 +23,11 @@ mod integration_tests;
 #[cfg(test)]
 mod error_scenario_tests;
 
-#[cfg(test)]
-mod r2_migration_commands_test;
-
 // 公開インターフェース
 pub use auto_migration::{
     AppliedMigration, AutoMigrationResult, AutoMigrationService, MigrationDefinition,
     MigrationError, MigrationErrorType, MigrationExecutionResult, MigrationExecutor,
     MigrationRegistry, MigrationStatusReport, MigrationTable,
-};
-
-pub use batch_processor::{
-    BatchProcessor, BatchProcessorStats, MigrationItem, MigrationResult, R2FileInfo,
 };
 
 pub use commands::{
@@ -69,12 +57,6 @@ pub use errors::{ErrorAction, MigrationErrorHandler, RetryStrategy};
 pub use logging::{
     get_global_logger, init_global_logger, log_migration_info, LogLevel, LogStatistics,
     StructuredLogEntry, StructuredLogger,
-};
-
-pub use r2_migration_commands::{
-    get_r2_migration_status, pause_r2_migration, resume_r2_migration, start_r2_migration,
-    stop_r2_migration, validate_r2_migration_integrity, R2MigrationResult, R2MigrationStatus,
-    StartR2MigrationParams, ValidationResult,
 };
 
 pub use r2_user_directory_migration::{
