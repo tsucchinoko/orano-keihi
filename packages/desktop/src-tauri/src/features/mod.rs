@@ -10,3 +10,4 @@ pub mod migrations;
 pub mod receipts;
 pub mod security;
 pub mod subscriptions;
+pub mod updater;

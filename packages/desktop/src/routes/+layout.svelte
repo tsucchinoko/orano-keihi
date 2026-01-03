@@ -2,6 +2,7 @@
 import "../app.css";
 // import ErrorBoundary from "$lib/components/ErrorBoundary.svelte";
 // import ToastContainer from "$lib/components/ToastContainer.svelte";
+import UpdateNotification from "$lib/components/UpdateNotification.svelte";
 import { goto } from "$app/navigation";
 import { page } from "$app/state";
 import { authStore } from "$lib/stores";
@@ -160,6 +161,9 @@ let isLoginPage = $derived(currentPath.startsWith("/login"));
 
 			<!-- トースト通知コンテナ -->
 			<!-- <ToastContainer /> -->
+
+			<!-- アップデート通知 -->
+			<UpdateNotification />
 		</div>
 	<!-- {/snippet} -->
 <!-- </ErrorBoundary> -->

@@ -32,6 +32,7 @@ import {
   logError,
   logSecurityEvent,
 } from "./middleware/index.js";
+import { updaterApp } from "./routes/updater.js";
 
 /**
  * ファイルキーからContent-Typeを推定する
@@ -129,6 +130,9 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
       environment: config.nodeEnv,
     });
   });
+
+  // アップデーター関連エンドポイント
+  app.route("/api/updater", updaterApp);
 
   // R2接続テストエンドポイント（認証が必要）
   app.get("/api/v1/system/r2/test", authMiddleware, async (c) => {

@@ -115,6 +115,14 @@
     },
     "shell": {
       "open": true
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://orano-keihi.tsucchinoko.workers.dev/api/updater/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhEQzY4M0Y5RkY4NzU5MkUKUldSVE1qVXhNVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeA=="
     }
   }
 }

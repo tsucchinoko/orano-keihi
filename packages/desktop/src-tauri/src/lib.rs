@@ -16,6 +16,7 @@ use features::{
     },
     security::commands as security_commands,
     subscriptions::{api_commands as subscription_api_commands, commands as subscription_commands},
+    updater::commands as updater_commands,
 };
 use log::info;
 use rusqlite::Connection;
@@ -85,6 +86,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // 詳細なデバッグログを追加
             eprintln!("=== アプリケーション初期化開始 ===");
@@ -326,6 +328,11 @@ pub fn run() {
             features::migrations::database_update_commands::get_database_statistics,
             features::migrations::database_update_commands::update_specific_receipt_urls,
             features::migrations::database_update_commands::check_database_url_integrity,
+            // アップデートコマンド
+            updater_commands::check_for_updates,
+            updater_commands::download_and_install_update,
+            updater_commands::get_app_version,
+            updater_commands::start_auto_update_check,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");
