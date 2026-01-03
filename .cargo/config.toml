@@ -1,12 +1,19 @@
 [build]
 # デフォルトのマニフェストパスを設定
-target-dir = "src-tauri/target"
+target-dir = "packages/desktop/src-tauri/target"
+
+# macOS用のターゲット設定
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,@loader_path"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,@loader_path"]
 
 [alias]
 # エイリアスを定義してコマンドを短縮
-tauri-build = "build --manifest-path src-tauri/Cargo.toml"
-tauri-build-release = "build --manifest-path src-tauri/Cargo.toml --release"
-tauri-check = "check --manifest-path src-tauri/Cargo.toml --all"
-tauri-test = "test --manifest-path src-tauri/Cargo.toml --all"
-tauri-clippy = "clippy --manifest-path src-tauri/Cargo.toml --all"
-tauri-fmt = "fmt --manifest-path src-tauri/Cargo.toml --all"
+tauri-build = "build --manifest-path packages/desktop/src-tauri/Cargo.toml"
+tauri-build-release = "build --manifest-path packages/desktop/src-tauri/Cargo.toml --release"
+tauri-check = "check --manifest-path packages/desktop/src-tauri/Cargo.toml --all"
+tauri-test = "test --manifest-path packages/desktop/src-tauri/Cargo.toml --all"
+tauri-clippy = "clippy --manifest-path packages/desktop/src-tauri/Cargo.toml --all"
+tauri-fmt = "fmt --manifest-path packages/desktop/src-tauri/Cargo.toml --all"

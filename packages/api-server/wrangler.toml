@@ -1,0 +1,65 @@
+# Cloudflare Workers設定ファイル
+name = "orano-keihi"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+# 本番環境設定
+[env.production]
+name = "orano-keihi"
+
+[env.production.vars]
+NODE_ENV = "production"
+CORS_ORIGIN = "https://yourdomain.com"
+LOG_LEVEL = "info"
+MAX_FILE_SIZE = "10485760"
+ALLOWED_FILE_TYPES = "image/jpeg,image/png,image/gif,application/pdf"
+MAX_FILES_PER_REQUEST = "10"
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "100"
+
+# 開発環境設定
+[env.development]
+name = "orano-keihi-dev"
+
+[env.development.vars]
+NODE_ENV = "development"
+CORS_ORIGIN = "http://localhost:1420,tauri://localhost"
+LOG_LEVEL = "debug"
+MAX_FILE_SIZE = "10485760"
+ALLOWED_FILE_TYPES = "image/jpeg,image/png,image/gif,application/pdf"
+MAX_FILES_PER_REQUEST = "10"
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "100"
+
+# R2バケットのバインディング
+[[env.production.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "orano-keihi-prod"
+
+[[env.development.r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "orano-keihi-dev"
+
+# 秘匿情報は以下のコマンドで設定してください：
+# 
+# 本番環境の秘匿情報設定：
+# wrangler secret put JWT_SECRET --env production
+# wrangler secret put R2_ACCESS_KEY_ID --env production
+# wrangler secret put R2_SECRET_ACCESS_KEY --env production
+# wrangler secret put GOOGLE_CLIENT_SECRET --env production
+# wrangler secret put SESSION_ENCRYPTION_KEY --env production
+#
+# 開発環境の秘匿情報設定：
+# wrangler secret put JWT_SECRET --env development
+# wrangler secret put R2_ACCESS_KEY_ID --env development
+# wrangler secret put R2_SECRET_ACCESS_KEY --env development
+# wrangler secret put GOOGLE_CLIENT_SECRET --env development
+# wrangler secret put SESSION_ENCRYPTION_KEY --env development

@@ -1,0 +1,30 @@
+# 依存関係
+node_modules/
+
+# ビルド出力
+dist/
+build/
+
+# 環境変数
+.env
+.env.local
+.env.production
+
+# ログファイル
+logs/
+*.log
+
+# テストカバレッジ
+coverage/
+
+# IDE設定
+.vscode/
+.idea/
+
+# OS生成ファイル
+.DS_Store
+Thumbs.db
+
+# 一時ファイル
+*.tmp
+*.temp

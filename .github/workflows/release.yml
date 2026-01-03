@@ -2,19 +2,19 @@ name: クロスプラットフォームリリース
 
 on:
   push:
-    branches: [ main ]
+    branches: [ release ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - '.gitignore'
       - 'LICENSE'
-  pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE'
+  # pull_request:
+  #   branches: [ release ]
+  #   paths-ignore:
+  #     - '**.md'
+  #     - 'docs/**'
+  #     - '.gitignore'
+  #     - 'LICENSE'
 
 env:
   CARGO_TERM_COLOR: always
@@ -263,7 +263,7 @@ jobs:
   create-release:
     needs: [version-tag, build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/release'
     
     steps:
     - uses: actions/checkout@v4
@@ -414,7 +414,7 @@ jobs:
             console.log('📝 PR用ビルドテスト:');
             console.log('  ✅ ビルドテストが完了しました');
             console.log('  ℹ️  リリースは作成されません（PR用テスト）');
-            console.log('  💡 mainブランチにマージ後、自動的にリリースが作成されます');
+            console.log('  💡 releaseブランチにマージ後、自動的にリリースが作成されます');
           } else if (macosResult === 'success' && windowsResult === 'success') {
             console.log('🚀 リリース作成:');
             console.log('  ✅ すべてのビルドが成功しました');

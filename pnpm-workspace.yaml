@@ -1,13 +1,12 @@
 # pnpmワークスペース設定
-# フロントエンド（Svelte）プロジェクトをワークスペースのルートとして管理
+# デスクトップアプリケーション（Svelte + Tauri）をpackages/desktop配下で管理
 
 packages:
-  # ルートディレクトリ（フロントエンド）
-  - "."
+  # デスクトップアプリケーション
+  - "packages/desktop"
   
   # 将来的に追加パッケージがある場合のための設定
-  # - "packages/*"
-  # - "apps/*"
+  - "packages/*"
 
 minimumReleaseAge: 2880
 # Tauriバックエンド（src-tauri）はRustプロジェクトなので

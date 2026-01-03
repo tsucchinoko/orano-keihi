@@ -2,6 +2,18 @@
 
 Tauri + SvelteKit + TypeScript で構築されたサブスクリプション管理アプリケーションです。
 
+## プロジェクト構造
+
+このプロジェクトはpnpmワークスペースを使用したモノレポ構成になっています：
+
+```
+├── packages/
+│   └── desktop/           # デスクトップアプリケーション（Tauri + SvelteKit）
+├── package.json           # ワークスペース管理用
+├── pnpm-workspace.yaml    # pnpmワークスペース設定
+└── README.md             # このファイル
+```
+
 ## 開発環境のセットアップ
 
 ### 必要な環境
@@ -18,7 +30,7 @@ git clone <repository-url>
 cd subscription-memo
 ```
 
-2. フロントエンド依存関係をインストール
+2. 依存関係をインストール（ワークスペース全体）
 ```bash
 pnpm install
 ```
@@ -29,6 +41,8 @@ pnpm dev
 ```
 
 ### 利用可能なコマンド
+
+すべてのコマンドはワークスペースルートから実行できます：
 
 #### フロントエンド開発
 - `pnpm dev` - 開発サーバーの起動
@@ -44,8 +58,17 @@ pnpm dev
 - `pnpm lint:check` - コードリンティングチェック
 
 #### Tauriアプリケーション
-- `pnpm tauri dev` - Tauriアプリケーションの開発モード
-- `pnpm tauri build` - Tauriアプリケーションのビルド
+- `pnpm tauri:dev` - Tauriアプリケーションの開発モード
+- `pnpm tauri:build` - Tauriアプリケーションのビルド
+- `pnpm tauri:build:dmg` - macOS DMGファイルのビルド
+
+#### 個別パッケージでの作業
+デスクトップアプリケーションディレクトリで直接作業する場合：
+```bash
+cd packages/desktop
+pnpm dev          # 開発サーバー起動
+pnpm tauri dev    # Tauriアプリケーション起動
+```
 
 ## 推奨IDE設定
 
@@ -54,15 +77,18 @@ pnpm dev
 ## プロジェクト構成
 
 ```
-├── src/                    # フロントエンドソースコード
-│   ├── features/          # 機能別コンポーネント
-│   ├── lib/               # 共通ライブラリ
-│   └── routes/            # SvelteKitルート
-├── src-tauri/             # Tauriバックエンド（Rust）
-├── static/                # 静的ファイル
-├── package.json           # Node.js依存関係とスクリプト
-├── pnpm-lock.yaml         # pnpmロックファイル
-└── .pnpmrc               # pnpm設定
+├── packages/
+│   └── desktop/           # デスクトップアプリケーション
+│       ├── src/           # フロントエンドソースコード
+│       │   ├── features/  # 機能別コンポーネント
+│       │   ├── lib/       # 共通ライブラリ
+│       │   └── routes/    # SvelteKitルート
+│       ├── src-tauri/     # Tauriバックエンド（Rust）
+│       ├── static/        # 静的ファイル
+│       └── package.json   # デスクトップアプリの依存関係
+├── package.json           # ワークスペース管理用
+├── pnpm-workspace.yaml    # ワークスペース設定
+└── pnpm-lock.yaml         # 依存関係ロックファイル
 ```
 
 ## 技術スタック
@@ -89,8 +115,8 @@ pnpm dev
 R2機能を使用するための最小限の設定：
 
 ```bash
-# 1. src-tauri/.envファイルを作成
-cp src-tauri/.env.example src-tauri/.env
+# 1. packages/desktop/src-tauri/.envファイルを作成
+cp packages/desktop/src-tauri/.env.example packages/desktop/src-tauri/.env
 
 # 2. .envファイルにR2認証情報を設定
 # R2_ACCOUNT_ID=your_account_id
@@ -99,7 +125,7 @@ cp src-tauri/.env.example src-tauri/.env
 # R2_BUCKET_NAME=expense-receipts-dev
 
 # 3. アプリケーションを起動
-pnpm tauri dev
+pnpm tauri:dev
 ```
 
 詳細な設定手順については、上記のドキュメントを参照してください。

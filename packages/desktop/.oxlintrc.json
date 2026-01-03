@@ -1,0 +1,21 @@
+{
+  "plugins": ["typescript", "oxc"],
+  "rules": {
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-console": ["error", { "allow": ["info", "warn", "error"] }],
+    "no-debugger": "error",
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ],
+    "no-unassigned-vars": "off",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-namespace": "off",
+    "typescript/no-implied-eval": "off",
+    "import/no-cycle": "error"
+  }
+}

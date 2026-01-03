@@ -1,0 +1,131 @@
+/// 領収書関連のAPIコマンド
+/// APIサーバー経由で領収書の取得・操作を行う
+
+use crate::features::auth::middleware::AuthMiddleware;
+use crate::shared::api_client::ApiClient;
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
+use tauri::State;
+
+/// 領収書取得のレスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReceiptResponse {
+    pub data: String, // Base64エンコードされた画像データ
+    pub content_type: String,
+    pub file_size: u64,
+}
+
+/// APIサーバー経由で領収書を取得する
+///
+/// # 引数
+/// * `receipt_url` - 領収書URL
+/// * `session_token` - セッショントークン
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 領収書データ（Base64エンコード）、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn get_receipt_via_api(
+    receipt_url: String,
+    session_token: Option<String>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<String, String> {
+    info!("APIサーバー経由で領収書取得開始: receipt_url={receipt_url}");
+
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/api/receipts/get")
+        .await
+        .map_err(|e| {
+            error!("認証エラー: {e}");
+            format!("認証エラー: {e}")
+        })?;
+
+    debug!("認証成功 - ユーザーID: {}", user.id);
+
+    // URLの基本検証
+    if !receipt_url.starts_with("https://") {
+        return Err("無効な領収書URLです".to_string());
+    }
+
+    // URLからファイルキーを抽出
+    let file_key = extract_file_key_from_url(&receipt_url)?;
+    debug!("抽出されたファイルキー: {file_key}");
+
+    // APIクライアントを作成
+    let api_client = ApiClient::new().map_err(|e| {
+        error!("APIクライアント作成エラー: {e}");
+        format!("APIクライアント作成エラー: {e}")
+    })?;
+
+    // APIサーバーから領収書を取得
+    let endpoint = format!("/api/v1/receipts/{}/data", urlencoding::encode(&file_key));
+    debug!("APIエンドポイント: {endpoint}");
+
+    let response = api_client
+        .get::<ReceiptResponse>(&endpoint, session_token.as_deref())
+        .await
+        .map_err(|e| {
+            error!("APIリクエストエラー: {e}");
+            format!("領収書の取得に失敗しました: {e}")
+        })?;
+
+    info!(
+        "領収書取得成功 - ユーザーID: {}, ファイルサイズ: {} bytes",
+        user.id, response.file_size
+    );
+
+    Ok(response.data)
+}
+
+/// URLからファイルキーを抽出する
+///
+/// # 引数
+/// * `url` - 領収書URL
+///
+/// # 戻り値
+/// ファイルキー、または失敗時はエラーメッセージ
+fn extract_file_key_from_url(url: &str) -> Result<String, String> {
+    // R2 URLの形式: https://{account_id}.r2.cloudflarestorage.com/{bucket_name}/{file_key}
+    // または: https://r2.cloudflarestorage.com/{bucket_name}/{file_key}
+    
+    let url_parts: Vec<&str> = url.split('/').collect();
+    if url_parts.len() < 5 {
+        return Err("URLの形式が正しくありません".to_string());
+    }
+
+    // バケット名以降の部分をファイルキーとして取得
+    let file_key_parts = &url_parts[4..];
+    let file_key = file_key_parts.join("/");
+
+    if file_key.is_empty() {
+        return Err("ファイルキーの抽出に失敗しました".to_string());
+    }
+
+    Ok(file_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_file_key_from_url() {
+        // 正常なURL
+        let url = "https://d6392b1230a419b37b30f45fc13de9cf.r2.cloudflarestorage.com/orano-keihi-dev/users/2/receipts/6/test.png";
+        let result = extract_file_key_from_url(url);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "users/2/receipts/6/test.png");
+
+        // 別の形式のURL
+        let url2 = "https://r2.cloudflarestorage.com/bucket-name/path/to/file.jpg";
+        let result2 = extract_file_key_from_url(url2);
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap(), "path/to/file.jpg");
+
+        // 無効なURL
+        let invalid_url = "https://example.com/file.jpg";
+        let result3 = extract_file_key_from_url(invalid_url);
+        assert!(result3.is_err());
+    }
+}
