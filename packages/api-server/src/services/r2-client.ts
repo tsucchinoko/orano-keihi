@@ -27,6 +27,7 @@ export interface R2ClientInterface {
   deleteObject(key: string): Promise<void>;
   generatePresignedUrl(key: string, expiresIn: number): Promise<string>;
   testConnection(): Promise<boolean>;
+  getConfig(): R2Config;
 }
 
 /**
@@ -227,7 +228,7 @@ export class R2Client implements R2ClientInterface {
   /**
    * 設定情報を取得（デバッグ用）
    */
-  getConfig(): Omit<R2Config, "secretAccessKey"> & { secretAccessKey: string } {
+  getConfig(): R2Config {
     return {
       endpoint: this.config.endpoint,
       accessKeyId: this.config.accessKeyId,

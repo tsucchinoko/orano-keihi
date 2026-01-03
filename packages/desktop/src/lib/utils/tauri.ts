@@ -64,7 +64,7 @@ export async function handleTauriCommand<T>(
  *
  * @returns セッショントークンまたはnull
  */
-function getAuthToken(): string | null {
+export function getAuthToken(): string | null {
   return authStore.getSessionToken();
 }
 

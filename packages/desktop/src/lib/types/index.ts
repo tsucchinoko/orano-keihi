@@ -59,6 +59,19 @@ export interface UpdateSubscriptionDto {
   category?: string;
 }
 
+// APIサーバーからのレスポンス型
+export interface SubscriptionListResponse {
+  subscriptions: Subscription[];
+  total: number;
+  activeCount: number;
+  monthlyTotal: number;
+}
+
+export interface MonthlyTotalResponse {
+  monthlyTotal: number;
+  activeSubscriptions: number;
+}
+
 // カテゴリデータモデル
 export interface Category {
   id: number;

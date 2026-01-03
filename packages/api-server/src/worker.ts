@@ -24,6 +24,8 @@ export interface Env {
 
   // 認証設定（機密情報）
   JWT_SECRET?: string;
+  SESSION_ENCRYPTION_KEY?: string;
+  SESSION_EXPIRATION_DAYS?: string;
 
   // CORS設定
   CORS_ORIGIN?: string;

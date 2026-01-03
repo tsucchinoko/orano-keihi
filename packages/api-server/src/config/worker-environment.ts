@@ -27,6 +27,9 @@ export function loadWorkerConfig(env: Env): ApiServerConfig {
     // 認証設定
     auth: {
       jwtSecret: env.JWT_SECRET || "default-secret-change-in-production",
+      sessionEncryptionKey:
+        env.SESSION_ENCRYPTION_KEY || env.JWT_SECRET || "default-secret-change-in-production",
+      sessionExpirationDays: Number(env.SESSION_EXPIRATION_DAYS) || 30,
     },
 
     // CORS設定

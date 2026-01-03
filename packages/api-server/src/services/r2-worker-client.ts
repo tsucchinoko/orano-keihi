@@ -207,6 +207,19 @@ export class R2WorkerClient implements R2ClientInterface {
       return null;
     }
   }
+
+  /**
+   * 設定情報を取得（デバッグ用）
+   */
+  getConfig(): import("../types/config.js").R2Config {
+    return {
+      endpoint: this.accountId,
+      accessKeyId: "[WORKERS_BINDING]",
+      secretAccessKey: "[WORKERS_BINDING]",
+      bucketName: this.bucketName,
+      region: "auto",
+    };
+  }
 }
 
 /**

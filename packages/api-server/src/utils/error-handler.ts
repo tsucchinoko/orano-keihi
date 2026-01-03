@@ -12,6 +12,7 @@ import { logger, alertSystem, AlertLevel } from "./logger.js";
 export enum ErrorCode {
   // バリデーションエラー（400番台）
   BAD_REQUEST = "BAD_REQUEST",
+  VALIDATION_ERROR = "VALIDATION_ERROR",
   MISSING_FILE = "MISSING_FILE",
   INVALID_EXPENSE_ID = "INVALID_EXPENSE_ID",
   INVALID_FILE_TYPE = "INVALID_FILE_TYPE",
@@ -24,6 +25,9 @@ export enum ErrorCode {
   TOKEN_EXPIRED = "TOKEN_EXPIRED",
   FORBIDDEN = "FORBIDDEN",
   INSUFFICIENT_PERMISSIONS = "INSUFFICIENT_PERMISSIONS",
+
+  // リソースエラー（404）
+  NOT_FOUND = "NOT_FOUND",
 
   // レート制限エラー（429）
   RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED",
@@ -61,6 +65,7 @@ export enum ErrorCategory {
  */
 export const ERROR_STATUS_MAP: Record<ErrorCode, number> = {
   [ErrorCode.BAD_REQUEST]: 400,
+  [ErrorCode.VALIDATION_ERROR]: 400,
   [ErrorCode.MISSING_FILE]: 400,
   [ErrorCode.INVALID_EXPENSE_ID]: 400,
   [ErrorCode.INVALID_FILE_TYPE]: 415,
@@ -72,6 +77,8 @@ export const ERROR_STATUS_MAP: Record<ErrorCode, number> = {
   [ErrorCode.TOKEN_EXPIRED]: 401,
   [ErrorCode.FORBIDDEN]: 403,
   [ErrorCode.INSUFFICIENT_PERMISSIONS]: 403,
+
+  [ErrorCode.NOT_FOUND]: 404,
 
   [ErrorCode.RATE_LIMIT_EXCEEDED]: 429,
 
@@ -92,6 +99,7 @@ export const ERROR_STATUS_MAP: Record<ErrorCode, number> = {
  */
 export const ERROR_CATEGORY_MAP: Record<ErrorCode, ErrorCategory> = {
   [ErrorCode.BAD_REQUEST]: ErrorCategory.VALIDATION,
+  [ErrorCode.VALIDATION_ERROR]: ErrorCategory.VALIDATION,
   [ErrorCode.MISSING_FILE]: ErrorCategory.VALIDATION,
   [ErrorCode.INVALID_EXPENSE_ID]: ErrorCategory.VALIDATION,
   [ErrorCode.INVALID_FILE_TYPE]: ErrorCategory.VALIDATION,
@@ -103,6 +111,8 @@ export const ERROR_CATEGORY_MAP: Record<ErrorCode, ErrorCategory> = {
   [ErrorCode.TOKEN_EXPIRED]: ErrorCategory.AUTHENTICATION,
   [ErrorCode.FORBIDDEN]: ErrorCategory.AUTHORIZATION,
   [ErrorCode.INSUFFICIENT_PERMISSIONS]: ErrorCategory.AUTHORIZATION,
+
+  [ErrorCode.NOT_FOUND]: ErrorCategory.VALIDATION,
 
   [ErrorCode.RATE_LIMIT_EXCEEDED]: ErrorCategory.RATE_LIMIT,
 

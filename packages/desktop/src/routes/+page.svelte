@@ -7,9 +7,11 @@ import { goto } from "$app/navigation";
 import type { Expense, Subscription } from "$lib/types";
 import {
 	getExpenses,
-	getSubscriptions,
-	getMonthlySubscriptionTotal,
 } from "$lib/utils/tauri";
+import {
+	fetchSubscriptions,
+	fetchMonthlySubscriptionTotal,
+} from "$lib/utils/api-client";
 import { authStore } from "$lib/stores";
 
 // 状態管理
@@ -68,19 +70,24 @@ async function loadData() {
 		}
 		expenses = expensesResult.data || [];
 
-		// サブスクリプションを取得
-		const subscriptionsResult = await getSubscriptions(true);
-		if (subscriptionsResult.error) {
-			throw new Error(subscriptionsResult.error);
+		// 認証されている場合のみサブスクリプションデータを取得
+		if (isAuthenticated) {
+			try {
+				// サブスクリプションを取得（APIサーバー経由）
+				const subscriptionsResponse = await fetchSubscriptions(true);
+				subscriptions = subscriptionsResponse.subscriptions || [];
+				monthlySubscriptionTotal = subscriptionsResponse.monthlyTotal || 0;
+			} catch (apiError) {
+				console.warn("APIサーバー経由でのサブスクリプション取得に失敗:", apiError);
+				// フォールバック: 空のデータを設定
+				subscriptions = [];
+				monthlySubscriptionTotal = 0;
+			}
+		} else {
+			// 未認証の場合は空のデータを設定
+			subscriptions = [];
+			monthlySubscriptionTotal = 0;
 		}
-		subscriptions = subscriptionsResult.data || [];
-
-		// 月額サブスクリプション合計を取得
-		const totalResult = await getMonthlySubscriptionTotal();
-		if (totalResult.error) {
-			throw new Error(totalResult.error);
-		}
-		monthlySubscriptionTotal = totalResult.data || 0;
 	} catch (e) {
 		error = e instanceof Error ? e.message : "不明なエラーが発生しました";
 		console.error("データ読み込みエラー:", e);
@@ -128,6 +135,13 @@ function handleSubscriptionFormCancel() {
 
 onMount(() => {
 	loadData();
+});
+
+// 認証状態が変更されたときにデータを再読み込み
+$effect(() => {
+	if (isAuthenticated) {
+		loadData();
+	}
 });
 
 // 金額フォーマット
@@ -243,11 +257,51 @@ function getCategoryColor(category: string): string {
 						<span class="total-amount">{formatCurrency(monthlySubscriptionTotal)}</span>
 					</div>
 				</div>
-				<!-- 一時的にコンポーネントをコメントアウト -->
-				<p>サブスクリプション一覧（開発中）</p>
-				<!-- <SubscriptionList 
-					onEdit={handleEditSubscription}
-				/> -->
+				<!-- サブスクリプション一覧を表示 -->
+				{#if subscriptions.length > 0}
+					<div class="subscription-list">
+						{#each subscriptions.slice(0, 3) as subscription}
+							<div class="subscription-item">
+								<div class="subscription-info">
+									<span class="subscription-name">{subscription.name}</span>
+									<span class="subscription-category">{subscription.category}</span>
+								</div>
+								<div class="subscription-amount">
+									{formatCurrency(subscription.billing_cycle === 'monthly' ? subscription.amount : Math.round(subscription.amount / 12))}
+									<span class="billing-cycle">
+										{subscription.billing_cycle === 'monthly' ? '/月' : '/月 (年額)'}
+									</span>
+								</div>
+							</div>
+						{/each}
+						{#if subscriptions.length > 3}
+							<div class="subscription-more">
+								<button 
+									type="button"
+									onclick={() => goto('/subscriptions')}
+									class="btn-link"
+								>
+									他 {subscriptions.length - 3} 件を表示
+								</button>
+							</div>
+						{/if}
+					</div>
+				{:else if isAuthenticated}
+					<div class="empty-state">
+						<p>サブスクリプションが登録されていません</p>
+						<button 
+							type="button"
+							onclick={() => goto('/subscriptions')}
+							class="btn btn-secondary"
+						>
+							サブスクリプションを追加
+						</button>
+					</div>
+				{:else}
+					<div class="empty-state">
+						<p>ログインしてサブスクリプションを表示</p>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -495,6 +549,109 @@ function getCategoryColor(category: string): string {
 	.subscription-total .total-amount {
 		font-size: 1.25rem;
 		font-weight: 700;
+	}
+
+	/* サブスクリプション一覧 */
+	.subscription-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.subscription-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1rem;
+		background: #f9fafb;
+		border-radius: 8px;
+		transition: all 0.2s ease-in-out;
+	}
+
+	.subscription-item:hover {
+		background: #f3f4f6;
+		transform: translateX(4px);
+	}
+
+	.subscription-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.subscription-name {
+		font-weight: 600;
+		color: #374151;
+		font-size: 0.875rem;
+	}
+
+	.subscription-category {
+		font-size: 0.75rem;
+		color: #6b7280;
+	}
+
+	.subscription-amount {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.125rem;
+		font-weight: 700;
+		color: #1f2937;
+		font-size: 0.875rem;
+	}
+
+	.billing-cycle {
+		font-size: 0.625rem;
+		color: #6b7280;
+		font-weight: 400;
+	}
+
+	.subscription-more {
+		text-align: center;
+		padding: 0.75rem;
+	}
+
+	.btn-link {
+		background: none;
+		border: none;
+		color: var(--color-primary);
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		text-decoration: underline;
+		transition: color 0.2s ease-in-out;
+	}
+
+	.btn-link:hover {
+		color: var(--color-primary-dark);
+	}
+
+	.empty-state {
+		text-align: center;
+		padding: 2rem 1rem;
+		color: #6b7280;
+	}
+
+	.empty-state p {
+		margin-bottom: 1rem;
+		font-size: 0.875rem;
+	}
+
+	.btn-secondary {
+		background: #f3f4f6;
+		color: #374151;
+		border: 1px solid #d1d5db;
+		padding: 0.5rem 1rem;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease-in-out;
+	}
+
+	.btn-secondary:hover {
+		background: #e5e7eb;
+		border-color: #9ca3af;
 	}
 
 	/* モーダル */

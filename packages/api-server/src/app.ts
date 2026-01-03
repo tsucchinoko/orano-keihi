@@ -21,6 +21,7 @@ import {
   createR2TestService,
   createAuthService,
   createFileUploadService,
+  createSubscriptionService,
 } from "./services/index.js";
 import {
   createAuthMiddleware,
@@ -48,6 +49,9 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
 
   // ファイルアップロードサービスを初期化
   const fileUploadService = createFileUploadService(r2Client, config.fileUpload);
+
+  // サブスクリプションサービスを初期化
+  const subscriptionService = createSubscriptionService();
 
   // 認証ミドルウェアを作成
   const authMiddleware = createAuthMiddleware(authService);
@@ -235,6 +239,178 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
       total: alerts.length,
       timestamp: new Date().toISOString(),
     });
+  });
+
+  // サブスクリプション関連エンドポイント
+
+  // サブスクリプション一覧取得
+  app.get("/api/v1/subscriptions", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const activeOnly = c.req.query("activeOnly") === "true";
+
+      const result = await subscriptionService.getSubscriptions(user.id, activeOnly);
+
+      logger.info("サブスクリプション一覧を取得しました", {
+        userId: user.id,
+        activeOnly,
+        total: result.total,
+        activeCount: result.activeCount,
+      });
+
+      return c.json(result);
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプション一覧取得",
+      });
+    }
+  });
+
+  // サブスクリプション作成
+  app.post("/api/v1/subscriptions", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const body = await c.req.json();
+
+      const subscription = await subscriptionService.createSubscription(user.id, body);
+
+      logger.info("サブスクリプションを作成しました", {
+        userId: user.id,
+        subscriptionId: subscription.id,
+        name: subscription.name,
+      });
+
+      return c.json(subscription, 201);
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプション作成",
+      });
+    }
+  });
+
+  // サブスクリプション更新
+  app.put("/api/v1/subscriptions/:id", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const subscriptionId = parseInt(c.req.param("id"), 10);
+      const body = await c.req.json();
+
+      if (isNaN(subscriptionId)) {
+        throw createValidationError(
+          "有効なサブスクリプションIDが指定されていません",
+          "id",
+          subscriptionId,
+          "valid number required",
+        );
+      }
+
+      const subscription = await subscriptionService.updateSubscription(
+        user.id,
+        subscriptionId,
+        body,
+      );
+
+      logger.info("サブスクリプションを更新しました", {
+        userId: user.id,
+        subscriptionId,
+      });
+
+      return c.json(subscription);
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプション更新",
+      });
+    }
+  });
+
+  // サブスクリプションステータス切り替え
+  app.patch("/api/v1/subscriptions/:id/toggle", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const subscriptionId = parseInt(c.req.param("id"), 10);
+
+      if (isNaN(subscriptionId)) {
+        throw createValidationError(
+          "有効なサブスクリプションIDが指定されていません",
+          "id",
+          subscriptionId,
+          "valid number required",
+        );
+      }
+
+      const subscription = await subscriptionService.toggleSubscriptionStatus(
+        user.id,
+        subscriptionId,
+      );
+
+      logger.info("サブスクリプションのステータスを切り替えました", {
+        userId: user.id,
+        subscriptionId,
+        newStatus: subscription.is_active,
+      });
+
+      return c.json(subscription);
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプションステータス切り替え",
+      });
+    }
+  });
+
+  // サブスクリプション削除
+  app.delete("/api/v1/subscriptions/:id", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const subscriptionId = parseInt(c.req.param("id"), 10);
+
+      if (isNaN(subscriptionId)) {
+        throw createValidationError(
+          "有効なサブスクリプションIDが指定されていません",
+          "id",
+          subscriptionId,
+          "valid number required",
+        );
+      }
+
+      await subscriptionService.deleteSubscription(user.id, subscriptionId);
+
+      logger.info("サブスクリプションを削除しました", {
+        userId: user.id,
+        subscriptionId,
+      });
+
+      return c.json({
+        success: true,
+        message: "サブスクリプションが正常に削除されました",
+        subscriptionId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプション削除",
+      });
+    }
+  });
+
+  // 月額サブスクリプション合計取得
+  app.get("/api/v1/subscriptions/monthly-total", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+
+      const result = await subscriptionService.getMonthlyTotal(user.id);
+
+      logger.info("月額サブスクリプション合計を取得しました", {
+        userId: user.id,
+        monthlyTotal: result.monthlyTotal,
+        activeSubscriptions: result.activeSubscriptions,
+      });
+
+      return c.json(result);
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "月額サブスクリプション合計取得",
+      });
+    }
   });
 
   // ファイルアップロード関連エンドポイント

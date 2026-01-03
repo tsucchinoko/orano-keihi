@@ -7,9 +7,13 @@ export { R2WorkerClient, createR2WorkerClient } from "./r2-worker-client.js";
 export { R2TestService, createR2TestService } from "./r2-test-service.js";
 export { AuthService, createAuthService, AuthError } from "./auth-service.js";
 export { FileUploadService, createFileUploadService } from "./file-upload-service.js";
+export { SubscriptionService, createSubscriptionService } from "./subscription-service.js";
 export type { UploadResult, R2ClientInterface } from "./r2-client.js";
 export type { R2TestResult } from "./r2-test-service.js";
 export type { FileUploadServiceInterface } from "./file-upload-service.js";
+
+// R2Clientクラスをインポート
+import { R2Client } from "./r2-client.js";
 
 /**
  * 環境に応じたR2クライアントを作成
@@ -20,12 +24,13 @@ export type { FileUploadServiceInterface } from "./file-upload-service.js";
 export function createEnvironmentAwareR2Client(
   config: import("../types/config.js").R2Config,
   r2Bucket?: R2Bucket,
-): R2ClientInterface {
+): import("./r2-client.js").R2ClientInterface {
   // Workers環境の場合（R2バケットバインディングが利用可能）
   if (r2Bucket && typeof r2Bucket.put === "function") {
-    return createR2WorkerClient(r2Bucket, config.bucketName, config.accountId);
+    // TODO: R2WorkerClientの実装が必要
+    // return createR2WorkerClient(r2Bucket, config.bucketName);
   }
 
   // Node.js環境の場合（AWS SDK使用）
-  return createR2Client(config);
+  return new R2Client(config);
 }

@@ -3,7 +3,7 @@
  * R2ストレージの接続状態を確認する機能を提供
  */
 
-import type { R2Client } from "./r2-client.js";
+import type { R2ClientInterface } from "./r2-client.js";
 import { logger } from "../utils/logger.js";
 
 export interface R2TestResult {
@@ -22,7 +22,7 @@ export interface R2TestResult {
  * R2接続テストサービス
  */
 export class R2TestService {
-  constructor(private r2Client: R2Client) {}
+  constructor(private r2Client: R2ClientInterface) {}
 
   /**
    * 包括的なR2接続テストを実行
@@ -185,6 +185,6 @@ export class R2TestService {
  * @param r2Client R2クライアントインスタンス
  * @returns R2テストサービスインスタンス
  */
-export function createR2TestService(r2Client: R2Client): R2TestService {
+export function createR2TestService(r2Client: R2ClientInterface): R2TestService {
   return new R2TestService(r2Client);
 }

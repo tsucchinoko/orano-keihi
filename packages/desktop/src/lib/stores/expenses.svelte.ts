@@ -1,14 +1,17 @@
 import type { Expense, Subscription } from '../types';
 import {
+  fetchSubscriptions,
+  createSubscriptionApi,
+  updateSubscriptionApi,
+  toggleSubscriptionStatusApi,
+  deleteSubscriptionApi,
+  fetchMonthlySubscriptionTotal,
+} from '../utils/api-client';
+import {
   getExpenses,
   createExpense,
   updateExpense,
   deleteExpense,
-  getSubscriptions,
-  createSubscription,
-  updateSubscription,
-  toggleSubscriptionStatus,
-  getMonthlySubscriptionTotal,
 } from '../utils/tauri';
 
 /**
@@ -237,13 +240,9 @@ class ExpenseStore {
     this.error = null;
 
     try {
-      const result = await getSubscriptions(activeOnly);
-
-      if (result.error) {
-        this.error = result.error;
-      } else if (result.data) {
-        this.subscriptions = result.data;
-      }
+      const result = await fetchSubscriptions(activeOnly);
+      this.subscriptions = result.subscriptions;
+      this.monthlySubscriptionTotal = result.monthlyTotal;
     } catch (err) {
       this.error = `サブスクリプションの読み込みに失敗しました: ${String(err)}`;
     } finally {
@@ -264,22 +263,12 @@ class ExpenseStore {
     this.error = null;
 
     try {
-      const result = await createSubscription(subscription);
-
-      if (result.error) {
-        this.error = result.error;
-        return false;
-      }
-
-      if (result.data) {
-        // 新しいサブスクリプションをリストに追加
-        this.subscriptions = [...this.subscriptions, result.data];
-        // 月額合計を再計算
-        await this.loadMonthlySubscriptionTotal();
-        return true;
-      }
-
-      return false;
+      const newSubscription = await createSubscriptionApi(subscription);
+      // 新しいサブスクリプションをリストに追加
+      this.subscriptions = [...this.subscriptions, newSubscription];
+      // 月額合計を再計算
+      await this.loadMonthlySubscriptionTotal();
+      return true;
     } catch (err) {
       this.error = `サブスクリプションの作成に失敗しました: ${String(err)}`;
       return false;
@@ -301,25 +290,14 @@ class ExpenseStore {
     this.error = null;
 
     try {
-      const result = await updateSubscription(id, updates);
-
-      if (result.error) {
-        this.error = result.error;
-        return false;
-      }
-
-      if (result.data) {
-        // サブスクリプションリストを更新
-        const updatedSubscription = result.data;
-        this.subscriptions = this.subscriptions.map((sub) =>
-          sub.id === id ? updatedSubscription : sub
-        );
-        // 月額合計を再計算
-        await this.loadMonthlySubscriptionTotal();
-        return true;
-      }
-
-      return false;
+      const updatedSubscription = await updateSubscriptionApi(id, updates);
+      // サブスクリプションリストを更新
+      this.subscriptions = this.subscriptions.map((sub) =>
+        sub.id === id ? updatedSubscription : sub
+      );
+      // 月額合計を再計算
+      await this.loadMonthlySubscriptionTotal();
+      return true;
     } catch (err) {
       this.error = `サブスクリプションの更新に失敗しました: ${String(err)}`;
       return false;
@@ -336,27 +314,38 @@ class ExpenseStore {
     this.error = null;
 
     try {
-      const result = await toggleSubscriptionStatus(id);
-
-      if (result.error) {
-        this.error = result.error;
-        return false;
-      }
-
-      if (result.data) {
-        // サブスクリプションリストを更新
-        const updatedSubscription = result.data;
-        this.subscriptions = this.subscriptions.map((sub) =>
-          sub.id === id ? updatedSubscription : sub
-        );
-        // 月額合計を再計算
-        await this.loadMonthlySubscriptionTotal();
-        return true;
-      }
-
-      return false;
+      const updatedSubscription = await toggleSubscriptionStatusApi(id);
+      // サブスクリプションリストを更新
+      this.subscriptions = this.subscriptions.map((sub) =>
+        sub.id === id ? updatedSubscription : sub
+      );
+      // 月額合計を再計算
+      await this.loadMonthlySubscriptionTotal();
+      return true;
     } catch (err) {
       this.error = `サブスクリプションの状態切り替えに失敗しました: ${String(err)}`;
+      return false;
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  /**
+   * サブスクリプションを削除する
+   */
+  async removeSubscription(id: number): Promise<boolean> {
+    this.isLoading = true;
+    this.error = null;
+
+    try {
+      await deleteSubscriptionApi(id);
+      // サブスクリプションリストから削除
+      this.subscriptions = this.subscriptions.filter((sub) => sub.id !== id);
+      // 月額合計を再計算
+      await this.loadMonthlySubscriptionTotal();
+      return true;
+    } catch (err) {
+      this.error = `サブスクリプションの削除に失敗しました: ${String(err)}`;
       return false;
     } finally {
       this.isLoading = false;
@@ -368,13 +357,8 @@ class ExpenseStore {
    */
   async loadMonthlySubscriptionTotal(): Promise<void> {
     try {
-      const result = await getMonthlySubscriptionTotal();
-
-      if (result.error) {
-        this.error = result.error;
-      } else if (result.data !== undefined) {
-        this.monthlySubscriptionTotal = result.data;
-      }
+      const result = await fetchMonthlySubscriptionTotal();
+      this.monthlySubscriptionTotal = result.monthlyTotal;
     } catch (err) {
       this.error = `月額合計の読み込みに失敗しました: ${String(err)}`;
     }

@@ -18,6 +18,8 @@ export interface CorsConfig {
 
 export interface AuthConfig {
   jwtSecret: string;
+  sessionEncryptionKey: string;
+  sessionExpirationDays: number;
 }
 
 export interface FileUploadConfig {
@@ -137,4 +139,52 @@ export interface ErrorResponse {
     timestamp: string;
     requestId: string;
   };
+}
+
+/**
+ * サブスクリプション関連の型定義
+ */
+
+export interface Subscription {
+  id: number;
+  userId: number;
+  name: string;
+  amount: number;
+  billing_cycle: "monthly" | "annual";
+  start_date: string;
+  category: string;
+  is_active: boolean;
+  receipt_path?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSubscriptionDto {
+  name: string;
+  amount: number;
+  billing_cycle: "monthly" | "annual";
+  start_date: string;
+  category: string;
+  receipt_path?: string;
+}
+
+export interface UpdateSubscriptionDto {
+  name?: string;
+  amount?: number;
+  billing_cycle?: "monthly" | "annual";
+  start_date?: string;
+  category?: string;
+  receipt_path?: string;
+}
+
+export interface SubscriptionListResponse {
+  subscriptions: Subscription[];
+  total: number;
+  activeCount: number;
+  monthlyTotal: number;
+}
+
+export interface MonthlyTotalResponse {
+  monthlyTotal: number;
+  activeSubscriptions: number;
 }
