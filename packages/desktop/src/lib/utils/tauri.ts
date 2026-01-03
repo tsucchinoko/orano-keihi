@@ -160,7 +160,10 @@ export async function saveReceipt(
   filePath: string
 ): Promise<TauriResult<string>> {
   return handleTauriCommand(
-    invoke<string>('save_receipt', { expenseId, filePath })
+    invoke<string>('save_receipt', {
+      expense_id: expenseId,
+      file_path: filePath,
+    })
   );
 }
 
@@ -283,7 +286,9 @@ export async function saveSubscriptionReceipt(
 export async function deleteReceipt(
   expenseId: number
 ): Promise<TauriResult<boolean>> {
-  return handleTauriCommand(invoke<boolean>('delete_receipt', { expenseId }));
+  return handleTauriCommand(
+    invoke<boolean>('delete_receipt', { expense_id: expenseId })
+  );
 }
 
 /**
@@ -325,9 +330,9 @@ export async function uploadReceiptToR2(
 
   return handleTauriCommand(
     invoke<string>('upload_receipt_with_auth', {
-      sessionToken,
-      expenseId,
-      filePath,
+      session_token: sessionToken,
+      expense_id: expenseId,
+      file_path: filePath,
     })
   );
 }
@@ -351,8 +356,8 @@ export async function getReceiptFromR2(
 
   return handleTauriCommand(
     invoke<string>('get_receipt_via_api', {
-      sessionToken,
-      receiptUrl,
+      sessionToken: sessionToken,
+      receiptUrl: receiptUrl,
     })
   );
 }
@@ -376,8 +381,8 @@ export async function deleteReceiptFromR2(
 
   return handleTauriCommand(
     invoke<boolean>('delete_receipt_with_auth', {
-      sessionToken,
-      expenseId,
+      session_token: sessionToken,
+      expense_id: expenseId,
     })
   );
 }

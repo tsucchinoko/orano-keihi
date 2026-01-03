@@ -15,7 +15,10 @@ pub struct SubscriptionListResponse {
 /// 月額合計のレスポンス
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MonthlyTotalResponse {
-    pub total: f64,
+    #[serde(rename = "monthlyTotal")]
+    pub monthly_total: f64,
+    #[serde(rename = "activeSubscriptions")]
+    pub active_subscriptions: i32,
 }
 
 /// APIサーバー経由でサブスクリプション一覧を取得する
@@ -345,7 +348,7 @@ pub async fn fetch_monthly_subscription_total_via_api(
 
     info!(
         "月額サブスクリプション合計取得成功 - 合計: {}",
-        response.total
+        response.monthly_total
     );
 
     Ok(response)

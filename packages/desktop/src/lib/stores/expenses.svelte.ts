@@ -177,13 +177,16 @@ class ExpenseStore {
     id: number,
     updates: Partial<Omit<Expense, 'id' | 'created_at' | 'updated_at'>>
   ): Promise<boolean> {
+    console.log('modifyExpense開始:', { id, updates });
     this.isLoading = true;
     this.error = null;
 
     try {
       const result = await updateExpense(id, updates);
+      console.log('updateExpense結果:', result);
 
       if (result.error) {
+        console.error('updateExpenseエラー:', result.error);
         this.error = result.error;
         return false;
       }
@@ -191,14 +194,17 @@ class ExpenseStore {
       if (result.data) {
         // 経費リストを更新
         const updatedExpense = result.data;
+        console.log('経費リスト更新:', updatedExpense);
         this.expenses = this.expenses.map((exp) =>
           exp.id === id ? updatedExpense : exp
         );
         return true;
       }
 
+      console.warn('updateExpenseで有効なデータが返されませんでした');
       return false;
     } catch (err) {
+      console.error('modifyExpenseでエラー:', err);
       this.error = `経費の更新に失敗しました: ${String(err)}`;
       return false;
     } finally {
@@ -359,7 +365,7 @@ class ExpenseStore {
   async loadMonthlySubscriptionTotal(): Promise<void> {
     try {
       const result = await fetchMonthlySubscriptionTotal();
-      this.monthlySubscriptionTotal = result.total;
+      this.monthlySubscriptionTotal = result.monthlyTotal;
     } catch (err) {
       this.error = `月額合計の読み込みに失敗しました: ${String(err)}`;
     }

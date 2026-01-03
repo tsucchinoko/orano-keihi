@@ -204,15 +204,15 @@ export class R2WorkerClient implements R2ClientInterface {
 
   /**
    * パブリックURLを生成
-   * Workers環境では通常カスタムドメインやWorkers経由でアクセスするため、
-   * 実際のパブリックURLは使用しない
    * @param key ファイルキー
-   * @returns ダミーURL（実際にはWorkers経由でアクセス）
+   * @returns 実際のR2パブリックURL
    */
   private generatePublicUrl(key: string): string {
-    // Workers環境では直接的なパブリックURLは使用せず、
-    // Workers経由でファイルにアクセスする
-    return `/api/v1/receipts/${encodeURIComponent(key)}/data`;
+    // 環境変数からR2の設定を取得
+    const accountId = process.env.R2_ACCOUNT_ID || "";
+
+    // 実際のR2パブリックURLを生成
+    return `https://${accountId}.r2.cloudflarestorage.com/${this.bucketName}/${key}`;
   }
 
   /**

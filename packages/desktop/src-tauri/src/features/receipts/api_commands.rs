@@ -1,7 +1,8 @@
 /// 領収書関連のAPIコマンド
 /// APIサーバー経由で領収書の取得・操作を行う
 use crate::features::auth::middleware::AuthMiddleware;
-use crate::shared::api_client::ApiClient;
+use crate::features::receipts::api_client::{ApiClient, ApiClientConfig};
+use crate::shared::api_client::ApiClient as SharedApiClient;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -64,15 +65,15 @@ pub struct HealthCheckResponse {
 /// 領収書データ（Base64エンコード）、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn get_receipt_via_api(
-    receipt_url: String,
-    session_token: Option<String>,
+    receiptUrl: String,
+    sessionToken: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<String, String> {
-    info!("APIサーバー経由で領収書取得開始: receipt_url={receipt_url}");
+    info!("APIサーバー経由で領収書取得開始: receiptUrl={receiptUrl}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/api/receipts/get")
+        .authenticate_request(sessionToken.as_deref(), "/api/receipts/get")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -82,16 +83,16 @@ pub async fn get_receipt_via_api(
     debug!("認証成功 - ユーザーID: {}", user.id);
 
     // URLの基本検証
-    if !receipt_url.starts_with("https://") {
+    if !receiptUrl.starts_with("https://") {
         return Err("無効な領収書URLです".to_string());
     }
 
     // URLからファイルキーを抽出
-    let file_key = extract_file_key_from_url(&receipt_url)?;
+    let file_key = extract_file_key_from_url(&receiptUrl)?;
     debug!("抽出されたファイルキー: {file_key}");
 
     // APIクライアントを作成
-    let api_client = ApiClient::new().map_err(|e| {
+    let api_client = SharedApiClient::new().map_err(|e| {
         error!("APIクライアント作成エラー: {e}");
         format!("APIクライアント作成エラー: {e}")
     })?;
@@ -102,7 +103,7 @@ pub async fn get_receipt_via_api(
     debug!("APIエンドポイント: {endpoint}");
 
     let response = api_client
-        .get::<ReceiptResponse>(&endpoint, session_token.as_deref())
+        .get::<ReceiptResponse>(&endpoint, sessionToken.as_deref())
         .await
         .map_err(|e| {
             error!("APIリクエストエラー: {e}");
@@ -129,18 +130,16 @@ pub async fn get_receipt_via_api(
 /// アップロード結果、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn upload_receipt_via_api(
-    expense_id: i64,
-    file_path: String,
-    session_token: Option<String>,
+    expenseId: i64,
+    filePath: String,
+    sessionToken: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<String, String> {
-    info!(
-        "APIサーバー経由で領収書アップロード開始: expense_id={expense_id}, file_path={file_path}"
-    );
+    info!("APIサーバー経由で領収書アップロード開始: expenseId={expenseId}, filePath={filePath}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/api/receipts/upload")
+        .authenticate_request(sessionToken.as_deref(), "/api/receipts/upload")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -149,22 +148,51 @@ pub async fn upload_receipt_via_api(
 
     debug!("認証成功 - ユーザーID: {}", user.id);
 
+    // セッショントークンが必要
+    let token = sessionToken.ok_or_else(|| {
+        error!("セッショントークンが提供されていません");
+        "セッショントークンが必要です".to_string()
+    })?;
+
     // ファイルの存在確認
-    if !std::path::Path::new(&file_path).exists() {
+    if !std::path::Path::new(&filePath).exists() {
         return Err("指定されたファイルが存在しません".to_string());
     }
 
+    // ファイルを読み込み
+    let file_data = tokio::fs::read(&filePath).await.map_err(|e| {
+        error!("ファイル読み込みエラー: {e}");
+        format!("ファイル読み込みエラー: {e}")
+    })?;
+
+    // ファイル名を取得
+    let filename = std::path::Path::new(&filePath)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "ファイル名を取得できません".to_string())?;
+
     // APIクライアントを作成
-    let _api_client = ApiClient::new().map_err(|e| {
+    let config = ApiClientConfig::from_env();
+    let api_client = ApiClient::new(config).map_err(|e| {
         error!("APIクライアント作成エラー: {e}");
         format!("APIクライアント作成エラー: {e}")
     })?;
 
-    // マルチパートフォームデータを作成してアップロード
-    // 注意: この実装は簡略化されており、実際のマルチパートアップロードには
-    // より詳細な実装が必要です
-    warn!("APIサーバー経由のアップロードは現在開発中です");
-    Err("APIサーバー経由のアップロードは現在サポートされていません".to_string())
+    // ファイルをアップロード
+    match api_client
+        .upload_file(expenseId, &file_data, filename, &token)
+        .await
+    {
+        Ok(response) => {
+            let file_url = response.file_url.unwrap_or_else(|| "".to_string());
+            info!("ファイルアップロード成功: file_url={file_url}");
+            Ok(file_url)
+        }
+        Err(e) => {
+            error!("ファイルアップロードエラー: {e}");
+            Err(format!("ファイルアップロードエラー: {e}"))
+        }
+    }
 }
 
 /// APIサーバー経由で複数の領収書をアップロードする
@@ -178,18 +206,18 @@ pub async fn upload_receipt_via_api(
 /// アップロード結果、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn upload_multiple_receipts_via_api(
-    file_paths: Vec<String>,
-    session_token: Option<String>,
+    filePaths: Vec<String>,
+    sessionToken: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<MultipleUploadResponse, String> {
     info!(
         "APIサーバー経由で複数領収書アップロード開始: ファイル数={}",
-        file_paths.len()
+        filePaths.len()
     );
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/api/receipts/upload/multiple")
+        .authenticate_request(sessionToken.as_deref(), "/api/receipts/upload/multiple")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -201,7 +229,7 @@ pub async fn upload_multiple_receipts_via_api(
     // 現在は未実装
     warn!("APIサーバー経由の複数ファイルアップロードは現在開発中です");
 
-    let results: Vec<UploadResult> = file_paths
+    let results: Vec<UploadResult> = filePaths
         .iter()
         .map(|path| UploadResult {
             file_name: std::path::Path::new(path)
@@ -219,9 +247,9 @@ pub async fn upload_multiple_receipts_via_api(
     Ok(MultipleUploadResponse {
         success: false,
         results,
-        total_files: file_paths.len(),
+        total_files: filePaths.len(),
         successful_uploads: 0,
-        failed_uploads: file_paths.len(),
+        failed_uploads: filePaths.len(),
     })
 }
 
@@ -234,7 +262,7 @@ pub async fn check_api_server_health() -> Result<HealthCheckResponse, String> {
     info!("APIサーバーヘルスチェック開始");
 
     // APIクライアントを作成
-    let api_client = ApiClient::new().map_err(|e| {
+    let api_client = SharedApiClient::new().map_err(|e| {
         error!("APIクライアント作成エラー: {e}");
         format!("APIクライアント作成エラー: {e}")
     })?;
@@ -262,7 +290,7 @@ pub async fn check_api_server_health_detailed() -> Result<serde_json::Value, Str
     info!("APIサーバー詳細ヘルスチェック開始");
 
     // APIクライアントを作成
-    let api_client = ApiClient::new().map_err(|e| {
+    let api_client = SharedApiClient::new().map_err(|e| {
         error!("APIクライアント作成エラー: {e}");
         format!("APIクライアント作成エラー: {e}")
     })?;

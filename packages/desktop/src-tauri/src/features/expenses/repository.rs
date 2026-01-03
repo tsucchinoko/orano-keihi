@@ -151,11 +151,12 @@ pub fn update(
     let amount = dto.amount.unwrap_or(existing.amount);
     let category = dto.category.unwrap_or(existing.category);
     let description = dto.description.or(existing.description);
+    let receipt_url = dto.receipt_url.or(existing.receipt_url);
 
     conn.execute(
-        "UPDATE expenses SET date = ?1, amount = ?2, category = ?3, description = ?4, updated_at = ?5
-         WHERE id = ?6 AND user_id = ?7",
-        params![date, amount, category, description, now, id, user_id],
+        "UPDATE expenses SET date = ?1, amount = ?2, category = ?3, description = ?4, receipt_url = ?5, updated_at = ?6
+         WHERE id = ?7 AND user_id = ?8",
+        params![date, amount, category, description, receipt_url, now, id, user_id],
     )?;
 
     find_by_id(conn, id, user_id)
@@ -507,6 +508,7 @@ mod tests {
             amount: Some(1500.0),
             category: None,
             description: Some("更新されたテスト経費".to_string()),
+            receipt_url: None,
         };
 
         let updated = update(&conn, expense.id, update_dto, user_id).unwrap();
@@ -674,6 +676,7 @@ mod tests {
             amount: Some(1500.0),
             category: None,
             description: None,
+            receipt_url: None,
         };
         let result = update(&conn, 999, update_dto, user_id);
         assert!(result.is_err());

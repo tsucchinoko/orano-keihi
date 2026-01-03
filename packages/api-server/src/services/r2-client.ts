@@ -294,12 +294,15 @@ export class R2Client implements R2ClientInterface {
    */
   private generatePublicUrl(key: string): string {
     // R2のパブリックURLの形式
-    // https://<bucket-name>.<account-id>.r2.cloudflarestorage.com/<key>
-    const baseUrl = this.config.endpoint.startsWith("https://")
-      ? this.config.endpoint.replace("https://", `https://${this.bucketName}.`)
-      : `https://${this.bucketName}.${this.config.endpoint}.r2.cloudflarestorage.com`;
+    // https://<account-id>.r2.cloudflarestorage.com/<bucket-name>/<key>
 
-    return `${baseUrl}/${key}`;
+    // エンドポイントからアカウントIDを抽出
+    let accountId = this.config.endpoint;
+    if (accountId.startsWith("https://")) {
+      accountId = accountId.replace("https://", "").replace(".r2.cloudflarestorage.com", "");
+    }
+
+    return `https://${accountId}.r2.cloudflarestorage.com/${this.bucketName}/${key}`;
   }
 
   /**

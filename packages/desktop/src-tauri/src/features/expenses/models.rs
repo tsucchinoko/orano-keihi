@@ -31,6 +31,7 @@ pub struct UpdateExpenseDto {
     pub amount: Option<f64>,
     pub category: Option<String>,
     pub description: Option<String>,
+    pub receipt_url: Option<String>,
 }
 
 /// 領収書キャッシュデータモデル
@@ -118,6 +119,7 @@ mod tests {
         assert_eq!(dto.amount, Some(2000.0));
         assert_eq!(dto.category, None);
         assert_eq!(dto.description, Some("更新された説明".to_string()));
+        assert_eq!(dto.receipt_url, None);
     }
 
     #[test]

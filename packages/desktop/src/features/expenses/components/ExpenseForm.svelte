@@ -231,17 +231,29 @@ async function handleSubmit(event: Event) {
 
 			isUploading = true;
 			try {
+				console.info("領収書アップロード開始:", { targetExpenseId, receiptFile });
 				const uploadResult = await uploadReceiptViaApi(
 					targetExpenseId,
 					receiptFile,
 				);
-				// 成功時はstringのURLが返される
+				console.info("領収書アップロード結果:", uploadResult);
+				
+				// 成功時は完全なURLが返される
 				if (uploadResult) {
+					console.info("経費データ更新開始:", { targetExpenseId, receipt_url: uploadResult });
 					// 経費データを更新してreceipt_urlを設定
-					await expenseStore.modifyExpense(targetExpenseId, {
+					const updateResult = await expenseStore.modifyExpense(targetExpenseId, {
 						receipt_url: uploadResult,
 					});
-					toastStore.success("経費と領収書を保存しました");
+					console.info("経費データ更新結果:", updateResult);
+					
+					if (updateResult) {
+						toastStore.success("経費と領収書を保存しました");
+					} else {
+						toastStore.warning("領収書はアップロードされましたが、経費データの更新に失敗しました");
+					}
+				} else {
+					toastStore.warning("領収書のアップロードに失敗しました（空の結果）");
 				}
 			} catch (uploadError) {
 				console.warn("領収書アップロードエラー:", uploadError);

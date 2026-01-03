@@ -80,7 +80,7 @@ async function loadData() {
 				// 月額合計を別途取得
 				try {
 					const monthlyTotalResponse = await fetchMonthlySubscriptionTotal();
-					monthlySubscriptionTotal = monthlyTotalResponse.total || 0;
+					monthlySubscriptionTotal = monthlyTotalResponse.monthlyTotal || 0;
 				} catch (totalError) {
 					console.warn("月額合計の取得に失敗:", totalError);
 					monthlySubscriptionTotal = 0;

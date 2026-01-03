@@ -66,7 +66,8 @@ export interface SubscriptionListResponse {
 }
 
 export interface MonthlyTotalResponse {
-  total: number;
+  monthlyTotal: number;
+  activeSubscriptions: number;
 }
 
 // カテゴリデータモデル

@@ -121,7 +121,7 @@ updaterApp.get("/:target/:arch/:current_version", async (c) => {
     if (versionComparison <= 0) {
       // 最新バージョンまたは現在のバージョンの方が新しい場合
       console.log(`アップデート不要: latest=${LATEST_VERSION}, current=${currentVersion}`);
-      return c.json(null, 204); // No Content
+      return c.body(null, 204); // No Content
     }
 
     // アップデートが利用可能な場合
