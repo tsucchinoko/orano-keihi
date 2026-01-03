@@ -97,15 +97,7 @@ pub async fn get_receipt_via_api(
     })?;
 
     // APIサーバーから領収書を取得
-    let mut endpoint = format!("/api/v1/receipts/{}/data", urlencoding::encode(&file_key));
-
-    // 開発環境では認証なしエンドポイントを使用
-    if cfg!(debug_assertions) {
-        endpoint = format!(
-            "/api/v1/receipts/dev/{}/data",
-            urlencoding::encode(&file_key)
-        );
-    }
+    let endpoint = format!("/api/v1/receipts/{}/data", file_key);
 
     debug!("APIエンドポイント: {endpoint}");
 
@@ -337,13 +329,15 @@ fn extract_file_key_from_url(url: &str) -> Result<String, String> {
         return Err("URLの形式が正しくありません".to_string());
     }
 
-    // バケット名以降の部分をファイルキーとして取得
+    // バケット名（url_parts[3]）を除いて、その後の部分をファイルキーとして取得
     let file_key_parts = &url_parts[4..];
     let file_key = file_key_parts.join("/");
 
     if file_key.is_empty() {
         return Err("ファイルキーの抽出に失敗しました".to_string());
     }
+
+    debug!("URLからファイルキーを抽出: url={url}, file_key={file_key}");
 
     Ok(file_key)
 }
@@ -354,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_extract_file_key_from_url() {
-        // 正常なURL
+        // 正常なURL（バケット名を除いたファイルキーを取得）
         let url = "https://d6392b1230a419b37b30f45fc13de9cf.r2.cloudflarestorage.com/orano-keihi-dev/users/2/receipts/6/test.png";
         let result = extract_file_key_from_url(url);
         assert!(result.is_ok());
@@ -366,10 +360,16 @@ mod tests {
         assert!(result2.is_ok());
         assert_eq!(result2.unwrap(), "path/to/file.jpg");
 
-        // 無効なURL
+        // より複雑なファイルキー
+        let url3 = "https://d6392b1230a419b37b30f45fc13de9cf.r2.cloudflarestorage.com/orano-keihi-dev/users/2/receipts/6/1766576410-52dd0bc2-4e34-4d20-9ae4-2f69d0ccb255-christmas-amidakuji-result-2025-12-24T10-15-07.png";
+        let result3 = extract_file_key_from_url(url3);
+        assert!(result3.is_ok());
+        assert_eq!(result3.unwrap(), "users/2/receipts/6/1766576410-52dd0bc2-4e34-4d20-9ae4-2f69d0ccb255-christmas-amidakuji-result-2025-12-24T10-15-07.png");
+
+        // 無効なURL（パーツが不足）
         let invalid_url = "https://example.com/file.jpg";
-        let result3 = extract_file_key_from_url(invalid_url);
-        assert!(result3.is_err());
+        let result4 = extract_file_key_from_url(invalid_url);
+        assert!(result4.is_err());
     }
 
     #[test]

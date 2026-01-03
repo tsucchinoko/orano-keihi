@@ -83,6 +83,11 @@ impl ApiClient {
         Ok(Self { client, config })
     }
 
+    /// APIサーバーがlocalhostかどうかを判定
+    pub fn is_localhost(&self) -> bool {
+        self.config.base_url.contains("localhost") || self.config.base_url.contains("127.0.0.1")
+    }
+
     /// GETリクエストを送信
     pub async fn get<T>(&self, endpoint: &str, auth_token: Option<&str>) -> Result<T, AppError>
     where

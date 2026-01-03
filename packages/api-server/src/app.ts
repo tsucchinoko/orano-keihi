@@ -714,96 +714,41 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
     }
   });
 
-  // ファイルデータ取得（Base64エンコード）
-  app.get("/api/v1/receipts/*/data", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      // パスから /api/v1/receipts/ と /data を除去してファイルキーを取得
-      const fullPath = c.req.path;
-      const fileKey = fullPath.replace("/api/v1/receipts/", "").replace("/data", "");
+  // ファイルデータ取得（Base64エンコード） - 複数のルートパターンで対応
+  app.get(
+    "/api/v1/receipts/users/:userId/receipts/:receiptId/:filename/data",
+    authMiddleware,
+    async (c) => {
+      try {
+        const user = c.get("user");
+        const userId = c.req.param("userId");
+        const receiptId = c.req.param("receiptId");
+        const filename = c.req.param("filename");
 
-      if (!fileKey) {
-        throw createValidationError(
-          "ファイルキーが指定されていません",
-          "fileKey",
-          fileKey,
-          "required",
-        );
-      }
+        // ファイルキーを構築
+        const fileKey = `users/${userId}/receipts/${receiptId}/${filename}`;
 
-      // デコードされたファイルキー
-      const decodedFileKey = decodeURIComponent(fileKey);
-
-      // ファイルキーがユーザーのものかチェック（セキュリティ）
-      if (!decodedFileKey.startsWith(`users/${user.id}/`)) {
-        logSecurityEvent(c, "UNAUTHORIZED_FILE_ACCESS", {
+        logger.debug("ファイルデータ取得リクエスト", {
           userId: user.id,
-          fileKey: decodedFileKey,
+          requestedUserId: userId,
+          receiptId,
+          filename,
+          fileKey,
         });
 
-        throw createAuthorizationError("このファイルにアクセスする権限がありません");
-      }
-
-      // R2からファイルを取得
-      const fileData = await r2Client.getFile(decodedFileKey);
-
-      if (!fileData) {
-        throw createNotFoundError("ファイルが見つかりません");
-      }
-
-      // ファイルデータをBase64エンコード
-      const base64Data = Buffer.from(fileData).toString("base64");
-
-      // Content-Typeを推定
-      const contentType = getContentTypeFromFileKey(decodedFileKey);
-
-      logger.debug("ファイルデータを取得しました", {
-        userId: user.id,
-        fileKey: decodedFileKey,
-        fileSize: fileData.length,
-        contentType,
-      });
-
-      return c.json({
-        success: true,
-        data: base64Data,
-        content_type: contentType,
-        file_size: fileData.length,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "ファイルデータ取得",
-      });
-    }
-  });
-
-  // 開発環境用：認証なしファイルデータ取得（テスト用）
-  if (config.nodeEnv === "development") {
-    app.get("/api/v1/receipts/dev/*/data", async (c) => {
-      try {
-        // パスから /api/v1/receipts/dev/ と /data を除去してファイルキーを取得
-        const fullPath = c.req.path;
-        const fileKey = fullPath.replace("/api/v1/receipts/dev/", "").replace("/data", "");
-
-        if (!fileKey) {
-          throw createValidationError(
-            "ファイルキーが指定されていません",
-            "fileKey",
+        // ユーザーIDの一致をチェック（セキュリティ）
+        if (parseInt(userId) !== user.id) {
+          logSecurityEvent(c, "UNAUTHORIZED_FILE_ACCESS", {
+            userId: user.id,
+            requestedUserId: userId,
             fileKey,
-            "required",
-          );
+          });
+
+          throw createAuthorizationError("このファイルにアクセスする権限がありません");
         }
 
-        // デコードされたファイルキー
-        const decodedFileKey = decodeURIComponent(fileKey);
-
-        logger.debug("開発環境：認証なしファイルデータ取得", {
-          fileKey: decodedFileKey,
-        });
-
         // R2からファイルを取得
-        const fileData = await r2Client.getFile(decodedFileKey);
+        const fileData = await r2Client.getFile(fileKey);
 
         if (!fileData) {
           throw createNotFoundError("ファイルが見つかりません");
@@ -813,10 +758,11 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
         const base64Data = Buffer.from(fileData).toString("base64");
 
         // Content-Typeを推定
-        const contentType = getContentTypeFromFileKey(decodedFileKey);
+        const contentType = getContentTypeFromFileKey(fileKey);
 
-        logger.debug("開発環境：ファイルデータを取得しました", {
-          fileKey: decodedFileKey,
+        logger.debug("ファイルデータを取得しました", {
+          userId: user.id,
+          fileKey,
           fileSize: fileData.length,
           contentType,
         });
@@ -830,11 +776,101 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
         });
       } catch (error) {
         return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-          context: "開発環境ファイルデータ取得",
+          context: "ファイルデータ取得",
         });
       }
-    });
-  }
+    },
+  );
+
+  // より汎用的なファイルデータ取得（フォールバック）
+  app.get("/api/v1/receipts/users/:userId/*", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const userId = c.req.param("userId");
+      const fullPath = c.req.path;
+
+      logger.debug("汎用ファイルデータ取得ルートにマッチしました", {
+        userId: user.id,
+        requestedUserId: userId,
+        fullPath,
+      });
+
+      // /data で終わるかチェック
+      if (!fullPath.endsWith("/data")) {
+        logger.debug("パスが/dataで終わっていません", { fullPath });
+        throw createNotFoundError("エンドポイントが見つかりません");
+      }
+
+      // パスからファイルキーを抽出
+      const pathMatch = fullPath.match(/\/api\/v1\/receipts\/(users\/\d+\/.*?)\/data$/);
+      if (!pathMatch) {
+        logger.debug("ファイルキーの抽出に失敗しました", { fullPath });
+        throw createValidationError(
+          "ファイルキーの抽出に失敗しました",
+          "path",
+          fullPath,
+          "invalid format",
+        );
+      }
+
+      const fileKey = decodeURIComponent(pathMatch[1]);
+
+      logger.debug("汎用ファイルデータ取得リクエスト", {
+        userId: user.id,
+        requestedUserId: userId,
+        fullPath,
+        fileKey,
+      });
+
+      // ユーザーIDの一致をチェック（セキュリティ）
+      if (parseInt(userId) !== user.id) {
+        logSecurityEvent(c, "UNAUTHORIZED_FILE_ACCESS", {
+          userId: user.id,
+          requestedUserId: userId,
+          fileKey,
+        });
+
+        throw createAuthorizationError("このファイルにアクセスする権限がありません");
+      }
+
+      // R2からファイルを取得
+      const fileData = await r2Client.getFile(fileKey);
+
+      if (!fileData) {
+        logger.debug("R2からファイルが見つかりませんでした", { fileKey });
+        throw createNotFoundError("ファイルが見つかりません");
+      }
+
+      // ファイルデータをBase64エンコード
+      const base64Data = Buffer.from(fileData).toString("base64");
+
+      // Content-Typeを推定
+      const contentType = getContentTypeFromFileKey(fileKey);
+
+      logger.debug("ファイルデータを取得しました", {
+        userId: user.id,
+        fileKey,
+        fileSize: fileData.length,
+        contentType,
+      });
+
+      return c.json({
+        success: true,
+        data: base64Data,
+        content_type: contentType,
+        file_size: fileData.length,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error("汎用ファイルデータ取得でエラーが発生しました", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "汎用ファイルデータ取得",
+      });
+    }
+  });
 
   // 404ハンドラー
   app.notFound((c) => {
