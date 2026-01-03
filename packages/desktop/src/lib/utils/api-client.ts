@@ -50,6 +50,8 @@ async function apiRequest<T>(
   const requestOptions: RequestInit = {
     method,
     headers: requestHeaders,
+    mode: 'cors', // CORS モードを明示的に指定
+    credentials: 'omit', // 認証情報は含めない（JWTトークンをヘッダーで送信するため）
   };
 
   // ボディがある場合は追加
@@ -57,11 +59,28 @@ async function apiRequest<T>(
     requestOptions.body = JSON.stringify(body);
   }
 
+  const fullUrl = `${API_BASE_URL}${endpoint}`;
+
+  console.info('API Request:', {
+    url: fullUrl,
+    method,
+    headers: requestHeaders,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
+    const response = await fetch(fullUrl, requestOptions);
+
+    console.info('API Response:', {
+      url: fullUrl,
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+    });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.error('API Error Response:', errorData);
       throw new Error(
         errorData.error?.message ||
           errorData.message ||
@@ -69,9 +88,16 @@ async function apiRequest<T>(
       );
     }
 
-    return await response.json();
+    const responseData = await response.json();
+    console.info('API Success Response:', responseData);
+    return responseData;
   } catch (error) {
-    console.error('API request failed:', { endpoint, method, error });
+    console.error('API request failed:', {
+      endpoint,
+      method,
+      error: error instanceof Error ? error.message : String(error),
+      fullUrl,
+    });
     throw error;
   }
 }
@@ -83,9 +109,14 @@ export async function fetchSubscriptions(
   activeOnly: boolean = false
 ): Promise<SubscriptionListResponse> {
   const queryParam = activeOnly ? '?activeOnly=true' : '';
-  return apiRequest<SubscriptionListResponse>(
-    `/api/v1/subscriptions${queryParam}`
-  );
+
+  // 開発環境では認証不要のエンドポイントを使用
+  const endpoint =
+    import.meta.env.VITE_NODE_ENV === 'development'
+      ? `/api/v1/subscriptions/dev${queryParam}`
+      : `/api/v1/subscriptions${queryParam}`;
+
+  return apiRequest<SubscriptionListResponse>(endpoint);
 }
 
 /**

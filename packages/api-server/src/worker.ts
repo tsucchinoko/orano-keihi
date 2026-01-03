@@ -56,13 +56,27 @@ export default {
       // リクエストを処理
       return await app.fetch(request, env, ctx);
     } catch (error) {
-      logger.error("Workerでエラーが発生しました", { error });
+      // より詳細なエラー情報をログに記録
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      console.error("Workerでエラーが発生しました:", {
+        message: errorMessage,
+        stack: errorStack,
+        error: error,
+      });
+
+      logger.error("Workerでエラーが発生しました", {
+        message: errorMessage,
+        stack: errorStack,
+      });
 
       return new Response(
         JSON.stringify({
           error: {
             code: "WORKER_ERROR",
             message: "内部サーバーエラーが発生しました",
+            details: errorMessage, // 開発環境では詳細なエラーメッセージを含める
             timestamp: new Date().toISOString(),
           },
         }),

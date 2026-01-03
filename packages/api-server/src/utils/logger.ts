@@ -6,7 +6,9 @@
 import winston from "winston";
 
 // Cloudflare Workers環境かどうかを判定
-const isCloudflareWorkers = typeof globalThis !== "undefined" && "WorkerGlobalScope" in globalThis;
+const isCloudflareWorkers =
+  typeof globalThis !== "undefined" &&
+  ("WorkerGlobalScope" in globalThis || typeof importScripts === "function");
 
 // Node.js環境でのみファイルシステムを使用
 let canUseFileSystem = false;
@@ -75,65 +77,80 @@ const consoleFormat = winston.format.combine(
 );
 
 // ロガーの作成
-const transports: winston.transport[] = [];
+let logger: any;
 
-// Node.js環境でのみファイルトランスポートを追加
-if (canUseFileSystem) {
+if (isCloudflareWorkers) {
+  // Cloudflare Workers環境では、シンプルなコンソールログを使用
+  logger = {
+    error: (message: string, meta?: any) => console.error(`[ERROR] ${message}`, meta || ""),
+    warn: (message: string, meta?: any) => console.warn(`[WARN] ${message}`, meta || ""),
+    info: (message: string, meta?: any) => console.log(`[INFO] ${message}`, meta || ""),
+    debug: (message: string, meta?: any) => console.log(`[DEBUG] ${message}`, meta || ""),
+  };
+} else {
+  // Node.js環境では、Winstonを使用
+  const transports: winston.transport[] = [];
+
+  // Node.js環境でのみファイルトランスポートを追加
+  if (canUseFileSystem) {
+    transports.push(
+      // エラーログファイル
+      new winston.transports.File({
+        filename: "logs/error.log",
+        level: "error",
+        maxsize: 5242880, // 5MB
+        maxFiles: 5,
+      }),
+      // 警告ログファイル
+      new winston.transports.File({
+        filename: "logs/warn.log",
+        level: "warn",
+        maxsize: 5242880, // 5MB
+        maxFiles: 5,
+      }),
+      // 一般ログファイル
+      new winston.transports.File({
+        filename: "logs/app.log",
+        maxsize: 5242880, // 5MB
+        maxFiles: 5,
+      }),
+      // セキュリティログファイル
+      new winston.transports.File({
+        filename: "logs/security.log",
+        level: "warn",
+        maxsize: 5242880, // 5MB
+        maxFiles: 10,
+        format: winston.format.combine(
+          winston.format.timestamp(),
+          winston.format.json(),
+          winston.format.printf((info) => {
+            // セキュリティ関連のログのみを記録
+            if (info.type === "security_event" || info.event || info.level === "error") {
+              return JSON.stringify(info);
+            }
+            return "";
+          }),
+        ),
+      }),
+    );
+  }
+
+  // コンソールトランスポートは常に追加
   transports.push(
-    // エラーログファイル
-    new winston.transports.File({
-      filename: "logs/error.log",
-      level: "error",
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-    }),
-    // 警告ログファイル
-    new winston.transports.File({
-      filename: "logs/warn.log",
-      level: "warn",
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-    }),
-    // 一般ログファイル
-    new winston.transports.File({
-      filename: "logs/app.log",
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-    }),
-    // セキュリティログファイル
-    new winston.transports.File({
-      filename: "logs/security.log",
-      level: "warn",
-      maxsize: 5242880, // 5MB
-      maxFiles: 10,
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json(),
-        winston.format.printf((info) => {
-          // セキュリティ関連のログのみを記録
-          if (info.type === "security_event" || info.event || info.level === "error") {
-            return JSON.stringify(info);
-          }
-          return "";
-        }),
-      ),
+    new winston.transports.Console({
+      format: consoleFormat,
     }),
   );
+
+  logger = winston.createLogger({
+    level: process.env.LOG_LEVEL || "info",
+    format: logFormat,
+    defaultMeta: { service: "api-server" },
+    transports,
+  });
 }
 
-// コンソールトランスポートは常に追加
-transports.push(
-  new winston.transports.Console({
-    format: consoleFormat,
-  }),
-);
-
-export const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || "info",
-  format: logFormat,
-  defaultMeta: { service: "api-server" },
-  transports,
-});
+export { logger };
 
 /**
  * アラート生成システム

@@ -86,7 +86,7 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
       origin: config.cors.origin,
       allowMethods: config.cors.methods,
       allowHeaders: config.cors.headers,
-      credentials: true,
+      credentials: false, // JWTトークンをヘッダーで送信するため、credentialsは不要
     }),
   );
 
@@ -265,6 +265,30 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
       });
     }
   });
+
+  // 開発環境用：認証不要のサブスクリプション一覧取得
+  if (config.nodeEnv === "development") {
+    app.get("/api/v1/subscriptions/dev", async (c) => {
+      try {
+        // 開発環境では固定のユーザーID（1）を使用
+        const activeOnly = c.req.query("activeOnly") === "true";
+        const result = await subscriptionService.getSubscriptions(1, activeOnly);
+
+        logger.info("開発用サブスクリプション一覧を取得しました", {
+          userId: 1,
+          activeOnly,
+          total: result.total,
+          activeCount: result.activeCount,
+        });
+
+        return c.json(result);
+      } catch (error) {
+        return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+          context: "開発用サブスクリプション一覧取得",
+        });
+      }
+    });
+  }
 
   // サブスクリプション作成
   app.post("/api/v1/subscriptions", authMiddleware, async (c) => {
