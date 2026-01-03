@@ -1,5 +1,6 @@
 // APIサーバーとの通信を行うクライアント
 
+use crate::shared::config::environment::ApiConfig;
 use crate::shared::errors::AppError;
 use log::{debug, error, info, warn};
 use reqwest::{multipart, Client, Response};
@@ -25,19 +26,13 @@ impl Default for ApiClientConfig {
 }
 
 impl ApiClientConfig {
-    /// 環境変数からAPIクライアント設定を読み込む
+    /// 環境設定からAPIクライアント設定を作成
     pub fn from_env() -> Self {
+        let api_config = ApiConfig::from_env();
         Self {
-            base_url: std::env::var("API_SERVER_URL")
-                .unwrap_or_else(|_| "http://localhost:3000".to_string()),
-            timeout_seconds: std::env::var("API_TIMEOUT_SECONDS")
-                .unwrap_or_else(|_| "30".to_string())
-                .parse()
-                .unwrap_or(30),
-            max_retries: std::env::var("API_MAX_RETRIES")
-                .unwrap_or_else(|_| "3".to_string())
-                .parse()
-                .unwrap_or(3),
+            base_url: api_config.base_url,
+            timeout_seconds: api_config.timeout_seconds,
+            max_retries: api_config.max_retries,
         }
     }
 }

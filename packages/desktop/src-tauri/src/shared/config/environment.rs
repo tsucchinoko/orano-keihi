@@ -231,6 +231,134 @@ pub struct R2Config {
     pub region: String,
 }
 
+/// API設定を管理する構造体
+#[derive(Debug, Clone)]
+pub struct ApiConfig {
+    /// APIサーバーのベースURL
+    pub base_url: String,
+    /// APIリクエストのタイムアウト（秒）
+    pub timeout_seconds: u64,
+    /// APIリクエストの最大リトライ回数
+    pub max_retries: u32,
+}
+
+impl ApiConfig {
+    /// 環境変数からAPI設定を読み込む
+    ///
+    /// # 戻り値
+    /// API設定
+    pub fn from_env() -> Self {
+        log::debug!("ApiConfig::from_env() - 環境変数の読み込みを開始");
+
+        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
+        let base_url = option_env!("API_SERVER_URL")
+            .map(|s| {
+                log::debug!("コンパイル時埋め込みAPI_SERVER_URL を使用: {s}");
+                s.to_string()
+            })
+            .or_else(|| {
+                std::env::var("API_SERVER_URL").ok().map(|val| {
+                    log::debug!("実行時API_SERVER_URL が見つかりました: {val}");
+                    val
+                })
+            })
+            .unwrap_or_else(|| {
+                let default_url = if get_environment() == Environment::Production {
+                    "https://orano-keihi.ccya2211.workers.dev"
+                } else {
+                    "http://localhost:3000"
+                };
+                log::debug!(
+                    "API_SERVER_URL が設定されていないため、デフォルト値を使用: {default_url}"
+                );
+                default_url.to_string()
+            });
+
+        let timeout_seconds = option_env!("API_TIMEOUT_SECONDS")
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("API_TIMEOUT_SECONDS")
+                    .ok()
+                    .and_then(|val| val.parse().ok())
+            })
+            .unwrap_or_else(|| {
+                log::debug!("API_TIMEOUT_SECONDS が設定されていないため、デフォルト値30秒を使用");
+                30
+            });
+
+        let max_retries = option_env!("API_MAX_RETRIES")
+            .and_then(|s| s.parse().ok())
+            .or_else(|| {
+                std::env::var("API_MAX_RETRIES")
+                    .ok()
+                    .and_then(|val| val.parse().ok())
+            })
+            .unwrap_or_else(|| {
+                log::debug!("API_MAX_RETRIES が設定されていないため、デフォルト値3回を使用");
+                3
+            });
+
+        log::debug!("ApiConfig::from_env() - 設定の読み込みが完了しました");
+        log::info!(
+            "API設定: base_url={base_url}, timeout={timeout_seconds}s, max_retries={max_retries}"
+        );
+
+        Self {
+            base_url,
+            timeout_seconds,
+            max_retries,
+        }
+    }
+
+    /// API設定が有効かどうかを判定
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はtrue
+    pub fn is_valid(&self) -> bool {
+        !self.base_url.is_empty() && self.timeout_seconds > 0
+    }
+
+    /// 設定を検証する
+    ///
+    /// # 戻り値
+    /// 設定が有効な場合はOk(())、無効な場合はErr
+    pub fn validate(&self) -> Result<(), String> {
+        if self.base_url.is_empty() {
+            return Err("APIサーバーのベースURLが設定されていません".to_string());
+        }
+
+        if self.timeout_seconds == 0 {
+            return Err("APIタイムアウトは0より大きい値である必要があります".to_string());
+        }
+
+        Ok(())
+    }
+
+    /// APIサーバーがlocalhostかどうかを判定
+    ///
+    /// # 戻り値
+    /// localhostの場合はtrue
+    pub fn is_localhost(&self) -> bool {
+        self.base_url.contains("localhost") || self.base_url.contains("127.0.0.1")
+    }
+
+    /// デバッグ情報を取得
+    ///
+    /// # 戻り値
+    /// デバッグ情報のマップ
+    pub fn get_debug_info(&self) -> std::collections::HashMap<String, String> {
+        let mut info = std::collections::HashMap::new();
+        info.insert("base_url".to_string(), self.base_url.clone());
+        info.insert(
+            "timeout_seconds".to_string(),
+            self.timeout_seconds.to_string(),
+        );
+        info.insert("max_retries".to_string(), self.max_retries.to_string());
+        info.insert("is_localhost".to_string(), self.is_localhost().to_string());
+        info
+    }
+}
+
 /// Google OAuth 2.0の設定を管理する構造体（ネイティブアプリ用）
 #[derive(Debug, Clone)]
 pub struct GoogleOAuthConfig {
@@ -253,7 +381,7 @@ impl GoogleOAuthConfig {
         log::debug!("GoogleOAuthConfig::from_env() - 環境変数の読み込みを開始");
 
         // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
-        let client_id = option_env!("EMBEDDED_GOOGLE_CLIENT_ID")
+        let client_id = option_env!("GOOGLE_CLIENT_ID")
             .map(|s| {
                 log::debug!(
                     "コンパイル時埋め込みGOOGLE_CLIENT_ID を使用: {}****",
@@ -281,7 +409,7 @@ impl GoogleOAuthConfig {
 
         // ネイティブアプリではクライアントシークレットは不要（PKCE使用）
         // 一時的にクライアントシークレットを使用
-        let client_secret = option_env!("EMBEDDED_GOOGLE_CLIENT_SECRET")
+        let client_secret = option_env!("GOOGLE_CLIENT_SECRET")
             .map(|s| s.to_string())
             .or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok())
             .unwrap_or_else(|| {
@@ -291,7 +419,7 @@ impl GoogleOAuthConfig {
 
         log::debug!("一時的にクライアントシークレットを使用します（テスト用）");
 
-        let redirect_uri = option_env!("EMBEDDED_GOOGLE_REDIRECT_URI")
+        let redirect_uri = option_env!("GOOGLE_REDIRECT_URI")
             .map(|s| s.to_string())
             .or_else(|| std::env::var("GOOGLE_REDIRECT_URI").ok())
             .unwrap_or_else(|| {
