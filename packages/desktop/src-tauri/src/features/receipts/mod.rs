@@ -34,7 +34,8 @@ pub use api_client::{
 
 // APIコマンド（APIサーバー経由）
 pub use api_commands::{
-    check_api_server_health, upload_multiple_receipts_via_api, upload_receipt_via_api,
+    check_api_server_health, get_receipt_via_api, upload_multiple_receipts_via_api,
+    upload_receipt_via_api,
 };
 
 // コマンド（Tauriコマンドハンドラー）

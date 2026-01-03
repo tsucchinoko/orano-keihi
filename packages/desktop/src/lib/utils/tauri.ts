@@ -333,7 +333,7 @@ export async function uploadReceiptToR2(
 }
 
 /**
- * R2から領収書を取得する（ユーザー認証付き）
+ * APIサーバー経由で領収書を取得する（ユーザー認証付き）
  *
  * @param receiptUrl - 領収書のHTTPS URL
  * @returns Base64エンコードされたファイルデータまたはエラー
@@ -350,7 +350,7 @@ export async function getReceiptFromR2(
   }
 
   return handleTauriCommand(
-    invoke<string>('get_receipt_with_auth', {
+    invoke<string>('get_receipt_via_api', {
       sessionToken,
       receiptUrl,
     })

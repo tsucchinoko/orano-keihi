@@ -25,6 +25,7 @@ export interface UploadResult {
 export interface R2ClientInterface {
   putObject(key: string, data: Buffer, contentType: string): Promise<string>;
   deleteObject(key: string): Promise<void>;
+  getFile(key: string): Promise<Buffer | null>;
   generatePresignedUrl(key: string, expiresIn: number): Promise<string>;
   testConnection(): Promise<boolean>;
   getConfig(): R2Config;
@@ -143,6 +144,82 @@ export class R2Client implements R2ClientInterface {
         );
       }
     }, `R2削除: ${key}`);
+  }
+
+  /**
+   * ファイルをR2から取得
+   * @param key ファイルキー（パス）
+   * @returns ファイルデータ、または見つからない場合はnull
+   */
+  async getFile(key: string): Promise<Buffer | null> {
+    return withR2Retry(async () => {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        });
+
+        const response = await this.s3Client.send(command);
+
+        if (!response.Body) {
+          logger.warn("ファイルが見つかりません", {
+            fileKey: key,
+          });
+          return null;
+        }
+
+        // ストリームをBufferに変換
+        const chunks: Uint8Array[] = [];
+        const reader = response.Body.transformToWebStream().getReader();
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        // 全チャンクを結合してBufferを作成
+        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const buffer = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          buffer.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        const fileBuffer = Buffer.from(buffer);
+
+        logger.debug("ファイルの取得が完了しました", {
+          fileKey: key,
+          fileSize: fileBuffer.length,
+        });
+
+        return fileBuffer;
+      } catch (error: any) {
+        // ファイルが存在しない場合
+        if (error.name === "NoSuchKey" || error.$metadata?.httpStatusCode === 404) {
+          logger.warn("ファイルが見つかりません", {
+            fileKey: key,
+          });
+          return null;
+        }
+
+        logger.error("ファイルの取得に失敗しました", {
+          fileKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `R2取得エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2取得: ${key}`);
   }
 
   /**

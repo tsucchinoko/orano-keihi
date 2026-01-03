@@ -14,6 +14,7 @@ import {
   handleError,
   createValidationError,
   createAuthorizationError,
+  createNotFoundError,
 } from "./utils/error-handler.js";
 import { retryStatsTracker } from "./utils/retry.js";
 import {
@@ -31,6 +32,35 @@ import {
   logError,
   logSecurityEvent,
 } from "./middleware/index.js";
+
+/**
+ * ファイルキーからContent-Typeを推定する
+ * @param fileKey ファイルキー
+ * @returns Content-Type
+ */
+function getContentTypeFromFileKey(fileKey: string): string {
+  const extension = fileKey.toLowerCase().split(".").pop();
+
+  switch (extension) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "pdf":
+      return "application/pdf";
+    case "txt":
+      return "text/plain";
+    case "json":
+      return "application/json";
+    default:
+      return "application/octet-stream";
+  }
+}
 
 /**
  * Honoアプリケーションを作成
@@ -680,6 +710,68 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
     } catch (error) {
       return handleError(c, error instanceof Error ? error : new Error(String(error)), {
         context: "プリサインドURL生成",
+      });
+    }
+  });
+
+  // ファイルデータ取得（Base64エンコード）
+  app.get("/api/v1/receipts/:fileKey/data", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const fileKey = c.req.param("fileKey");
+
+      if (!fileKey) {
+        throw createValidationError(
+          "ファイルキーが指定されていません",
+          "fileKey",
+          fileKey,
+          "required",
+        );
+      }
+
+      // デコードされたファイルキー
+      const decodedFileKey = decodeURIComponent(fileKey);
+
+      // ファイルキーがユーザーのものかチェック（セキュリティ）
+      if (!decodedFileKey.startsWith(`users/${user.id}/`)) {
+        logSecurityEvent(c, "UNAUTHORIZED_FILE_ACCESS", {
+          userId: user.id,
+          fileKey: decodedFileKey,
+        });
+
+        throw createAuthorizationError("このファイルにアクセスする権限がありません");
+      }
+
+      // R2からファイルを取得
+      const fileData = await r2Client.getFile(decodedFileKey);
+
+      if (!fileData) {
+        throw createNotFoundError("ファイルが見つかりません");
+      }
+
+      // ファイルデータをBase64エンコード
+      const base64Data = Buffer.from(fileData).toString("base64");
+
+      // Content-Typeを推定
+      const contentType = getContentTypeFromFileKey(decodedFileKey);
+
+      logger.debug("ファイルデータを取得しました", {
+        userId: user.id,
+        fileKey: decodedFileKey,
+        fileSize: fileData.length,
+        contentType,
+      });
+
+      return c.json({
+        success: true,
+        data: base64Data,
+        content_type: contentType,
+        file_size: fileData.length,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "ファイルデータ取得",
       });
     }
   });

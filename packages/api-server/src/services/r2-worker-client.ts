@@ -97,6 +97,48 @@ export class R2WorkerClient implements R2ClientInterface {
   }
 
   /**
+   * ファイルをR2から取得
+   * @param key ファイルキー（パス）
+   * @returns ファイルデータ、または見つからない場合はnull
+   */
+  async getFile(key: string): Promise<Buffer | null> {
+    return withR2Retry(async () => {
+      try {
+        const object = await this.r2Bucket.get(key);
+
+        if (!object) {
+          logger.warn("ファイルが見つかりません", {
+            fileKey: key,
+          });
+          return null;
+        }
+
+        // ArrayBufferをBufferに変換
+        const arrayBuffer = await object.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        logger.debug("ファイルの取得が完了しました", {
+          fileKey: key,
+          fileSize: buffer.length,
+        });
+
+        return buffer;
+      } catch (error) {
+        logger.error("ファイルの取得に失敗しました", {
+          fileKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `R2取得エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2取得: ${key}`);
+  }
+
+  /**
    * プリサインドURLを生成
    * Workers環境では制限があるため、パブリックURLまたは一時的なアクセス方法を使用
    * @param key ファイルキー（パス）

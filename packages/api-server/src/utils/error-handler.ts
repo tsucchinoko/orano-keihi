@@ -320,6 +320,13 @@ export function createAuthorizationError(message: string = "権限が不足し�
 }
 
 /**
+ * 404エラー生成ヘルパー
+ */
+export function createNotFoundError(message: string = "リソースが見つかりません"): AppError {
+  return new AppError(ErrorCode.NOT_FOUND, message);
+}
+
+/**
  * ファイル関連エラー生成ヘルパー
  */
 export function createFileError(
