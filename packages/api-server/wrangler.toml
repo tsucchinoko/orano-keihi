@@ -1,5 +1,5 @@
 # Cloudflare Workers設定ファイル
-name = "oranokeihi-api-server"
+name = "orano-keihi"
 main = "src/worker.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
@@ -40,6 +40,6 @@ bucket_name = "REPLACE_WITH_DEVELOPMENT_BUCKET_NAME"
 # name = "RATE_LIMITER"
 # class_name = "RateLimiter"
 
-# ワーカーの制限設定
-[limits]
-cpu_ms = 30000
+# ワーカーの制限設定（無料プランでは使用不可）
+# [limits]
+# cpu_ms = 30000
