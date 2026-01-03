@@ -35,7 +35,8 @@ export class ErrorHandler {
                   alert('同期が必要なファイルはありません');
                 }
               } catch (e) {
-                alert(`同期に失敗しました: ${e}`);
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                alert(`同期に失敗しました: ${errorMessage}`);
               }
             },
             primary: true,
@@ -73,7 +74,8 @@ export class ErrorHandler {
                   );
                 }
               } catch (e) {
-                alert(`ヘルスチェックに失敗しました: ${e}`);
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                alert(`ヘルスチェックに失敗しました: ${errorMessage}`);
               }
             },
             primary: true,

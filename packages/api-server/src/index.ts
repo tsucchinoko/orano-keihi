@@ -68,5 +68,5 @@ async function startServer() {
   }
 }
 
-// サーバーを起動
-startServer();
+// サーバーを起動（エラーを無視）
+void startServer();

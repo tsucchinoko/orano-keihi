@@ -35,8 +35,8 @@ class ApiServerStore {
   private checkInterval: number | null = null;
 
   constructor() {
-    // 初回チェック
-    this.checkHealth();
+    // 初回チェック（エラーを無視）
+    void this.checkHealth();
 
     // 定期的なヘルスチェック（30秒間隔）
     this.startAutoCheck();
@@ -143,7 +143,7 @@ class ApiServerStore {
     this.state.autoCheckEnabled = true;
     this.checkInterval = window.setInterval(() => {
       if (this.state.autoCheckEnabled) {
-        this.checkHealth();
+        void this.checkHealth();
       }
     }, 30000); // 30秒間隔
   }

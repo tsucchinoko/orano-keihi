@@ -49,8 +49,10 @@ const consoleFormat = winston.format.combine(
   winston.format.timestamp({
     format: "YYYY-MM-DD HH:mm:ss",
   }),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    let log = `${timestamp} [${level}]: ${message}`;
+  winston.format.printf((info) => {
+    const { timestamp, level, message, ...meta } = info as any;
+    const messageStr = typeof message === "string" ? message : JSON.stringify(message);
+    let log = `${String(timestamp)} [${String(level)}]: ${messageStr}`;
     if (Object.keys(meta).length > 0) {
       log += ` ${JSON.stringify(meta)}`;
     }
@@ -151,7 +153,7 @@ class AlertSystem {
 
     // 本番環境では外部アラートシステム（Slack、メール等）に送信
     if (process.env.NODE_ENV === "production") {
-      this.sendExternalAlert(alert);
+      void this.sendExternalAlert(alert);
     }
   }
 
@@ -241,7 +243,11 @@ export const alertSystem = new AlertSystem();
  * 拡張ロガー関数
  */
 export const enhancedLogger = {
-  ...logger,
+  // 基本的なログ関数
+  error: logger.error.bind(logger),
+  warn: logger.warn.bind(logger),
+  info: logger.info.bind(logger),
+  debug: logger.debug.bind(logger),
 
   /**
    * セキュリティ関連のエラーログ
@@ -339,6 +345,6 @@ process.on("uncaughtException", (error) => {
 process.on("unhandledRejection", (reason, promise) => {
   logger.error("処理されていないPromise拒否が発生しました", {
     reason,
-    promise: promise.toString(),
+    promise: promise ? JSON.stringify(promise, null, 2) : "unknown promise",
   });
 });

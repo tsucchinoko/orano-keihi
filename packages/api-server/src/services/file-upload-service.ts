@@ -292,6 +292,7 @@ export class FileUploadService implements FileUploadServiceInterface {
       }
 
       // 危険な文字のチェック
+      // eslint-disable-next-line no-control-regex
       const dangerousChars = /[<>:"/\\|?*\x00-\x1f]/;
       if (dangerousChars.test(file.name)) {
         return {
@@ -385,12 +386,15 @@ export class FileUploadService implements FileUploadServiceInterface {
    */
   private sanitizeFileName(fileName: string): string {
     // 危険な文字を除去し、安全な文字に置換
-    return fileName
-      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_") // 危険な文字をアンダースコアに置換
-      .replace(/\s+/g, "_") // 空白をアンダースコアに置換
-      .replace(/_{2,}/g, "_") // 連続するアンダースコアを1つに
-      .replace(/^_+|_+$/g, "") // 先頭末尾のアンダースコアを除去
-      .substring(0, 200); // 長さを制限
+    return (
+      fileName
+        // eslint-disable-next-line no-control-regex
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_") // 危険な文字をアンダースコアに置換
+        .replace(/\s+/g, "_") // 空白をアンダースコアに置換
+        .replace(/_{2,}/g, "_") // 連続するアンダースコアを1つに
+        .replace(/^_+|_+$/g, "") // 先頭末尾のアンダースコアを除去
+        .substring(0, 200)
+    ); // 長さを制限
   }
 }
 
