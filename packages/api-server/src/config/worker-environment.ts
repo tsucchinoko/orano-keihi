@@ -15,26 +15,26 @@ export function loadWorkerConfig(env: Env): ApiServerConfig {
     port: 8080,
     nodeEnv: (env.NODE_ENV as "development" | "production" | "test") || "production",
 
-    // R2設定
+    // R2設定（Workersではバインディングを使用するため、ダミー値でも可）
     r2: {
-      endpoint: env.R2_ENDPOINT || "",
-      accessKeyId: env.R2_ACCESS_KEY_ID || "",
-      secretAccessKey: env.R2_SECRET_ACCESS_KEY || "",
-      bucketName: env.R2_BUCKET_NAME || "",
+      endpoint: env.R2_ENDPOINT || "auto", // Workersではバインディングを使用
+      accessKeyId: env.R2_ACCESS_KEY_ID || "binding", // Workersではバインディングを使用
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY || "binding", // Workersではバインディングを使用
+      bucketName: env.R2_BUCKET_NAME || "orano-keihi-dev", // バケット名は必要
       region: env.R2_REGION || "auto",
     },
 
     // 認証設定
     auth: {
-      jwtSecret: env.JWT_SECRET || "default-secret-change-in-production",
+      jwtSecret: env.JWT_SECRET || "development-secret-key-for-testing-only",
       sessionEncryptionKey:
-        env.SESSION_ENCRYPTION_KEY || env.JWT_SECRET || "default-secret-change-in-production",
+        env.SESSION_ENCRYPTION_KEY || env.JWT_SECRET || "development-encryption-key-32-bytes",
       sessionExpirationDays: Number(env.SESSION_EXPIRATION_DAYS) || 30,
     },
 
     // CORS設定
     cors: {
-      origin: env.CORS_ORIGIN?.split(",") || ["https://your-frontend-domain.com"],
+      origin: env.CORS_ORIGIN?.split(",") || ["http://localhost:1420", "tauri://localhost"],
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       headers: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
     },

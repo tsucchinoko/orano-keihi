@@ -14,6 +14,7 @@ export type { FileUploadServiceInterface } from "./file-upload-service.js";
 
 // R2Clientクラスをインポート
 import { R2Client } from "./r2-client.js";
+import { createR2WorkerClient } from "./r2-worker-client.js";
 
 /**
  * 環境に応じたR2クライアントを作成
@@ -27,8 +28,8 @@ export function createEnvironmentAwareR2Client(
 ): import("./r2-client.js").R2ClientInterface {
   // Workers環境の場合（R2バケットバインディングが利用可能）
   if (r2Bucket && typeof r2Bucket.put === "function") {
-    // TODO: R2WorkerClientの実装が必要
-    // return createR2WorkerClient(r2Bucket, config.bucketName);
+    // R2WorkerClientを使用
+    return createR2WorkerClient(r2Bucket, config.bucketName);
   }
 
   // Node.js環境の場合（AWS SDK使用）

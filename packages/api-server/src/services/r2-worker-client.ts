@@ -16,11 +16,9 @@ export class R2WorkerClient implements R2ClientInterface {
   constructor(
     private r2Bucket: R2Bucket,
     private bucketName: string,
-    private accountId: string,
   ) {
     logger.info("Workers環境用R2クライアントを初期化しました", {
       bucketName: this.bucketName,
-      accountId: this.accountId,
     });
   }
 
@@ -206,13 +204,15 @@ export class R2WorkerClient implements R2ClientInterface {
 
   /**
    * パブリックURLを生成
+   * Workers環境では通常カスタムドメインやWorkers経由でアクセスするため、
+   * 実際のパブリックURLは使用しない
    * @param key ファイルキー
-   * @returns パブリックURL
+   * @returns ダミーURL（実際にはWorkers経由でアクセス）
    */
   private generatePublicUrl(key: string): string {
-    // R2のパブリックURLの形式
-    // https://<bucket-name>.<account-id>.r2.cloudflarestorage.com/<key>
-    return `https://${this.bucketName}.${this.accountId}.r2.cloudflarestorage.com/${key}`;
+    // Workers環境では直接的なパブリックURLは使用せず、
+    // Workers経由でファイルにアクセスする
+    return `/api/v1/receipts/${encodeURIComponent(key)}/data`;
   }
 
   /**
@@ -255,7 +255,7 @@ export class R2WorkerClient implements R2ClientInterface {
    */
   getConfig(): import("../types/config.js").R2Config {
     return {
-      endpoint: this.accountId,
+      endpoint: "[WORKERS_BINDING]",
       accessKeyId: "[WORKERS_BINDING]",
       secretAccessKey: "[WORKERS_BINDING]",
       bucketName: this.bucketName,
@@ -268,13 +268,8 @@ export class R2WorkerClient implements R2ClientInterface {
  * Workers環境用R2クライアントのファクトリー関数
  * @param r2Bucket R2バケットバインディング
  * @param bucketName バケット名
- * @param accountId アカウントID
  * @returns Workers環境用R2クライアントインスタンス
  */
-export function createR2WorkerClient(
-  r2Bucket: R2Bucket,
-  bucketName: string,
-  accountId: string,
-): R2WorkerClient {
-  return new R2WorkerClient(r2Bucket, bucketName, accountId);
+export function createR2WorkerClient(r2Bucket: R2Bucket, bucketName: string): R2WorkerClient {
+  return new R2WorkerClient(r2Bucket, bucketName);
 }
