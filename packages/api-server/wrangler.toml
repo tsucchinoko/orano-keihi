@@ -4,42 +4,55 @@ main = "src/worker.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# 共通の環境変数（非機密情報）
-[vars]
+# 本番環境設定
+[env.production]
+name = "orano-keihi"
+
+[env.production.vars]
+NODE_ENV = "production"
+CORS_ORIGIN = "https://yourdomain.com"
+LOG_LEVEL = "info"
 MAX_FILE_SIZE = "10485760"
 ALLOWED_FILE_TYPES = "image/jpeg,image/png,image/gif,application/pdf"
 MAX_FILES_PER_REQUEST = "10"
 RATE_LIMIT_WINDOW_MS = "900000"
 RATE_LIMIT_MAX_REQUESTS = "100"
 
-# 本番環境設定
-[env.production.vars]
-NODE_ENV = "production"
-CORS_ORIGIN = "https://yourdomain.com"
-LOG_LEVEL = "info"
-# 機密情報（JWT_SECRET、R2認証情報など）はCloudflareダッシュボードで設定
-
 # 開発環境設定
+[env.development]
+name = "orano-keihi-dev"
+
 [env.development.vars]
 NODE_ENV = "development"
 CORS_ORIGIN = "http://localhost:1420,tauri://localhost"
 LOG_LEVEL = "debug"
-# 機密情報（JWT_SECRET、R2認証情報など）はCloudflareダッシュボードで設定
+MAX_FILE_SIZE = "10485760"
+ALLOWED_FILE_TYPES = "image/jpeg,image/png,image/gif,application/pdf"
+MAX_FILES_PER_REQUEST = "10"
+RATE_LIMIT_WINDOW_MS = "900000"
+RATE_LIMIT_MAX_REQUESTS = "100"
 
 # R2バケットのバインディング
 [[env.production.r2_buckets]]
 binding = "R2_BUCKET"
-bucket_name = "REPLACE_WITH_PRODUCTION_BUCKET_NAME"
+bucket_name = "orano-keihi-prod"
 
 [[env.development.r2_buckets]]
 binding = "R2_BUCKET"
-bucket_name = "REPLACE_WITH_DEVELOPMENT_BUCKET_NAME"
+bucket_name = "orano-keihi-dev"
 
-# Durableオブジェクト（必要に応じて）
-# [[durable_objects.bindings]]
-# name = "RATE_LIMITER"
-# class_name = "RateLimiter"
-
-# ワーカーの制限設定（無料プランでは使用不可）
-# [limits]
-# cpu_ms = 30000
+# 秘匿情報は以下のコマンドで設定してください：
+# 
+# 本番環境の秘匿情報設定：
+# wrangler secret put JWT_SECRET --env production
+# wrangler secret put R2_ACCESS_KEY_ID --env production
+# wrangler secret put R2_SECRET_ACCESS_KEY --env production
+# wrangler secret put GOOGLE_CLIENT_SECRET --env production
+# wrangler secret put SESSION_ENCRYPTION_KEY --env production
+#
+# 開発環境の秘匿情報設定：
+# wrangler secret put JWT_SECRET --env development
+# wrangler secret put R2_ACCESS_KEY_ID --env development
+# wrangler secret put R2_SECRET_ACCESS_KEY --env development
+# wrangler secret put GOOGLE_CLIENT_SECRET --env development
+# wrangler secret put SESSION_ENCRYPTION_KEY --env development
