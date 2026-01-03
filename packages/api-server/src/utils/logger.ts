@@ -4,12 +4,26 @@
  */
 
 import winston from "winston";
-import { existsSync, mkdirSync } from "fs";
 
-// ログディレクトリを作成
-const logDir = "logs";
-if (!existsSync(logDir)) {
-  mkdirSync(logDir, { recursive: true });
+// Cloudflare Workers環境かどうかを判定
+const isCloudflareWorkers = typeof globalThis !== "undefined" && "WorkerGlobalScope" in globalThis;
+
+// Node.js環境でのみファイルシステムを使用
+let canUseFileSystem = false;
+if (!isCloudflareWorkers) {
+  try {
+    // 動的インポートを使用してファイルシステムの利用可能性をチェック
+    const fs = require("fs");
+    const logDir = "logs";
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    canUseFileSystem = true;
+  } catch (error) {
+    // ファイルシステムが利用できない環境では何もしない
+    console.warn("ファイルシステムが利用できません。ログはコンソールのみに出力されます。");
+    canUseFileSystem = false;
+  }
 }
 
 /**
@@ -61,11 +75,11 @@ const consoleFormat = winston.format.combine(
 );
 
 // ロガーの作成
-export const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || "info",
-  format: logFormat,
-  defaultMeta: { service: "api-server" },
-  transports: [
+const transports: winston.transport[] = [];
+
+// Node.js環境でのみファイルトランスポートを追加
+if (canUseFileSystem) {
+  transports.push(
     // エラーログファイル
     new winston.transports.File({
       filename: "logs/error.log",
@@ -104,17 +118,22 @@ export const logger = winston.createLogger({
         }),
       ),
     }),
-  ],
-});
-
-// 開発環境ではコンソールにも出力
-if (process.env.NODE_ENV !== "production") {
-  logger.add(
-    new winston.transports.Console({
-      format: consoleFormat,
-    }),
   );
 }
+
+// コンソールトランスポートは常に追加
+transports.push(
+  new winston.transports.Console({
+    format: consoleFormat,
+  }),
+);
+
+export const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || "info",
+  format: logFormat,
+  defaultMeta: { service: "api-server" },
+  transports,
+});
 
 /**
  * アラート生成システム
