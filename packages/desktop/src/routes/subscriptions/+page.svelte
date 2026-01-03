@@ -54,8 +54,18 @@ function handleFormCancel() {
 
 	<!-- フォームモーダル -->
 	{#if showForm}
-		<div class="modal-overlay" onclick={handleFormCancel}>
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+		<div 
+			class="modal-overlay" 
+			role="dialog" 
+			aria-modal="true"
+			onclick={handleFormCancel}
+			onkeydown={(e) => e.key === 'Escape' && handleFormCancel()}
+		>
+			<div 
+				class="modal-content" 
+				role="document"
+				onclick={(e) => e.stopPropagation()}
+			>
 				<SubscriptionForm
 					subscription={editingSubscription}
 					onSuccess={handleFormSuccess}

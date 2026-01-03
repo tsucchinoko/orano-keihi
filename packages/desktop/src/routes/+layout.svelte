@@ -7,6 +7,12 @@ import { page } from "$app/state";
 import { authStore } from "$lib/stores";
 import { onMount } from "svelte";
 
+interface Props {
+	children: import('svelte').Snippet;
+}
+
+let { children }: Props = $props();
+
 // 現在のパスを取得
 let currentPath = $derived(page.url.pathname);
 
@@ -149,7 +155,7 @@ let isLoginPage = $derived(currentPath.startsWith("/login"));
 						現在のパス: {currentPath} | 認証状態: {isAuthenticated ? '認証済み' : '未認証'}
 					</div>
 				{/if}
-				<slot />
+				{@render children()}
 			</main>
 
 			<!-- トースト通知コンテナ -->

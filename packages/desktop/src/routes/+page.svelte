@@ -308,8 +308,18 @@ function getCategoryColor(category: string): string {
 
 	<!-- 経費追加モーダル -->
 	{#if showExpenseModal}
-		<div class="modal-overlay" onclick={handleExpenseFormCancel}>
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+		<div 
+			class="modal-overlay" 
+			role="dialog" 
+			aria-modal="true"
+			onclick={handleExpenseFormCancel}
+			onkeydown={(e) => e.key === 'Escape' && handleExpenseFormCancel()}
+		>
+			<div 
+				class="modal-content" 
+				role="document"
+				onclick={(e) => e.stopPropagation()}
+			>
 				<!-- 一時的にコンポーネントをコメントアウト -->
 				<p>経費フォーム（開発中）</p>
 				<!-- <ExpenseForm
@@ -322,8 +332,18 @@ function getCategoryColor(category: string): string {
 
 	<!-- サブスクリプション編集モーダル -->
 	{#if showEditModal}
-		<div class="modal-overlay" onclick={handleSubscriptionFormCancel}>
-			<div class="modal-content" onclick={(e) => e.stopPropagation()}>
+		<div 
+			class="modal-overlay" 
+			role="dialog" 
+			aria-modal="true"
+			onclick={handleSubscriptionFormCancel}
+			onkeydown={(e) => e.key === 'Escape' && handleSubscriptionFormCancel()}
+		>
+			<div 
+				class="modal-content" 
+				role="document"
+				onclick={(e) => e.stopPropagation()}
+			>
 				<!-- 一時的にコンポーネントをコメントアウト -->
 				<p>サブスクリプションフォーム（開発中）</p>
 				<!-- <SubscriptionForm
@@ -733,20 +753,5 @@ function getCategoryColor(category: string): string {
 			padding: 1.5rem;
 			max-height: 95vh;
 		}
-	}
-
-	/* デバッグ情報スタイル */
-	.debug-auth-info {
-		background: #f3f4f6;
-		border: 1px solid #d1d5db;
-		border-radius: 8px;
-		padding: 1rem;
-		margin-top: 1rem;
-		font-size: 0.875rem;
-		color: #374151;
-	}
-
-	.debug-auth-info p {
-		margin: 0.25rem 0;
 	}
 </style>

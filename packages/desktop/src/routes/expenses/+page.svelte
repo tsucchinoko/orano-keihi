@@ -200,21 +200,6 @@ function handleCloseReceiptViewer() {
 		flex: 1;
 	}
 
-	/* ローディング・エラー */
-	.loading-container,
-	.error-container {
-		text-align: center;
-		padding: 3rem;
-		background: white;
-		border-radius: 12px;
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-	}
-
-	.error-message {
-		color: #ef4444;
-		margin-bottom: 1rem;
-	}
-
 	/* モーダル */
 	.modal-overlay {
 		position: fixed;
