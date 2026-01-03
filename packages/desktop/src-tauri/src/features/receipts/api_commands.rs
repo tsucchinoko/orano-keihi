@@ -97,7 +97,16 @@ pub async fn get_receipt_via_api(
     })?;
 
     // APIサーバーから領収書を取得
-    let endpoint = format!("/api/v1/receipts/{}/data", urlencoding::encode(&file_key));
+    let mut endpoint = format!("/api/v1/receipts/{}/data", urlencoding::encode(&file_key));
+
+    // 開発環境では認証なしエンドポイントを使用
+    if cfg!(debug_assertions) {
+        endpoint = format!(
+            "/api/v1/receipts/dev/{}/data",
+            urlencoding::encode(&file_key)
+        );
+    }
+
     debug!("APIエンドポイント: {endpoint}");
 
     let response = api_client

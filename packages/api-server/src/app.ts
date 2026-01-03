@@ -715,10 +715,12 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
   });
 
   // ファイルデータ取得（Base64エンコード）
-  app.get("/api/v1/receipts/:fileKey/data", authMiddleware, async (c) => {
+  app.get("/api/v1/receipts/*/data", authMiddleware, async (c) => {
     try {
       const user = c.get("user");
-      const fileKey = c.req.param("fileKey");
+      // パスから /api/v1/receipts/ と /data を除去してファイルキーを取得
+      const fullPath = c.req.path;
+      const fileKey = fullPath.replace("/api/v1/receipts/", "").replace("/data", "");
 
       if (!fileKey) {
         throw createValidationError(
@@ -775,6 +777,64 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
       });
     }
   });
+
+  // 開発環境用：認証なしファイルデータ取得（テスト用）
+  if (config.nodeEnv === "development") {
+    app.get("/api/v1/receipts/dev/*/data", async (c) => {
+      try {
+        // パスから /api/v1/receipts/dev/ と /data を除去してファイルキーを取得
+        const fullPath = c.req.path;
+        const fileKey = fullPath.replace("/api/v1/receipts/dev/", "").replace("/data", "");
+
+        if (!fileKey) {
+          throw createValidationError(
+            "ファイルキーが指定されていません",
+            "fileKey",
+            fileKey,
+            "required",
+          );
+        }
+
+        // デコードされたファイルキー
+        const decodedFileKey = decodeURIComponent(fileKey);
+
+        logger.debug("開発環境：認証なしファイルデータ取得", {
+          fileKey: decodedFileKey,
+        });
+
+        // R2からファイルを取得
+        const fileData = await r2Client.getFile(decodedFileKey);
+
+        if (!fileData) {
+          throw createNotFoundError("ファイルが見つかりません");
+        }
+
+        // ファイルデータをBase64エンコード
+        const base64Data = Buffer.from(fileData).toString("base64");
+
+        // Content-Typeを推定
+        const contentType = getContentTypeFromFileKey(decodedFileKey);
+
+        logger.debug("開発環境：ファイルデータを取得しました", {
+          fileKey: decodedFileKey,
+          fileSize: fileData.length,
+          contentType,
+        });
+
+        return c.json({
+          success: true,
+          data: base64Data,
+          content_type: contentType,
+          file_size: fileData.length,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+          context: "開発環境ファイルデータ取得",
+        });
+      }
+    });
+  }
 
   // 404ハンドラー
   app.notFound((c) => {
