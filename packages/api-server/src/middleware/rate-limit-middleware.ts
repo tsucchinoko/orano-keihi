@@ -76,13 +76,25 @@ class RateLimitStore {
 // グローバルストレージインスタンス
 const rateLimitStore = new RateLimitStore();
 
-// 定期的なクリーンアップ（5分間隔）
-setInterval(
-  () => {
-    rateLimitStore.cleanup();
-  },
-  5 * 60 * 1000,
-);
+// Cloudflare Workers環境かどうかを判定
+const isCloudflareWorkers = typeof globalThis !== "undefined" && "WorkerGlobalScope" in globalThis;
+
+// Node.js環境でのみ定期的なクリーンアップを実行（5分間隔）
+if (!isCloudflareWorkers) {
+  try {
+    setInterval(
+      () => {
+        rateLimitStore.cleanup();
+      },
+      5 * 60 * 1000,
+    );
+  } catch (error) {
+    // タイマーが利用できない環境では何もしない
+    console.warn(
+      "定期的なクリーンアップが利用できません。手動でクリーンアップを実行してください。",
+    );
+  }
+}
 
 /**
  * クライアントIPアドレスを取得
@@ -122,6 +134,13 @@ export function createRateLimitMiddleware(config: RateLimitConfig) {
     const key = `rate_limit:${clientIP}`;
 
     try {
+      // Cloudflare Workers環境では定期的なクリーンアップができないため、
+      // リクエスト処理時に確率的にクリーンアップを実行
+      if (isCloudflareWorkers && Math.random() < 0.01) {
+        // 1%の確率でクリーンアップ
+        rateLimitStore.cleanup();
+      }
+
       const { count, resetTime } = rateLimitStore.increment(key, config.windowMs);
 
       // レスポンスヘッダーに制限情報を追加
