@@ -16,7 +16,7 @@ pub struct Subscription {
 }
 
 /// サブスクリプション作成用DTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateSubscriptionDto {
     pub name: String,
     pub amount: f64,
@@ -26,7 +26,7 @@ pub struct CreateSubscriptionDto {
 }
 
 /// サブスクリプション更新用DTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateSubscriptionDto {
     pub name: Option<String>,
     pub amount: Option<f64>,

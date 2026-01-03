@@ -242,7 +242,8 @@ class ExpenseStore {
     try {
       const result = await fetchSubscriptions(activeOnly);
       this.subscriptions = result.subscriptions;
-      this.monthlySubscriptionTotal = result.monthlyTotal;
+      // 月額合計は別途取得する必要がある
+      await this.loadMonthlySubscriptionTotal();
     } catch (err) {
       this.error = `サブスクリプションの読み込みに失敗しました: ${String(err)}`;
     } finally {
@@ -358,7 +359,7 @@ class ExpenseStore {
   async loadMonthlySubscriptionTotal(): Promise<void> {
     try {
       const result = await fetchMonthlySubscriptionTotal();
-      this.monthlySubscriptionTotal = result.monthlyTotal;
+      this.monthlySubscriptionTotal = result.total;
     } catch (err) {
       this.error = `月額合計の読み込みに失敗しました: ${String(err)}`;
     }

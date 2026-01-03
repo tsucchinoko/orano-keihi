@@ -63,13 +63,10 @@ export interface UpdateSubscriptionDto {
 export interface SubscriptionListResponse {
   subscriptions: Subscription[];
   total: number;
-  activeCount: number;
-  monthlyTotal: number;
 }
 
 export interface MonthlyTotalResponse {
-  monthlyTotal: number;
-  activeSubscriptions: number;
+  total: number;
 }
 
 // カテゴリデータモデル

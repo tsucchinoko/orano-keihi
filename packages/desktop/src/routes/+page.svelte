@@ -76,7 +76,15 @@ async function loadData() {
 				// サブスクリプションを取得（APIサーバー経由）
 				const subscriptionsResponse = await fetchSubscriptions(true);
 				subscriptions = subscriptionsResponse.subscriptions || [];
-				monthlySubscriptionTotal = subscriptionsResponse.monthlyTotal || 0;
+				
+				// 月額合計を別途取得
+				try {
+					const monthlyTotalResponse = await fetchMonthlySubscriptionTotal();
+					monthlySubscriptionTotal = monthlyTotalResponse.total || 0;
+				} catch (totalError) {
+					console.warn("月額合計の取得に失敗:", totalError);
+					monthlySubscriptionTotal = 0;
+				}
 			} catch (apiError) {
 				console.warn("APIサーバー経由でのサブスクリプション取得に失敗:", apiError);
 				// フォールバック: 空のデータを設定

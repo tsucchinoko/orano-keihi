@@ -15,7 +15,7 @@ use features::{
         commands as receipt_commands,
     },
     security::commands as security_commands,
-    subscriptions::commands as subscription_commands,
+    subscriptions::{api_commands as subscription_api_commands, commands as subscription_commands},
 };
 use log::info;
 use rusqlite::Connection;
@@ -272,6 +272,13 @@ pub fn run() {
             subscription_commands::update_subscription,
             subscription_commands::toggle_subscription_status,
             subscription_commands::get_monthly_subscription_total,
+            // サブスクリプションコマンド（APIサーバー経由）
+            subscription_api_commands::fetch_subscriptions_via_api,
+            subscription_api_commands::create_subscription_via_api,
+            subscription_api_commands::update_subscription_via_api,
+            subscription_api_commands::toggle_subscription_status_via_api,
+            subscription_api_commands::delete_subscription_via_api,
+            subscription_api_commands::fetch_monthly_subscription_total_via_api,
             // 領収書コマンド（APIサーバー経由）
             receipt_api_commands::upload_receipt_via_api,
             receipt_api_commands::upload_multiple_receipts_via_api,

@@ -10,7 +10,11 @@ pub mod config;
 /// 共有ユーティリティ関数
 pub mod utils;
 
+/// 汎用APIクライアント
+pub mod api_client;
+
 // 便利な再エクスポート
+pub use api_client::{ApiClient, ApiClientConfig, ErrorDetail, ErrorResponse};
 pub use config::{
     get_database_filename, get_environment, initialize_application, initialize_logging_system,
     load_environment_variables, log_initialization_complete, Environment, EnvironmentConfig,
