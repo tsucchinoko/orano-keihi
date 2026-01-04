@@ -661,3 +661,20 @@ export async function deleteSubscriptionReceiptFromR2(
     })
   );
 }
+/**
+ * サブスクリプションを削除する
+ *
+ * @param id - 削除するサブスクリプションのID
+ * @returns 成功またはエラー
+ */
+export async function deleteSubscription(
+  id: number
+): Promise<TauriResult<void>> {
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<void>('delete_subscription', {
+      id,
+      sessionToken,
+    })
+  );
+}

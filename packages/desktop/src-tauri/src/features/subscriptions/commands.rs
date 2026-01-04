@@ -183,6 +183,9 @@ pub async fn get_monthly_subscription_total(
 /// # 戻り値
 /// バリデーション成功時はOk(())、失敗時はエラーメッセージ
 fn validate_create_subscription_dto(dto: &CreateSubscriptionDto) -> Result<(), String> {
+    // デバッグログを追加
+    log::info!("バリデーション開始 - 受信した日付: {}", dto.start_date);
+
     // バリデーション: サービス名は必須
     if dto.name.trim().is_empty() {
         return Err("サービス名を入力してください".to_string());
@@ -265,26 +268,41 @@ fn validate_update_subscription_dto(dto: &UpdateSubscriptionDto) -> Result<(), S
 /// # 戻り値
 /// バリデーション成功時はOk(())、失敗時はエラーメッセージ
 fn validate_date_format(date: &str) -> Result<(), String> {
+    log::info!("日付バリデーション開始 - 受信した日付: '{}'", date);
+
+    // 空文字チェック
+    if date.is_empty() {
+        return Err("日付が空です".to_string());
+    }
+
     // YYYY-MM-DD形式の基本チェック
     if date.len() != 10 {
-        return Err("日付はYYYY-MM-DD形式で入力してください".to_string());
+        return Err(format!(
+            "日付はYYYY-MM-DD形式で入力してください（受信: '{}', 長さ: {}）",
+            date,
+            date.len()
+        ));
     }
 
     let parts: Vec<&str> = date.split('-').collect();
     if parts.len() != 3 {
-        return Err("日付はYYYY-MM-DD形式で入力してください".to_string());
+        return Err(format!(
+            "日付はYYYY-MM-DD形式で入力してください（受信: '{}', 分割数: {}）",
+            date,
+            parts.len()
+        ));
     }
 
     // 年、月、日が数値かチェック
     let year: i32 = parts[0]
         .parse()
-        .map_err(|_| "年は数値で入力してください".to_string())?;
+        .map_err(|_| format!("年は数値で入力してください（受信: '{}'）", parts[0]))?;
     let month: u32 = parts[1]
         .parse()
-        .map_err(|_| "月は数値で入力してください".to_string())?;
+        .map_err(|_| format!("月は数値で入力してください（受信: '{}'）", parts[1]))?;
     let day: u32 = parts[2]
         .parse()
-        .map_err(|_| "日は数値で入力してください".to_string())?;
+        .map_err(|_| format!("日は数値で入力してください（受信: '{}'）", parts[2]))?;
 
     // 基本的な範囲チェック
     if !(1900..=2100).contains(&year) {
@@ -297,5 +315,39 @@ fn validate_date_format(date: &str) -> Result<(), String> {
         return Err("日は1から31の間で入力してください".to_string());
     }
 
+    log::info!("日付バリデーション成功: {}-{:02}-{:02}", year, month, day);
     Ok(())
+}
+
+/// サブスクリプションを削除する
+///
+/// # 引数
+/// * `id` - サブスクリプションID
+/// * `session_token` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_subscription(
+    id: i64,
+    session_token: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<(), String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/delete")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 認証されたユーザーのサブスクリプションを削除
+    repository::delete(&db, id, user.id).map_err(|e| e.user_message().to_string())
 }

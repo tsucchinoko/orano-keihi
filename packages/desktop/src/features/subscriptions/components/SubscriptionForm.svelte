@@ -127,6 +127,18 @@ function validate(): boolean {
 	// 開始日のバリデーション
 	if (!startDate) {
 		newErrors.startDate = "開始日を入力してください";
+	} else {
+		// YYYY-MM-DD形式の確認
+		const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+		if (!dateRegex.test(startDate)) {
+			newErrors.startDate = "開始日はYYYY-MM-DD形式で入力してください";
+		} else {
+			// 日付の妥当性チェック
+			const dateObj = new Date(startDate + 'T00:00:00');
+			if (isNaN(dateObj.getTime())) {
+				newErrors.startDate = "有効な日付を入力してください";
+			}
+		}
 	}
 
 	// カテゴリのバリデーション
@@ -211,7 +223,7 @@ async function handleSubmit(event: Event) {
 			name: name.trim(),
 			amount: Number.parseFloat(amount),
 			billing_cycle: billingCycle,
-			start_date: new Date(startDate).toISOString(),
+			start_date: startDate, // YYYY-MM-DD形式のまま送信
 			category,
 		};
 
@@ -280,7 +292,7 @@ const monthlyAmount = $derived(() => {
 </script>
 
 <div class="card max-w-2xl mx-auto">
-	<h2 class="text-2xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+	<h2 class="text-2xl font-bold mb-6 bg-linear-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
 		{subscription ? 'サブスクリプションを編集' : '新しいサブスクリプションを追加'}
 	</h2>
 

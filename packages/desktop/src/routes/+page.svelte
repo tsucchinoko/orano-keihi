@@ -5,11 +5,9 @@ import { ExpenseForm } from "$features/expenses";
 import type { Expense, Subscription } from "$lib/types";
 import {
 	getExpenses,
+    getMonthlySubscriptionTotal,
+    getSubscriptions,
 } from "$lib/utils/tauri";
-import {
-	fetchSubscriptions,
-	fetchMonthlySubscriptionTotal,
-} from "$lib/utils/api-client";
 import { authStore } from "$lib/stores";
 
 // 状態管理
@@ -65,20 +63,31 @@ async function loadData() {
 		// 認証されている場合のみサブスクリプションデータを取得
 		if (isAuthenticated) {
 			try {
-				// サブスクリプションを取得（APIサーバー経由）
-				const subscriptionsResponse = await fetchSubscriptions(true);
-				subscriptions = subscriptionsResponse.subscriptions || [];
+				// サブスクリプションを取得（Tauriコマンド経由）
+				const subscriptionsResult = await getSubscriptions(true);
+				
+				if (subscriptionsResult.error) {
+					console.warn("サブスクリプション取得エラー:", subscriptionsResult.error);
+					subscriptions = [];
+				} else {
+					subscriptions = subscriptionsResult.data || [];
+				}
 				
 				// 月額合計を別途取得
 				try {
-					const monthlyTotalResponse = await fetchMonthlySubscriptionTotal();
-					monthlySubscriptionTotal = monthlyTotalResponse.monthlyTotal || 0;
+					const monthlyTotalResult = await getMonthlySubscriptionTotal();
+					if (monthlyTotalResult.error) {
+						console.warn("月額合計取得エラー:", monthlyTotalResult.error);
+						monthlySubscriptionTotal = 0;
+					} else {
+						monthlySubscriptionTotal = monthlyTotalResult.data || 0;
+					}
 				} catch (totalError) {
 					console.warn("月額合計の取得に失敗:", totalError);
 					monthlySubscriptionTotal = 0;
 				}
 			} catch (apiError) {
-				console.warn("APIサーバー経由でのサブスクリプション取得に失敗:", apiError);
+				console.warn("サブスクリプション取得に失敗:", apiError);
 				// フォールバック: 空のデータを設定
 				subscriptions = [];
 				monthlySubscriptionTotal = 0;

@@ -22,7 +22,7 @@ import {
   createR2TestService,
   createAuthService,
   createFileUploadService,
-  createSubscriptionService,
+  createTauriSubscriptionService,
 } from "./services/index.js";
 import {
   createAuthMiddleware,
@@ -82,8 +82,8 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
   // ファイルアップロードサービスを初期化
   const fileUploadService = createFileUploadService(r2Client, config.fileUpload);
 
-  // サブスクリプションサービスを初期化
-  const subscriptionService = createSubscriptionService();
+  // サブスクリプションサービスを初期化（Tauri経由）
+  const subscriptionService = createTauriSubscriptionService();
 
   // 認証ミドルウェアを作成
   const authMiddleware = createAuthMiddleware(authService);
