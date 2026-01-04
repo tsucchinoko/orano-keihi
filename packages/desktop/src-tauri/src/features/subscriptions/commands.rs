@@ -268,8 +268,6 @@ fn validate_update_subscription_dto(dto: &UpdateSubscriptionDto) -> Result<(), S
 /// # 戻り値
 /// バリデーション成功時はOk(())、失敗時はエラーメッセージ
 fn validate_date_format(date: &str) -> Result<(), String> {
-    log::info!("日付バリデーション開始 - 受信した日付: '{}'", date);
-
     // 空文字チェック
     if date.is_empty() {
         return Err("日付が空です".to_string());
@@ -315,7 +313,6 @@ fn validate_date_format(date: &str) -> Result<(), String> {
         return Err("日は1から31の間で入力してください".to_string());
     }
 
-    log::info!("日付バリデーション成功: {}-{:02}-{:02}", year, month, day);
     Ok(())
 }
 
