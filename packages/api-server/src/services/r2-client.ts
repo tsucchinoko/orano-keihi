@@ -25,9 +25,11 @@ export interface UploadResult {
 export interface R2ClientInterface {
   putObject(key: string, data: Buffer, contentType: string): Promise<string>;
   deleteObject(key: string): Promise<void>;
+  deleteFile(key: string): Promise<void>;
   getFile(key: string): Promise<Buffer | null>;
   generatePresignedUrl(key: string, expiresIn: number): Promise<string>;
   testConnection(): Promise<boolean>;
+  fileExists(key: string): Promise<boolean>;
   getConfig(): R2Config;
 }
 
@@ -144,6 +146,50 @@ export class R2Client implements R2ClientInterface {
         );
       }
     }, `R2削除: ${key}`);
+  }
+
+  /**
+   * ファイルをR2から削除（エイリアス）
+   * @param key ファイルキー（パス）
+   */
+  async deleteFile(key: string): Promise<void> {
+    return this.deleteObject(key);
+  }
+
+  /**
+   * ファイルの存在確認
+   * @param key ファイルキー（パス）
+   * @returns ファイルが存在する場合true
+   */
+  async fileExists(key: string): Promise<boolean> {
+    return withR2Retry(async () => {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        });
+
+        await this.s3Client.send(command);
+        return true;
+      } catch (error: any) {
+        // ファイルが存在しない場合
+        if (error.name === "NoSuchKey" || error.$metadata?.httpStatusCode === 404) {
+          return false;
+        }
+
+        // その他のエラーは再スロー
+        logger.error("ファイル存在確認でエラーが発生しました", {
+          fileKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `R2存在確認エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2存在確認: ${key}`);
   }
 
   /**

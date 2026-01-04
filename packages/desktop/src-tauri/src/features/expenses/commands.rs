@@ -119,7 +119,7 @@ pub async fn update_expense(
     repository::update(&db, id, dto, user.id).map_err(|e| e.into())
 }
 
-/// 経費を削除する（R2対応）
+/// 経費を削除する（API経由でR2ファイル削除）
 ///
 /// # 引数
 /// * `id` - 経費ID
@@ -127,7 +127,6 @@ pub async fn update_expense(
 /// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
-/// * `auth_service` - 認証サービス
 ///
 /// # 戻り値
 /// 成功時は空、失敗時はエラーメッセージ
@@ -138,7 +137,6 @@ pub async fn delete_expense(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
-    auth_service: State<'_, crate::features::auth::service::AuthService>,
 ) -> Result<(), String> {
     use chrono::Utc;
     use chrono_tz::Asia::Tokyo;
@@ -159,20 +157,19 @@ pub async fn delete_expense(
         repository::get_receipt_url(&db, id, user.id).map_err(|e| e.user_message().to_string())?
     };
 
-    // 領収書がR2に存在する場合は削除
+    // 領収書がR2に存在する場合はAPI経由で削除
     if let Some(receipt_url) = current_receipt_url {
-        // 認証付きR2削除コマンドを使用（経費IDではなくreceipt_urlを渡す）
-        let deletion_result = crate::features::receipts::auth_commands::delete_receipt_with_auth(
-            session_token.unwrap_or_default(),
+        // API経由でファイル削除を実行
+        let deletion_result = crate::features::receipts::api_commands::delete_receipt_via_api(
             receipt_url.clone(),
-            auth_service,
-            state.clone(),
+            session_token.clone(),
+            auth_middleware.clone(),
         )
         .await;
 
         match deletion_result {
             Ok(_) => {
-                // R2削除成功 - キャッシュからも削除
+                // API削除成功 - キャッシュからも削除
                 if let Ok(app_data_dir) = app.path().app_data_dir() {
                     let cache_dir = app_data_dir.join("receipt_cache");
                     let cache_manager =
@@ -182,7 +179,7 @@ pub async fn delete_expense(
                         AppError::concurrency(format!("データベースロック取得失敗: {e}"))
                     })?;
 
-                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db, 1i64) {
+                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db, user.id) {
                         eprintln!("キャッシュ削除エラー: {e}");
                     }
                 }
@@ -194,9 +191,9 @@ pub async fn delete_expense(
                 );
             }
             Err(e) => {
-                // R2削除失敗 - データベースの状態は変更しない
+                // API削除失敗 - データベースの状態は変更しない
                 return Err(format!(
-                    "R2からのファイル削除に失敗しました。経費の削除を中止します: {e}"
+                    "API経由でのファイル削除に失敗しました。経費の削除を中止します: {e}"
                 ));
             }
         }

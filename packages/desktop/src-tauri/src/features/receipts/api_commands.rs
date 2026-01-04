@@ -341,6 +341,107 @@ pub async fn get_fallback_file_count() -> Result<i32, String> {
     Ok(0)
 }
 
+/// APIサーバー経由で領収書を削除する
+///
+/// # 引数
+/// * `receipt_url` - 領収書URL
+/// * `session_token` - セッショントークン
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 削除成功の場合はtrue、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_receipt_via_api(
+    receipt_url: String,
+    session_token: Option<String>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<bool, String> {
+    info!("APIサーバー経由で領収書削除開始: receipt_url={receipt_url}");
+
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/api/receipts/delete")
+        .await
+        .map_err(|e| {
+            error!("認証エラー: {e}");
+            format!("認証エラー: {e}")
+        })?;
+
+    debug!("認証成功 - ユーザーID: {}", user.id);
+
+    // セッショントークンが必要
+    let token = session_token.ok_or_else(|| {
+        error!("セッショントークンが提供されていません");
+        "セッショントークンが必要です".to_string()
+    })?;
+
+    // URLの基本検証
+    if !receipt_url.starts_with("https://") {
+        return Err("無効な領収書URLです".to_string());
+    }
+
+    debug!(
+        "使用するセッショントークン: {}****",
+        &token[..8.min(token.len())]
+    );
+
+    // APIクライアントを作成
+    let api_client = SharedApiClient::new().map_err(|e| {
+        error!("APIクライアント作成エラー: {e}");
+        format!("APIクライアント作成エラー: {e}")
+    })?;
+
+    // 削除リクエストのペイロード
+    let payload = serde_json::json!({
+        "receiptUrl": receipt_url
+    });
+
+    debug!(
+        "削除リクエストペイロード: {}",
+        serde_json::to_string_pretty(&payload).unwrap_or_default()
+    );
+
+    // APIサーバーに削除リクエストを送信
+    let endpoint = "/api/v1/receipts/delete-by-url";
+
+    debug!("APIエンドポイント: {endpoint}");
+
+    let response = api_client
+        .delete_with_body::<serde_json::Value>(&endpoint, &payload, Some(&token))
+        .await
+        .map_err(|e| {
+            error!("APIリクエストエラー: {e}");
+            format!("領収書の削除に失敗しました: {e}")
+        })?;
+
+    debug!(
+        "APIレスポンス: {}",
+        serde_json::to_string_pretty(&response).unwrap_or_default()
+    );
+
+    // レスポンスから成功フラグを取得
+    let success = response
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if success {
+        info!(
+            "領収書削除成功 - ユーザーID: {}, receipt_url: {receipt_url}",
+            user.id
+        );
+        Ok(true)
+    } else {
+        let error_message = response
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("不明なエラーが発生しました");
+
+        error!("領収書削除失敗: {error_message}");
+        Err(format!("領収書の削除に失敗しました: {error_message}"))
+    }
+}
+
 /// URLからファイルキーを抽出する
 ///
 /// # 引数

@@ -136,3 +136,19 @@ export async function getFallbackFileCount(): Promise<number> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke('get_fallback_file_count');
 }
+
+// APIサーバー経由でのファイル削除関数
+export async function deleteReceiptViaApi(
+  receiptUrl: string
+): Promise<boolean> {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  // セッショントークンを取得
+  const { authStore } = await import('../stores/auth.svelte');
+  const sessionToken = authStore.getSessionToken();
+
+  return invoke('delete_receipt_via_api', {
+    receiptUrl: receiptUrl,
+    sessionToken: sessionToken,
+  });
+}

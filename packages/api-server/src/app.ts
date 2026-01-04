@@ -33,6 +33,7 @@ import {
   logSecurityEvent,
 } from "./middleware/index.js";
 import { updaterApp } from "./routes/updater.js";
+import { createReceiptsRouter } from "./routes/receipts.js";
 
 /**
  * ファイルキーからContent-Typeを推定する
@@ -133,6 +134,11 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
 
   // アップデーター関連エンドポイント
   app.route("/api/updater", updaterApp);
+
+  // 領収書関連エンドポイント（認証が必要）
+  const receiptsRouter = createReceiptsRouter(r2Client);
+  app.use("/api/v1/receipts/*", authMiddleware);
+  app.route("/api/v1/receipts", receiptsRouter);
 
   // R2接続テストエンドポイント（認証が必要）
   app.get("/api/v1/system/r2/test", authMiddleware, async (c) => {

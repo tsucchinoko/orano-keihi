@@ -289,6 +289,7 @@ pub fn run() {
             receipt_api_commands::sync_fallback_files,
             receipt_api_commands::get_fallback_file_count,
             receipt_api_commands::get_receipt_via_api,
+            receipt_api_commands::delete_receipt_via_api,
             receipt_commands::get_receipt_offline,
             receipt_commands::sync_cache_on_online,
             receipt_commands::get_cache_stats,

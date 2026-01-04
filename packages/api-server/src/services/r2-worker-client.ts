@@ -95,6 +95,14 @@ export class R2WorkerClient implements R2ClientInterface {
   }
 
   /**
+   * ファイルをR2から削除（エイリアス）
+   * @param key ファイルキー（パス）
+   */
+  async deleteFile(key: string): Promise<void> {
+    return this.deleteObject(key);
+  }
+
+  /**
    * ファイルをR2から取得
    * @param key ファイルキー（パス）
    * @returns ファイルデータ、または見つからない場合はnull
