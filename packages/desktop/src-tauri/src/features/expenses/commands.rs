@@ -4,6 +4,7 @@ use crate::shared::errors::AppError;
 use crate::AppState;
 use chrono::NaiveDate;
 use chrono_tz::Asia::Tokyo;
+use log::{error, info};
 use tauri::{Manager, State};
 
 /// 経費を作成する
@@ -100,11 +101,15 @@ pub async fn update_expense(
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Expense, String> {
+    info!("経費更新処理開始: expense_id={id}, dto={dto:?}");
+
     // 認証チェック
     let user = auth_middleware
         .authenticate_request(session_token.as_deref(), "/expenses/update")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
+
+    info!("認証成功 - ユーザーID: {}, 経費ID: {id}", user.id);
 
     // バリデーション
     validate_update_expense_dto(&dto)?;
@@ -116,18 +121,67 @@ pub async fn update_expense(
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
     // 認証されたユーザーの経費を更新
-    repository::update(&db, id, dto, user.id).map_err(|e| e.into())
+    let result = repository::update(&db, id, dto, user.id).map_err(|e| e.into());
+
+    match &result {
+        Ok(expense) => {
+            info!("経費更新成功: expense_id={id}, updated_expense={expense:?}");
+        }
+        Err(e) => {
+            error!("経費更新失敗: expense_id={id}, error={e}");
+        }
+    }
+
+    result
 }
 
-/// 経費を削除する（API経由でR2ファイル削除）
+/// 経費の領収書を削除する
 ///
 /// # 引数
-/// * `id` - 経費ID
+/// * `expense_id` - 経費ID
 /// * `session_token` - セッショントークン
-/// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
 ///
+/// # 戻り値
+/// 削除成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_expense_receipt(
+    expenseId: i64,
+    sessionToken: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<bool, String> {
+    info!("経費の領収書削除処理開始: expense_id={expenseId}");
+
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(sessionToken.as_deref(), "/expenses/delete-receipt")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    info!("認証成功 - ユーザーID: {}, 経費ID: {expenseId}", user.id);
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
+
+    // 経費の領収書URLを削除（空文字列でNULLに設定）
+    let result = repository::set_receipt_url(&db, expenseId, "".to_string(), user.id);
+
+    match result {
+        Ok(_) => {
+            info!("経費の領収書削除成功: expense_id={expenseId}");
+            Ok(true)
+        }
+        Err(e) => {
+            error!("経費の領収書削除失敗: expense_id={expenseId}, error={e}");
+            Err(e.to_string())
+        }
+    }
+}
 /// # 戻り値
 /// 成功時は空、失敗時はエラーメッセージ
 #[tauri::command]
@@ -159,6 +213,8 @@ pub async fn delete_expense(
 
     // 領収書がR2に存在する場合はAPI経由で削除
     if let Some(receipt_url) = current_receipt_url {
+        println!("経費削除処理開始: expense_id={id}, receipt_url={receipt_url}");
+
         // API経由でファイル削除を実行
         let deletion_result = crate::features::receipts::api_commands::delete_receipt_via_api(
             receipt_url.clone(),
@@ -168,7 +224,11 @@ pub async fn delete_expense(
         .await;
 
         match deletion_result {
-            Ok(_) => {
+            Ok(success) => {
+                println!(
+                    "API削除結果: success={success}, expense_id={id}, receipt_url={receipt_url}"
+                );
+
                 // API削除成功 - キャッシュからも削除
                 if let Ok(app_data_dir) = app.path().app_data_dir() {
                     let cache_dir = app_data_dir.join("receipt_cache");
@@ -181,6 +241,8 @@ pub async fn delete_expense(
 
                     if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db, user.id) {
                         eprintln!("キャッシュ削除エラー: {e}");
+                    } else {
+                        println!("キャッシュ削除成功: expense_id={id}, receipt_url={receipt_url}");
                     }
                 }
 
@@ -192,20 +254,41 @@ pub async fn delete_expense(
             }
             Err(e) => {
                 // API削除失敗 - データベースの状態は変更しない
+                eprintln!("API削除失敗: expense_id={id}, receipt_url={receipt_url}, error={e}");
                 return Err(format!(
                     "API経由でのファイル削除に失敗しました。経費の削除を中止します: {e}"
                 ));
             }
         }
+    } else {
+        println!("領収書URLが存在しないため、R2削除をスキップします: expense_id={id}");
     }
 
     // データベースから経費を削除
+    println!(
+        "データベースから経費削除開始: expense_id={id}, user_id={}",
+        user.id
+    );
+
     let db = state
         .db
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-    repository::delete(&db, id, user.id).map_err(|e| e.into())
+    let delete_result = repository::delete(&db, id, user.id);
+
+    match &delete_result {
+        Ok(_) => println!(
+            "データベースから経費削除成功: expense_id={id}, user_id={}",
+            user.id
+        ),
+        Err(e) => eprintln!(
+            "データベースから経費削除失敗: expense_id={id}, user_id={}, error={e}",
+            user.id
+        ),
+    }
+
+    delete_result.map_err(|e| e.into())
 }
 
 /// 経費作成DTOのバリデーション

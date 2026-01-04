@@ -352,15 +352,15 @@ pub async fn get_fallback_file_count() -> Result<i32, String> {
 /// 削除成功の場合はtrue、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn delete_receipt_via_api(
-    receipt_url: String,
-    session_token: Option<String>,
+    receiptUrl: String,
+    sessionToken: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<bool, String> {
-    info!("APIサーバー経由で領収書削除開始: receipt_url={receipt_url}");
+    info!("APIサーバー経由で領収書削除開始: receiptUrl={receiptUrl}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/api/receipts/delete")
+        .authenticate_request(sessionToken.as_deref(), "/api/receipts/delete")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -370,13 +370,13 @@ pub async fn delete_receipt_via_api(
     debug!("認証成功 - ユーザーID: {}", user.id);
 
     // セッショントークンが必要
-    let token = session_token.ok_or_else(|| {
+    let token = sessionToken.ok_or_else(|| {
         error!("セッショントークンが提供されていません");
         "セッショントークンが必要です".to_string()
     })?;
 
     // URLの基本検証
-    if !receipt_url.starts_with("https://") {
+    if !receiptUrl.starts_with("https://") {
         return Err("無効な領収書URLです".to_string());
     }
 
@@ -393,7 +393,7 @@ pub async fn delete_receipt_via_api(
 
     // 削除リクエストのペイロード
     let payload = serde_json::json!({
-        "receiptUrl": receipt_url
+        "receiptUrl": receiptUrl
     });
 
     debug!(
@@ -414,8 +414,8 @@ pub async fn delete_receipt_via_api(
             format!("領収書の削除に失敗しました: {e}")
         })?;
 
-    debug!(
-        "APIレスポンス: {}",
+    info!(
+        "APIレスポンス受信: {}",
         serde_json::to_string_pretty(&response).unwrap_or_default()
     );
 
@@ -425,9 +425,11 @@ pub async fn delete_receipt_via_api(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    info!("レスポンス解析結果: success={success}");
+
     if success {
         info!(
-            "領収書削除成功 - ユーザーID: {}, receipt_url: {receipt_url}",
+            "領収書削除成功 - ユーザーID: {}, receiptUrl: {receiptUrl}",
             user.id
         );
         Ok(true)

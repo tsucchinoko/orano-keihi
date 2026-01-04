@@ -140,12 +140,14 @@ export async function updateExpense(
  */
 export async function deleteExpense(id: number): Promise<TauriResult<void>> {
   const sessionToken = getAuthToken();
-  return handleTauriCommand(
+  const result = await handleTauriCommand(
     invoke<void>('delete_expense', {
       id,
       sessionToken,
     })
   );
+
+  return result;
 }
 
 /**
@@ -288,6 +290,24 @@ export async function saveSubscriptionReceipt(
  * @param expenseId - 経費ID
  * @returns 成功またはエラー
  */
+export async function deleteExpenseReceipt(
+  expenseId: number
+): Promise<TauriResult<boolean>> {
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<boolean>('delete_expense_receipt', {
+      expenseId: expenseId,
+      sessionToken: sessionToken,
+    })
+  );
+}
+
+/**
+ * 経費の領収書を削除する
+ *
+ * @param expenseId - 経費ID
+ * @returns 成功またはエラー
+ */
 export async function deleteReceipt(
   expenseId: number
 ): Promise<TauriResult<boolean>> {
@@ -374,11 +394,11 @@ export async function getReceiptFromR2(
 /**
  * R2から領収書を削除する（ユーザー認証付き）
  *
- * @param expenseId - 経費ID
+ * @param receiptUrl - 削除する領収書のHTTPS URL
  * @returns 成功またはエラー
  */
 export async function deleteReceiptFromR2(
-  expenseId: number
+  receiptUrl: string
 ): Promise<TauriResult<boolean>> {
   const sessionToken = getAuthToken();
   if (!sessionToken) {
@@ -389,9 +409,9 @@ export async function deleteReceiptFromR2(
   }
 
   return handleTauriCommand(
-    invoke<boolean>('delete_receipt_with_auth', {
-      session_token: sessionToken,
-      expense_id: expenseId,
+    invoke<boolean>('delete_receipt_via_api', {
+      receiptUrl: receiptUrl,
+      sessionToken: sessionToken,
     })
   );
 }

@@ -160,20 +160,43 @@ export class R2Client implements R2ClientInterface {
   async deleteObject(key: string): Promise<void> {
     return withR2Retry(async () => {
       try {
+        logger.info("R2ファイル削除を開始します", {
+          fileKey: key,
+          bucketName: this.bucketName,
+        });
+
         const command = new DeleteObjectCommand({
           Bucket: this.bucketName,
           Key: key,
         });
 
-        await this.s3Client.send(command);
+        const result = await this.s3Client.send(command);
 
         logger.info("ファイルの削除が完了しました", {
           fileKey: key,
+          bucketName: this.bucketName,
+          result: {
+            $metadata: result.$metadata,
+            DeleteMarker: result.DeleteMarker,
+            VersionId: result.VersionId,
+          },
         });
+
+        // 削除が成功したかを確認するため、HTTPステータスコードをチェック
+        if (result.$metadata.httpStatusCode !== 204 && result.$metadata.httpStatusCode !== 200) {
+          logger.warn("削除リクエストが予期しないステータスコードを返しました", {
+            fileKey: key,
+            statusCode: result.$metadata.httpStatusCode,
+            result: result,
+          });
+        }
       } catch (error) {
         logger.error("ファイルの削除に失敗しました", {
           fileKey: key,
+          bucketName: this.bucketName,
           error: error instanceof Error ? error.message : String(error),
+          errorName: error instanceof Error ? error.name : undefined,
+          errorStack: error instanceof Error ? error.stack : undefined,
         });
 
         throw createR2Error(

@@ -55,10 +55,15 @@ const grandTotal = $derived(expenseStore.monthlyTotal);
 
 // 削除処理
 async function handleDelete(id: number): Promise<void> {
+	console.log(`🎯 UI: 削除ボタンクリック: expense_id=${id}`);
+	
 	const success = await expenseStore.removeExpense(id);
+	console.log(`🎯 UI: 削除処理結果: success=${success}`);
+	
 	if (success) {
 		toastStore.success("経費を削除しました");
 	} else {
+		console.error(`🎯 UI: 削除失敗エラー:`, expenseStore.error);
 		toastStore.error(expenseStore.error || "経費の削除に失敗しました");
 	}
 }

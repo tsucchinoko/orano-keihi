@@ -218,6 +218,7 @@ class ExpenseStore {
       const result = await deleteExpense(id);
 
       if (result.error) {
+        console.error(`📋 ストア: 削除エラー:`, result.error);
         this.error = result.error;
         return false;
       }
@@ -226,6 +227,7 @@ class ExpenseStore {
       this.expenses = this.expenses.filter((exp) => exp.id !== id);
       return true;
     } catch (err) {
+      console.error(`📋 ストア: 削除例外:`, err);
       this.error = `経費の削除に失敗しました: ${String(err)}`;
       return false;
     } finally {

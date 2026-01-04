@@ -36,13 +36,17 @@ export function createReceiptsRouter(r2Client: R2ClientInterface): Hono {
 
       // 最初の部分はバケット名なので除去
       if (pathParts.length > 1) {
-        const fileKey = pathParts.slice(1).join("/");
+        const encodedFileKey = pathParts.slice(1).join("/");
+
+        // URLデコードを実行
+        const fileKey = decodeURIComponent(encodedFileKey);
 
         logger.debug("URLからファイルキーを抽出", {
           receiptUrl,
           pathname: url.pathname,
           pathParts,
-          extractedFileKey: fileKey,
+          encodedFileKey,
+          decodedFileKey: fileKey,
         });
 
         return fileKey;
@@ -142,7 +146,65 @@ export function createReceiptsRouter(r2Client: R2ClientInterface): Hono {
 
       // R2からファイルを削除
       try {
-        await r2Client.deleteFile(fileKey);
+        logger.info("R2からのファイル削除を開始します", {
+          userId: user.id,
+          fileKey,
+        });
+
+        // 削除前にファイルの存在確認
+        const fileExists = await r2Client.fileExists(fileKey);
+        logger.info("削除前のファイル存在確認", {
+          userId: user.id,
+          fileKey,
+          exists: fileExists,
+        });
+
+        if (!fileExists) {
+          logger.warn("削除対象のファイルが存在しません", {
+            userId: user.id,
+            fileKey,
+          });
+
+          // デバッグ用：ユーザーのディレクトリ内のファイル一覧を取得
+          try {
+            const userFiles = await r2Client.listFiles(`users/${user.id}/receipts/`);
+            logger.info("ユーザーのファイル一覧（デバッグ用）", {
+              userId: user.id,
+              prefix: `users/${user.id}/receipts/`,
+              files: userFiles.map((f) => ({
+                key: f.key,
+                size: f.size,
+                lastModified: f.lastModified,
+              })),
+            });
+          } catch (listError) {
+            logger.error("ファイル一覧取得エラー", {
+              userId: user.id,
+              error: listError instanceof Error ? listError.message : String(listError),
+            });
+          }
+
+          // ファイルが存在しない場合でも成功として扱う
+        } else {
+          await r2Client.deleteFile(fileKey);
+
+          // 削除後の存在確認
+          const stillExists = await r2Client.fileExists(fileKey);
+          logger.info("削除後のファイル存在確認", {
+            userId: user.id,
+            fileKey,
+            stillExists: stillExists,
+          });
+
+          if (stillExists) {
+            logger.error("ファイル削除後もファイルが存在しています", {
+              userId: user.id,
+              fileKey,
+            });
+            throw new Error("ファイルの削除に失敗しました（削除後も存在）");
+          }
+        }
+
         logger.info("R2からのファイル削除が完了しました", {
           userId: user.id,
           fileKey,

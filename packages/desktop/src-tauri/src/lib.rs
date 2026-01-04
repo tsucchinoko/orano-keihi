@@ -265,6 +265,7 @@ pub fn run() {
             expense_commands::get_expenses,
             expense_commands::update_expense,
             expense_commands::delete_expense,
+            expense_commands::delete_expense_receipt,
             // サブスクリプションコマンド
             subscription_commands::create_subscription,
             subscription_commands::get_subscriptions,
