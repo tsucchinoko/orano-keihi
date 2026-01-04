@@ -1,8 +1,11 @@
 use super::models::{CreateSubscriptionDto, Subscription, UpdateSubscriptionDto};
 use crate::features::auth::middleware::AuthMiddleware;
 use crate::shared::api_client::ApiClient;
+use base64::{engine::general_purpose, Engine as _};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 use tauri::State;
 
 /// サブスクリプション一覧のレスポンス
@@ -477,4 +480,156 @@ fn validate_date_format(date: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// APIサーバー経由でサブスクリプション領収書をR2にアップロードする
+///
+/// # 引数
+/// * `subscriptionId` - サブスクリプションID
+/// * `filePath` - アップロードするファイルのパス
+/// * `sessionToken` - セッショントークン
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// アップロードされたHTTPS URL、または失敗時はエラーメッセージ
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn upload_subscription_receipt_via_api(
+    subscriptionId: i64,
+    filePath: String,
+    sessionToken: Option<String>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<String, String> {
+    info!("APIサーバー経由でサブスクリプション領収書アップロード開始 - ID: {subscriptionId}");
+
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(sessionToken.as_deref(), "/api/subscriptions/receipt/upload")
+        .await
+        .map_err(|e| {
+            error!("認証エラー: {e}");
+            format!("認証エラー: {e}")
+        })?;
+
+    debug!("認証成功 - ユーザーID: {}", user.id);
+
+    // ファイルの存在確認
+    if !Path::new(&filePath).exists() {
+        return Err("指定されたファイルが見つかりません".to_string());
+    }
+
+    // ファイルを読み込み
+    let file_data = fs::read(&filePath).map_err(|e| {
+        error!("ファイル読み込みエラー: {e}");
+        format!("ファイルの読み込みに失敗しました: {e}")
+    })?;
+
+    // ファイル名を取得
+    let file_name = Path::new(&filePath)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("receipt")
+        .to_string();
+
+    // APIクライアントを作成
+    let api_client = ApiClient::new().map_err(|e| {
+        error!("APIクライアント作成エラー: {e}");
+        format!("APIクライアント作成エラー: {e}")
+    })?;
+
+    // アップロード用のリクエストボディを作成
+    #[derive(Serialize)]
+    struct UploadRequest {
+        #[serde(rename = "subscriptionId")]
+        subscription_id: i64,
+        #[serde(rename = "fileName")]
+        file_name: String,
+        #[serde(rename = "fileData")]
+        file_data: String, // Base64エンコードされたファイルデータ
+    }
+
+    let upload_request = UploadRequest {
+        subscription_id: subscriptionId,
+        file_name,
+        file_data: general_purpose::STANDARD.encode(&file_data),
+    };
+
+    // APIサーバーにアップロードリクエストを送信
+    let response = api_client
+        .post::<UploadRequest, serde_json::Value>(
+            "/api/v1/subscriptions/receipt/upload",
+            &upload_request,
+            sessionToken.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!("APIリクエストエラー: {e}");
+            format!("サブスクリプション領収書のアップロードに失敗しました: {e}")
+        })?;
+
+    // レスポンスからURLを取得
+    let upload_url = response
+        .get("url")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            error!("APIレスポンスにURLが含まれていません");
+            "アップロードレスポンスが不正です".to_string()
+        })?
+        .to_string();
+
+    info!("サブスクリプション領収書アップロード成功 - URL: {upload_url}");
+
+    Ok(upload_url)
+}
+
+/// APIサーバー経由でサブスクリプション領収書をR2から削除する
+///
+/// # 引数
+/// * `subscriptionId` - サブスクリプションID
+/// * `sessionToken` - セッショントークン
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 削除成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn delete_subscription_receipt_via_api(
+    subscriptionId: i64,
+    sessionToken: Option<String>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<bool, String> {
+    info!("APIサーバー経由でサブスクリプション領収書削除開始 - ID: {subscriptionId}");
+
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(sessionToken.as_deref(), "/api/subscriptions/receipt/delete")
+        .await
+        .map_err(|e| {
+            error!("認証エラー: {e}");
+            format!("認証エラー: {e}")
+        })?;
+
+    debug!("認証成功 - ユーザーID: {}", user.id);
+
+    // APIクライアントを作成
+    let api_client = ApiClient::new().map_err(|e| {
+        error!("APIクライアント作成エラー: {e}");
+        format!("APIクライアント作成エラー: {e}")
+    })?;
+
+    // APIサーバーに削除リクエストを送信
+    api_client
+        .delete(
+            &format!("/api/v1/subscriptions/{subscriptionId}/receipt"),
+            sessionToken.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!("APIリクエストエラー: {e}");
+            format!("サブスクリプション領収書の削除に失敗しました: {e}")
+        })?;
+
+    info!("サブスクリプション領収書削除成功 - ID: {subscriptionId}");
+
+    Ok(true)
 }

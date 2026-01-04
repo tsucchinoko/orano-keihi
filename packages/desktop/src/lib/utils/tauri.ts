@@ -184,7 +184,7 @@ export async function createSubscription(
   return handleTauriCommand(
     invoke<Subscription>('create_subscription', {
       dto: subscription,
-      sessionToken,
+      sessionToken: sessionToken,
     })
   );
 }
@@ -201,8 +201,8 @@ export async function getSubscriptions(
   const sessionToken = getAuthToken();
   return handleTauriCommand(
     invoke<Subscription[]>('get_subscriptions', {
-      activeOnly,
-      sessionToken,
+      activeOnly: activeOnly,
+      sessionToken: sessionToken,
     })
   );
 }
@@ -223,7 +223,7 @@ export async function updateSubscription(
     invoke<Subscription>('update_subscription', {
       id,
       dto: subscription,
-      sessionToken,
+      sessionToken: sessionToken,
     })
   );
 }
@@ -241,7 +241,7 @@ export async function toggleSubscriptionStatus(
   return handleTauriCommand(
     invoke<Subscription>('toggle_subscription_status', {
       id,
-      sessionToken,
+      sessionToken: sessionToken,
     })
   );
 }
@@ -257,7 +257,7 @@ export async function getMonthlySubscriptionTotal(): Promise<
   const sessionToken = getAuthToken();
   return handleTauriCommand(
     invoke<number>('get_monthly_subscription_total', {
-      sessionToken,
+      sessionToken: sessionToken,
     })
   );
 }
@@ -273,8 +273,13 @@ export async function saveSubscriptionReceipt(
   subscriptionId: number,
   filePath: string
 ): Promise<TauriResult<string>> {
+  const sessionToken = getAuthToken();
   return handleTauriCommand(
-    invoke<string>('save_subscription_receipt', { subscriptionId, filePath })
+    invoke<string>('save_subscription_receipt', {
+      subscriptionId: subscriptionId,
+      filePath: filePath,
+      sessionToken: sessionToken,
+    })
   );
 }
 /**
@@ -300,8 +305,12 @@ export async function deleteReceipt(
 export async function deleteSubscriptionReceipt(
   subscriptionId: number
 ): Promise<TauriResult<boolean>> {
+  const sessionToken = getAuthToken();
   return handleTauriCommand(
-    invoke<boolean>('delete_subscription_receipt', { subscriptionId })
+    invoke<boolean>('delete_subscription_receipt', {
+      subscriptionId: subscriptionId,
+      sessionToken: sessionToken,
+    })
   );
 }
 
@@ -629,10 +638,10 @@ export async function uploadSubscriptionReceiptToR2(
   }
 
   return handleTauriCommand(
-    invoke<string>('upload_subscription_receipt_with_auth', {
-      sessionToken,
+    invoke<string>('upload_subscription_receipt_via_api', {
       subscriptionId,
       filePath,
+      sessionToken,
     })
   );
 }
@@ -655,9 +664,9 @@ export async function deleteSubscriptionReceiptFromR2(
   }
 
   return handleTauriCommand(
-    invoke<boolean>('delete_subscription_receipt_with_auth', {
-      sessionToken,
+    invoke<boolean>('delete_subscription_receipt_via_api', {
       subscriptionId,
+      sessionToken,
     })
   );
 }
@@ -674,7 +683,7 @@ export async function deleteSubscription(
   return handleTauriCommand(
     invoke<void>('delete_subscription', {
       id,
-      sessionToken,
+      sessionToken: sessionToken,
     })
   );
 }

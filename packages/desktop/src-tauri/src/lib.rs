@@ -272,13 +272,12 @@ pub fn run() {
             subscription_commands::toggle_subscription_status,
             subscription_commands::delete_subscription,
             subscription_commands::get_monthly_subscription_total,
+            subscription_commands::save_subscription_receipt,
+            subscription_commands::delete_subscription_receipt,
+            subscription_commands::get_subscription_receipt_path,
             // サブスクリプションコマンド（APIサーバー経由）
-            // subscription_api_commands::fetch_subscriptions_via_api,
-            // subscription_api_commands::create_subscription_via_api,
-            // subscription_api_commands::update_subscription_via_api,
-            // subscription_api_commands::toggle_subscription_status_via_api,
-            // subscription_api_commands::delete_subscription_via_api,
-            // subscription_api_commands::fetch_monthly_subscription_total_via_api,
+            subscription_api_commands::upload_subscription_receipt_via_api,
+            subscription_api_commands::delete_subscription_receipt_via_api,
             // 領収書コマンド（APIサーバー経由）
             receipt_api_commands::upload_receipt_via_api,
             receipt_api_commands::upload_multiple_receipts_via_api,

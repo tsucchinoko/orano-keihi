@@ -24,16 +24,22 @@ import { createR2WorkerClient } from "./r2-worker-client.js";
  * 環境に応じたR2クライアントを作成
  * @param config R2設定
  * @param r2Bucket Workers環境でのR2バケットバインディング（オプション）
+ * @param accountId CloudflareアカウントID（Workers環境で必要）
  * @returns 適切なR2クライアントインスタンス
  */
 export function createEnvironmentAwareR2Client(
   config: import("../types/config.js").R2Config,
   r2Bucket?: R2Bucket,
+  accountId?: string,
 ): import("./r2-client.js").R2ClientInterface {
   // Workers環境の場合（R2バケットバインディングが利用可能）
   if (r2Bucket && typeof r2Bucket.put === "function") {
+    // アカウントIDが必要
+    if (!accountId) {
+      throw new Error("Workers環境ではアカウントIDが必要です");
+    }
     // R2WorkerClientを使用
-    return createR2WorkerClient(r2Bucket, config.bucketName);
+    return createR2WorkerClient(r2Bucket, config.bucketName, accountId);
   }
 
   // Node.js環境の場合（AWS SDK使用）

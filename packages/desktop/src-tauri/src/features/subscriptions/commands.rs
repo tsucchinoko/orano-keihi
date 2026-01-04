@@ -8,22 +8,23 @@ use tauri::State;
 ///
 /// # 引数
 /// * `dto` - サブスクリプション作成用DTO
-/// * `session_token` - セッショントークン
+/// * `sessionToken` - セッショントークン
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 作成されたサブスクリプション、または失敗時はエラーメッセージ
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn create_subscription(
     dto: CreateSubscriptionDto,
-    session_token: Option<String>,
+    sessionToken: Option<String>,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Subscription, String> {
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/subscriptions/create")
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/create")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
 
@@ -43,23 +44,24 @@ pub async fn create_subscription(
 /// サブスクリプション一覧を取得する
 ///
 /// # 引数
-/// * `active_only` - アクティブなサブスクリプションのみを取得するか
-/// * `session_token` - セッショントークン
+/// * `activeOnly` - アクティブなサブスクリプションのみを取得するか
+/// * `sessionToken` - セッショントークン
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// サブスクリプションのリスト、または失敗時はエラーメッセージ
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn get_subscriptions(
-    active_only: bool,
-    session_token: Option<String>,
+    activeOnly: bool,
+    sessionToken: Option<String>,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Vec<Subscription>, String> {
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/subscriptions/list")
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/list")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
 
@@ -70,7 +72,7 @@ pub async fn get_subscriptions(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 認証されたユーザーのサブスクリプション一覧を取得
-    repository::find_all(&db, user.id, active_only).map_err(|e| e.user_message().to_string())
+    repository::find_all(&db, user.id, activeOnly).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプションを更新する
@@ -78,23 +80,24 @@ pub async fn get_subscriptions(
 /// # 引数
 /// * `id` - サブスクリプションID
 /// * `dto` - サブスクリプション更新用DTO
-/// * `session_token` - セッショントークン
+/// * `sessionToken` - セッショントークン
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 更新されたサブスクリプション、または失敗時はエラーメッセージ
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn update_subscription(
     id: i64,
     dto: UpdateSubscriptionDto,
-    session_token: Option<String>,
+    sessionToken: Option<String>,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Subscription, String> {
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/subscriptions/update")
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/update")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
 
@@ -115,22 +118,23 @@ pub async fn update_subscription(
 ///
 /// # 引数
 /// * `id` - サブスクリプションID
-/// * `session_token` - セッショントークン
+/// * `sessionToken` - セッショントークン
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 更新されたサブスクリプション、または失敗時はエラーメッセージ
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn toggle_subscription_status(
     id: i64,
-    session_token: Option<String>,
+    sessionToken: Option<String>,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<Subscription, String> {
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/subscriptions/toggle")
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/toggle")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
 
@@ -147,21 +151,22 @@ pub async fn toggle_subscription_status(
 /// アクティブなサブスクリプションの月額合計を取得する
 ///
 /// # 引数
-/// * `session_token` - セッショントークン
+/// * `sessionToken` - セッショントークン
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 月額合計金額、または失敗時はエラーメッセージ
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn get_monthly_subscription_total(
-    session_token: Option<String>,
+    sessionToken: Option<String>,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<f64, String> {
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/subscriptions/total")
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/total")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
 
@@ -320,22 +325,23 @@ fn validate_date_format(date: &str) -> Result<(), String> {
 ///
 /// # 引数
 /// * `id` - サブスクリプションID
-/// * `session_token` - セッショントークン
+/// * `sessionToken` - セッショントークン
 /// * `state` - アプリケーション状態
 /// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラーメッセージ
 #[tauri::command]
+#[allow(non_snake_case)]
 pub async fn delete_subscription(
     id: i64,
-    session_token: Option<String>,
+    sessionToken: Option<String>,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<(), String> {
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(session_token.as_deref(), "/subscriptions/delete")
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/delete")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
 
@@ -347,4 +353,114 @@ pub async fn delete_subscription(
 
     // 認証されたユーザーのサブスクリプションを削除
     repository::delete(&db, id, user.id).map_err(|e| e.user_message().to_string())
+}
+/// サブスクリプションの領収書ファイルを保存する
+///
+/// # 引数
+/// * `subscriptionId` - サブスクリプションID
+/// * `filePath` - 保存するファイルのパス
+/// * `sessionToken` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 保存されたファイルパス、または失敗時はエラーメッセージ
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn save_subscription_receipt(
+    subscriptionId: i64,
+    filePath: String,
+    sessionToken: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<String, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/receipt/save")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 領収書パスを設定
+    repository::set_receipt_path(&db, subscriptionId, filePath.clone(), user.id)
+        .map_err(|e| e.user_message().to_string())?;
+
+    Ok(filePath)
+}
+
+/// サブスクリプションの領収書を削除する
+///
+/// # 引数
+/// * `subscriptionId` - サブスクリプションID
+/// * `sessionToken` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn delete_subscription_receipt(
+    subscriptionId: i64,
+    sessionToken: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<bool, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/receipt/delete")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 領収書パスを削除（空文字列を設定）
+    repository::set_receipt_path(&db, subscriptionId, String::new(), user.id)
+        .map_err(|e| e.user_message().to_string())?;
+
+    Ok(true)
+}
+
+/// サブスクリプションの領収書パスを取得する
+///
+/// # 引数
+/// * `subscriptionId` - サブスクリプションID
+/// * `sessionToken` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 領収書パス（存在する場合）、または失敗時はエラーメッセージ
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn get_subscription_receipt_path(
+    subscriptionId: i64,
+    sessionToken: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<Option<String>, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(sessionToken.as_deref(), "/subscriptions/receipt/get")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 領収書パスを取得
+    repository::get_receipt_path(&db, subscriptionId, user.id)
+        .map_err(|e| e.user_message().to_string())
 }

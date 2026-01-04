@@ -6,6 +6,8 @@ import {
 	saveSubscriptionReceipt,
 	deleteSubscriptionReceipt,
 	getReceiptFromR2,
+	uploadSubscriptionReceiptToR2,
+	deleteSubscriptionReceiptFromR2,
 } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -191,9 +193,17 @@ async function deleteReceipt() {
 	}
 
 	try {
-		const result = await deleteSubscriptionReceipt(subscription.id);
-		if (result.error) {
-			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
+		// R2から領収書を削除
+		const r2DeleteResult = await deleteSubscriptionReceiptFromR2(subscription.id);
+		if (r2DeleteResult.error) {
+			toastStore.error(`R2からの領収書削除に失敗しました: ${r2DeleteResult.error}`);
+			return;
+		}
+
+		// データベースからも領収書パスを削除
+		const dbDeleteResult = await deleteSubscriptionReceipt(subscription.id);
+		if (dbDeleteResult.error) {
+			toastStore.error(`データベースからの領収書削除に失敗しました: ${dbDeleteResult.error}`);
 			return;
 		}
 
@@ -256,14 +266,23 @@ async function handleSubmit(event: Event) {
 			return;
 		}
 
-		// 領収書ファイルがある場合は保存
+		// 領収書ファイルがある場合はR2にアップロード
 		if (receiptFile && savedSubscriptionId) {
-			const receiptResult = await saveSubscriptionReceipt(
+			const uploadResult = await uploadSubscriptionReceiptToR2(
 				savedSubscriptionId,
 				receiptFile,
 			);
-			if (receiptResult.error) {
-				toastStore.error(`領収書の保存に失敗しました: ${receiptResult.error}`);
+			if (uploadResult.error) {
+				toastStore.error(`領収書のアップロードに失敗しました: ${uploadResult.error}`);
+			} else if (uploadResult.data) {
+				// アップロード成功時は、データベースにHTTPS URLを保存
+				const saveResult = await saveSubscriptionReceipt(
+					savedSubscriptionId,
+					uploadResult.data,
+				);
+				if (saveResult.error) {
+					toastStore.error(`領収書パスの保存に失敗しました: ${saveResult.error}`);
+				}
 			}
 		}
 
