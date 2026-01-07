@@ -6,7 +6,7 @@ Tauri v2のupdaterプラグインを使用して、GitHub Releasesの静的JSON�
 
 ## タスク
 
-- [ ] 1. Tauri設定の更新と静的JSONエンドポイント設定
+- [x] 1. Tauri設定の更新と静的JSONエンドポイント設定
   - tauri.conf.jsonのupdaterプラグイン設定を静的JSONファイル方式に変更
   - GitHub Releasesの静的JSONファイルエンドポイントを設定
   - _要件: 4.1, 4.3_
