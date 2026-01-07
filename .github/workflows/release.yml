@@ -268,10 +268,39 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Node.js環境のセットアップ
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    
     - name: 成果物のダウンロード
       uses: actions/download-artifact@v4
       with:
         path: ./artifacts
+    
+    - name: 静的JSONファイルの生成
+      run: |
+        echo "🔧 Tauri自動アップデート用静的JSONファイルを生成中..."
+        
+        # 環境変数の設定
+        export VERSION="${{ needs.version-tag.outputs.VERSION }}"
+        export RELEASE_TAG="${{ needs.version-tag.outputs.RELEASE_TAG }}"
+        export RELEASE_NOTES="バージョン ${{ needs.version-tag.outputs.VERSION }} のリリース"
+        export GITHUB_REPOSITORY="${{ github.repository }}"
+        
+        # JSONファイル生成スクリプトの実行
+        node script/generate-update-manifest.cjs
+        
+        echo "✅ 静的JSONファイルの生成が完了しました"
+        
+        # 生成されたファイルの確認
+        echo "📁 生成されたマニフェストファイル:"
+        if [ -d "update-manifests" ]; then
+          ls -la update-manifests/
+        else
+          echo "❌ update-manifestsディレクトリが見つかりません"
+          exit 1
+        fi
     
     - name: リリースの作成とアップロード
       uses: actions/github-script@v7
@@ -317,6 +346,14 @@ jobs:
             '|---|---|---|',
             '| **MacOS** | ' + dmgFiles[0] + ' | ' + dmgSizeMB + ' MB |',
             '| **Windows** | ' + msiFiles[0] + ' | ' + msiSizeMB + ' MB |',
+            '',
+            '### 🔄 自動アップデート',
+            'このリリースには、Tauri自動アップデート機能用の静的JSONマニフェストファイルが含まれています：',
+            '- `darwin-x86_64.json` - macOS Intel用',
+            '- `darwin-aarch64.json` - macOS Apple Silicon用',
+            '- `windows-x86_64.json` - Windows 64bit用',
+            '',
+            '既存のアプリケーションは自動的に新しいバージョンをチェックし、アップデートを通知します。',
             '',
             '### 📋 ビルド情報',
             '- **バージョン**: ' + version,
@@ -373,6 +410,31 @@ jobs:
             name: msiFiles[0],
             data: msiContent
           });
+          
+          // 静的JSONファイルのアップロード
+          console.log('📤 静的JSONマニフェストファイルをアップロード中...');
+          const manifestDir = './update-manifests';
+          if (fs.existsSync(manifestDir)) {
+            const manifestFiles = fs.readdirSync(manifestDir).filter(f => f.endsWith('.json'));
+            
+            for (const manifestFile of manifestFiles) {
+              const manifestPath = path.join(manifestDir, manifestFile);
+              const manifestContent = fs.readFileSync(manifestPath);
+              
+              console.log('  - アップロード中: ' + manifestFile);
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                name: manifestFile,
+                data: manifestContent
+              });
+            }
+            
+            console.log('✅ ' + manifestFiles.length + '個のマニフェストファイルをアップロードしました');
+          } else {
+            console.warn('⚠️  マニフェストディレクトリが見つかりません: ' + manifestDir);
+          }
           
           console.log('🎉 クロスプラットフォームリリースが正常に作成されました！');
           console.log('🔗 リリースURL: ' + release.data.html_url);
