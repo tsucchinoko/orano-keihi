@@ -12,6 +12,18 @@ pub async fn check_for_updates(app_handle: AppHandle) -> Result<UpdateInfo, Stri
     service.check_for_updates().await.map_err(|e| e.to_string())
 }
 
+/// アップデートを強制的にチェックするコマンド（スキップされたバージョンも含む）
+#[tauri::command]
+pub async fn check_for_updates_force(app_handle: AppHandle) -> Result<UpdateInfo, String> {
+    info!("アップデート強制チェックコマンドが呼び出されました");
+
+    let mut service = UpdaterService::new(app_handle);
+    service
+        .check_for_updates_force()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// アップデートをダウンロードしてインストールするコマンド
 #[tauri::command]
 pub async fn download_and_install_update(app_handle: AppHandle) -> Result<(), String> {

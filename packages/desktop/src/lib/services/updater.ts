@@ -20,6 +20,18 @@ export class UpdaterService {
   }
 
   /**
+   * アップデートを強制的にチェック（スキップされたバージョンも含む）
+   */
+  static async checkForUpdatesForce(): Promise<UpdateInfo> {
+    try {
+      return await invoke<UpdateInfo>('check_for_updates_force');
+    } catch (error) {
+      console.error('アップデート強制チェックエラー:', error);
+      throw new Error(`アップデートチェックに失敗しました: ${error}`);
+    }
+  }
+
+  /**
    * アップデートをダウンロードしてインストール
    */
   static async downloadAndInstall(): Promise<void> {
@@ -121,6 +133,42 @@ export class UpdaterService {
     } catch (error) {
       console.error('アップデート通知リスナー設定エラー:', error);
       throw new Error(`アップデート通知の設定に失敗しました: ${error}`);
+    }
+  }
+
+  /**
+   * アップデート不要通知イベントをリッスン
+   * @param callback アップデートが不要なときのコールバック
+   */
+  static async listenForNoUpdates(callback: () => void): Promise<() => void> {
+    try {
+      const unlisten = await listen('update-not-available', () => {
+        console.log('最新バージョンです');
+        callback();
+      });
+      return unlisten;
+    } catch (error) {
+      console.error('アップデート不要通知リスナー設定エラー:', error);
+      throw new Error(`アップデート不要通知の設定に失敗しました: ${error}`);
+    }
+  }
+
+  /**
+   * アップデートチェックエラーイベントをリッスン
+   * @param callback エラーが発生したときのコールバック
+   */
+  static async listenForUpdateErrors(
+    callback: (error: string) => void
+  ): Promise<() => void> {
+    try {
+      const unlisten = await listen<string>('update-check-error', (event) => {
+        console.error('アップデートチェックエラー:', event.payload);
+        callback(event.payload);
+      });
+      return unlisten;
+    } catch (error) {
+      console.error('アップデートエラーリスナー設定エラー:', error);
+      throw new Error(`アップデートエラー通知の設定に失敗しました: ${error}`);
     }
   }
 

@@ -22,7 +22,7 @@ use shared::config::environment::{
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// R2接続テストのキャッシュ
 #[derive(Debug)]
@@ -87,6 +87,71 @@ pub fn run() {
         .setup(|app| {
             // 詳細なデバッグログを追加
             eprintln!("=== アプリケーション初期化開始 ===");
+
+            // メニューバーを作成
+            use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+
+            // ヘルプサブメニューを作成
+            let help_submenu = SubmenuBuilder::new(app, "ヘルプ")
+                .item(
+                    &MenuItemBuilder::new("アップデートを確認")
+                        .id("check_for_updates")
+                        .build(app)?,
+                )
+                .build()?;
+
+            // メインメニューを作成
+            let menu = MenuBuilder::new(app).item(&help_submenu).build()?;
+
+            app.set_menu(menu)?;
+
+            // メニューイベントをリッスン
+            let app_handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                if event.id() == "check_for_updates" {
+                    let app_handle = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        use log::info;
+                        info!("メニューから「アップデートを確認」が選択されました");
+
+                        // 強制チェックを実行
+                        use crate::features::updater::service::UpdaterService;
+                        let mut service = UpdaterService::new(app_handle.clone());
+
+                        match service.check_for_updates_force().await {
+                            Ok(update_info) => {
+                                if update_info.available {
+                                    info!(
+                                        "アップデートが利用可能です: {:?}",
+                                        update_info.latest_version
+                                    );
+                                    // フロントエンドに通知（ダイアログ表示用）
+                                    if let Err(e) =
+                                        app_handle.emit("show-update-dialog", &update_info)
+                                    {
+                                        log::error!("アップデート通知の送信に失敗: {e}");
+                                    }
+                                } else {
+                                    info!("最新バージョンです");
+                                    // フロントエンドに通知（ダイアログ表示用）
+                                    if let Err(e) = app_handle.emit("show-no-update-dialog", ()) {
+                                        log::error!("通知の送信に失敗: {e}");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("アップデートチェックエラー: {e}");
+                                // フロントエンドにエラーを通知（ダイアログ表示用）
+                                if let Err(emit_error) =
+                                    app_handle.emit("show-update-error-dialog", e.to_string())
+                                {
+                                    log::error!("エラー通知の送信に失敗: {emit_error}");
+                                }
+                            }
+                        }
+                    });
+                }
+            });
 
             // 環境に応じた.envファイルを読み込み（ログシステム初期化前に実行）
             eprintln!("環境変数を読み込み中...");
@@ -307,6 +372,7 @@ pub fn run() {
             features::migrations::database_update_commands::check_database_url_integrity,
             // アップデートコマンド
             updater_commands::check_for_updates,
+            updater_commands::check_for_updates_force,
             updater_commands::download_and_install_update,
             updater_commands::get_app_version,
             updater_commands::get_updater_config,

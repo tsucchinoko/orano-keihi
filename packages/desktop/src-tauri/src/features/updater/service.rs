@@ -236,6 +236,19 @@ impl UpdaterService {
 
     /// アップデートをチェック
     pub async fn check_for_updates(&mut self) -> Result<UpdateInfo, UpdateError> {
+        self.check_for_updates_internal(false).await
+    }
+
+    /// アップデートを強制的にチェック（スキップされたバージョンも含む）
+    pub async fn check_for_updates_force(&mut self) -> Result<UpdateInfo, UpdateError> {
+        self.check_for_updates_internal(true).await
+    }
+
+    /// アップデートをチェック（内部実装）
+    ///
+    /// # 引数
+    /// * `force` - trueの場合、スキップされたバージョンも含めてチェック
+    async fn check_for_updates_internal(&mut self, force: bool) -> Result<UpdateInfo, UpdateError> {
         let current_version = self.app_handle.package_info().version.to_string();
 
         // セキュリティチェックを実行
@@ -243,7 +256,11 @@ impl UpdaterService {
 
         // ログ: チェック開始
         self.logger.log_check_start(&current_version);
-        info!("アップデートをチェック中...");
+        if force {
+            info!("アップデートを強制的にチェック中（スキップされたバージョンも含む）...");
+        } else {
+            info!("アップデートをチェック中...");
+        }
 
         let now = Utc::now().with_timezone(&Tokyo);
         let now_timestamp = now.timestamp() as u64;
@@ -261,8 +278,8 @@ impl UpdaterService {
                     Ok(Some(update)) => {
                         info!("アップデートが利用可能: {}", update.version);
 
-                        // スキップされたバージョンかチェック
-                        if self.config.is_version_skipped(&update.version) {
+                        // スキップされたバージョンかチェック（強制モードでない場合のみ）
+                        if !force && self.config.is_version_skipped(&update.version) {
                             info!("バージョン {} はスキップされています", update.version);
                             self.logger.log_check_result(false, Some(&update.version));
 

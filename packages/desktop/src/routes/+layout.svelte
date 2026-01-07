@@ -7,6 +7,10 @@ import { goto } from "$app/navigation";
 import { page } from "$app/state";
 import { authStore } from "$lib/stores";
 import { onMount } from "svelte";
+import { UpdaterService } from "$lib/services/updater";
+import { listen } from "@tauri-apps/api/event";
+import { confirm, message } from "@tauri-apps/plugin-dialog";
+import type { UpdateInfo } from "$lib/types/updater";
 
 interface Props {
 	children: import('svelte').Snippet;
@@ -23,8 +27,69 @@ let user = $derived(authStore.user);
 let isLoading = $derived(authStore.isLoading);
 
 // アプリケーション初期化
-onMount(async () => {
-	await authStore.initialize();
+onMount(() => {
+	authStore.initialize();
+
+	// メニューからのアップデート通知をリッスン（ダイアログ表示用）
+	let unlistenShowDialog: (() => void) | undefined;
+	let unlistenNoUpdate: (() => void) | undefined;
+	let unlistenError: (() => void) | undefined;
+
+	listen<UpdateInfo>('show-update-dialog', async (event) => {
+		const updateInfo = event.payload;
+
+		
+		const shouldUpdate = await confirm(
+			`新しいバージョン ${updateInfo.latest_version} が利用可能です。\nアップデートをインストールしますか？`,
+			{
+				title: 'アップデート利用可能',
+				kind: 'info',
+				okLabel: 'インストール',
+				cancelLabel: 'キャンセル'
+			}
+		);
+
+		if (shouldUpdate) {
+			try {
+				// アップデートをダウンロード＆インストール
+				await UpdaterService.downloadAndInstall();
+			} catch (error) {
+				console.error('アップデートインストールエラー:', error);
+				await message(`アップデートのインストールに失敗しました: ${error}`, {
+					title: 'エラー',
+					kind: 'error'
+				});
+			}
+		}
+	}).then((unlisten) => {
+		unlistenShowDialog = unlisten;
+	});
+
+	listen('show-no-update-dialog', async () => {
+		await message('最新バージョンを使用しています。', {
+			title: 'アップデート確認',
+			kind: 'info'
+		});
+	}).then((unlisten) => {
+		unlistenNoUpdate = unlisten;
+	});
+
+	listen<string>('show-update-error-dialog', async (event) => {
+		console.error('アップデートエラーダイアログを表示:', event.payload);
+		await message(`アップデートチェックに失敗しました:\n${event.payload}`, {
+			title: 'エラー',
+			kind: 'error'
+		});
+	}).then((unlisten) => {
+		unlistenError = unlisten;
+	});
+
+	// クリーンアップ
+	return () => {
+		unlistenShowDialog?.();
+		unlistenNoUpdate?.();
+		unlistenError?.();
+	};
 });
 
 // プログラム的なナビゲーション関数
@@ -40,7 +105,12 @@ function isActive(path: string): boolean {
 
 // ログアウト処理
 async function handleLogout() {
-	const confirmed = confirm("ログアウトしますか？");
+	const confirmed = await confirm("ログアウトしますか？", {
+		title: 'ログアウト確認',
+		kind: 'warning',
+		okLabel: 'ログアウト',
+		cancelLabel: 'キャンセル'
+	});
 	if (confirmed) {
 		await authStore.logout();
 		goto("/login");
