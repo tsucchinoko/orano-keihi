@@ -308,6 +308,25 @@ impl UpdateLogger {
         }
     }
 
+    /// 情報をログ
+    ///
+    /// # 引数
+    /// * `message` - 情報メッセージ
+    pub fn log_info(&self, message: &str) {
+        info!("{message}");
+
+        let entry = UpdateLogEntry {
+            timestamp: Utc::now().with_timezone(&Tokyo).timestamp() as u64,
+            level: LogLevel::Info,
+            message: message.to_string(),
+            context: None,
+        };
+
+        if let Err(e) = self.write_log_entry(&entry) {
+            error!("ログの書き込みに失敗: {e}");
+        }
+    }
+
     /// ログファイルのパスを取得
     pub fn get_log_file_path(&self) -> &PathBuf {
         &self.log_file_path

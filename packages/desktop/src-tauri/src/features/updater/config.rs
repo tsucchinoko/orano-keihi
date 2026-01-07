@@ -257,13 +257,6 @@ impl UpdaterConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    /// テスト用のモックAppHandleを作成する関数
-    fn create_mock_app_handle() -> tauri::test::MockRuntime {
-        tauri::test::mock_builder().build()
-    }
 
     #[test]
     fn test_updater_config_default() {
