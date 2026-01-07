@@ -31,8 +31,8 @@ Tauri v2のupdaterプラグインを使用して、GitHub Releasesの静的JSON�
     - JSONファイルがGitHub Releasesに正しくアップロードされることを確認
     - _要件: 4.3_
 
-- [ ] 4. Rustバックエンドのアップデート機能強化
-  - [ ] 4.1 UpdaterConfigの実装
+- [x] 4. Rustバックエンドのアップデート機能強化
+  - [x] 4.1 UpdaterConfigの実装
     - ユーザー設定を管理する構造体とメソッドを実装
     - 設定の永続化機能を追加
     - _要件: 7.1, 7.2, 7.3, 7.4, 7.5_
@@ -41,7 +41,7 @@ Tauri v2のupdaterプラグインを使用して、GitHub Releasesの静的JSON�
     - **プロパティ 3: 設定の永続性**
     - **検証対象: 要件 7.5**
 
-  - [ ] 4.3 UpdaterServiceの機能拡張
+  - [x] 4.3 UpdaterServiceの機能拡張
     - 設定管理機能の追加
     - エラーハンドリングの改善
     - ログ機能の実装

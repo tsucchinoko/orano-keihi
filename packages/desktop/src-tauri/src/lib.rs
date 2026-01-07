@@ -309,7 +309,11 @@ pub fn run() {
             updater_commands::check_for_updates,
             updater_commands::download_and_install_update,
             updater_commands::get_app_version,
+            updater_commands::get_updater_config,
+            updater_commands::update_updater_config,
+            updater_commands::skip_version,
             updater_commands::start_auto_update_check,
+            updater_commands::stop_auto_update_check,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");
