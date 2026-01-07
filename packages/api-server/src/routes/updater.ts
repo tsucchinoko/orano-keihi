@@ -1,6 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
+// Cloudflare Workers環境変数の型定義
+type Bindings = {
+  GITHUB_TOKEN: string;
+};
+
 // アップデート情報の型定義
 interface UpdateManifest {
   version: string;
@@ -15,51 +20,7 @@ interface UpdateManifest {
   };
 }
 
-// 最新バージョン情報（実際の運用では外部ストレージやデータベースから取得）
-const LATEST_VERSION = "0.2.0";
-const RELEASE_NOTES = `
-## バージョン 0.2.0 の新機能
-
-### 新機能
-- 自動アップデート機能を追加
-- アップデート通知UI を実装
-- バックグラウンドでの定期アップデートチェック
-
-### 改善
-- パフォーマンスの向上
-- UI/UXの改善
-- セキュリティの強化
-
-### バグ修正
-- 軽微なバグの修正
-- 安定性の向上
-`;
-
-// プラットフォーム別のダウンロードURL（実際の運用では適切なURLに変更）
-const DOWNLOAD_URLS = {
-  "darwin-x86_64":
-    "https://github.com/your-org/your-app/releases/download/v0.2.0/your-app_0.2.0_x64.dmg",
-  "darwin-aarch64":
-    "https://github.com/your-org/your-app/releases/download/v0.2.0/your-app_0.2.0_aarch64.dmg",
-  "windows-x86_64":
-    "https://github.com/your-org/your-app/releases/download/v0.2.0/your-app_0.2.0_x64-setup.exe",
-  "linux-x86_64":
-    "https://github.com/your-org/your-app/releases/download/v0.2.0/your-app_0.2.0_amd64.AppImage",
-};
-
-// プラットフォーム別の署名（実際の運用では適切な署名を設定）
-const SIGNATURES = {
-  "darwin-x86_64":
-    "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUldSVE1qVXhNVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeA==",
-  "darwin-aarch64":
-    "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUldSVE1qVXhNVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeA==",
-  "windows-x86_64":
-    "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUldSVE1qVXhNVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeA==",
-  "linux-x86_64":
-    "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUldSVE1qVXhNVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeE5qVXhOVEV4TlRJeA==",
-};
-
-const updaterApp = new Hono();
+const updaterApp = new Hono<{ Bindings: Bindings }>();
 
 // CORS設定
 updaterApp.use(
@@ -72,93 +33,110 @@ updaterApp.use(
 );
 
 /**
- * バージョン比較関数
- * @param version1 バージョン1
- * @param version2 バージョン2
- * @returns version1 > version2 なら 1、version1 < version2 なら -1、同じなら 0
+ * GitHubプライベートリポジトリからマニフェストファイルを取得するプロキシエンドポイント
+ * パス: /api/updater/manifest/{target}/{arch}
  */
-function compareVersions(version1: string, version2: string): number {
-  const v1Parts = version1.split(".").map(Number);
-  const v2Parts = version2.split(".").map(Number);
-
-  const maxLength = Math.max(v1Parts.length, v2Parts.length);
-
-  for (let i = 0; i < maxLength; i++) {
-    const v1Part = v1Parts[i] || 0;
-    const v2Part = v2Parts[i] || 0;
-
-    if (v1Part > v2Part) return 1;
-    if (v1Part < v2Part) return -1;
-  }
-
-  return 0;
-}
-
-/**
- * アップデートチェックエンドポイント
- * パス: /api/updater/{target}/{arch}/{current_version}
- */
-updaterApp.get("/:target/:arch/:current_version", async (c) => {
+updaterApp.get("/manifest/:target/:arch", async (c) => {
   try {
     const target = c.req.param("target");
     const arch = c.req.param("arch");
-    const currentVersion = c.req.param("current_version");
 
-    console.log(`アップデートチェック: target=${target}, arch=${arch}, current=${currentVersion}`);
+    console.log(`マニフェスト取得: target=${target}, arch=${arch}`);
 
-    // プラットフォーム識別子を構築
-    const platformKey = `${target}-${arch}`;
+    // GitHub Personal Access Token（環境変数から取得）
+    const githubToken = c.env?.GITHUB_TOKEN;
 
-    // サポートされているプラットフォームかチェック
-    if (!DOWNLOAD_URLS[platformKey as keyof typeof DOWNLOAD_URLS]) {
-      console.log(`サポートされていないプラットフォーム: ${platformKey}`);
-      return c.json({ error: "Unsupported platform" }, 400);
+    if (!githubToken) {
+      console.error("GITHUB_TOKENが設定されていません");
+      return c.json({ error: "Server configuration error" }, 500);
     }
 
-    // バージョン比較
-    const versionComparison = compareVersions(LATEST_VERSION, currentVersion);
+    // GitHubリリースアセットのURL（GitHub API経由）
+    const manifestFileName = `${target}-${arch}.json`;
+    const owner = "tsucchinoko";
+    const repo = "orano-keihi";
 
-    if (versionComparison <= 0) {
-      // 最新バージョンまたは現在のバージョンの方が新しい場合
-      console.log(`アップデート不要: latest=${LATEST_VERSION}, current=${currentVersion}`);
-      return c.body(null, 204); // No Content
-    }
+    // まず全リリースを取得
+    const releasesUrl = `https://api.github.com/repos/${owner}/${repo}/releases`;
+    console.log(`リリース一覧を取得: ${releasesUrl}`);
 
-    // アップデートが利用可能な場合
-    const updateManifest: UpdateManifest = {
-      version: LATEST_VERSION,
-      notes: RELEASE_NOTES.trim(),
-      pub_date: new Date().toISOString(),
-      platforms: {
-        [platformKey]: {
-          signature: SIGNATURES[platformKey as keyof typeof SIGNATURES],
-          url: DOWNLOAD_URLS[platformKey as keyof typeof DOWNLOAD_URLS],
-          with_elevated_task: target === "windows", // Windowsの場合は管理者権限が必要
-        },
+    const releasesResponse = await fetch(releasesUrl, {
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "Orano-Keihi-Updater",
+        "X-GitHub-Api-Version": "2022-11-28",
       },
-    };
-
-    console.log(`アップデート利用可能: ${currentVersion} -> ${LATEST_VERSION}`);
-    return c.json(updateManifest);
-  } catch (error) {
-    console.error("アップデートチェックエラー:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
-
-/**
- * 最新バージョン情報取得エンドポイント
- */
-updaterApp.get("/latest", async (c) => {
-  try {
-    return c.json({
-      version: LATEST_VERSION,
-      notes: RELEASE_NOTES.trim(),
-      pub_date: new Date().toISOString(),
-      platforms: Object.keys(DOWNLOAD_URLS),
     });
+
+    if (!releasesResponse.ok) {
+      console.error(
+        `リリース一覧取得エラー: ${releasesResponse.status} ${releasesResponse.statusText}`,
+      );
+      const errorText = await releasesResponse.text();
+      console.error(`エラー詳細: ${errorText}`);
+      return c.json(
+        { error: "Failed to fetch releases from GitHub" },
+        releasesResponse.status as 404 | 500,
+      );
+    }
+
+    const releases = (await releasesResponse.json()) as Array<{
+      tag_name: string;
+      assets: Array<{
+        id: number;
+        name: string;
+        browser_download_url: string;
+      }>;
+    }>;
+
+    console.log(`取得したリリース数: ${releases.length}`);
+
+    // 最新のリリースからマニフェストファイルを探す
+    let asset: { id: number; name: string; browser_download_url: string } | undefined;
+    let foundRelease: string | undefined;
+
+    for (const release of releases) {
+      asset = release.assets.find((a) => a.name === manifestFileName);
+      if (asset) {
+        foundRelease = release.tag_name;
+        break;
+      }
+    }
+
+    if (!asset || !foundRelease) {
+      console.error(`マニフェストファイルが見つかりません: ${manifestFileName}`);
+      return c.json({ error: "Manifest file not found in any release" }, 404);
+    }
+
+    console.log(`マニフェストアセットを取得: ${asset.name} (ID: ${asset.id}) from ${foundRelease}`);
+
+    // アセットをダウンロード
+    const assetUrl = `https://api.github.com/repos/${owner}/${repo}/releases/assets/${asset.id}`;
+    const response = await fetch(assetUrl, {
+      headers: {
+        Authorization: `Bearer ${githubToken}`,
+        Accept: "application/octet-stream",
+        "User-Agent": "Orano-Keihi-Updater",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`GitHub APIエラー: ${response.status} ${response.statusText}`);
+      return c.json(
+        { error: "Failed to fetch manifest from GitHub" },
+        response.status as 404 | 500,
+      );
+    }
+
+    const manifestData = (await response.json()) as UpdateManifest;
+    console.log(`マニフェスト取得成功: version=${manifestData.version}`);
+
+    // マニフェストデータをそのまま返す
+    return c.json(manifestData);
   } catch (error) {
-    console.error("最新バージョン情報取得エラー:", error);
+    console.error("マニフェスト取得エラー:", error);
     return c.json({ error: "Internal server error" }, 500);
   }
 });
@@ -171,7 +149,6 @@ updaterApp.get("/health", async (c) => {
     status: "ok",
     service: "updater",
     timestamp: new Date().toISOString(),
-    latest_version: LATEST_VERSION,
   });
 });
 

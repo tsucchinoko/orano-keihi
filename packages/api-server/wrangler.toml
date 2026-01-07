@@ -57,6 +57,7 @@ bucket_name = "orano-keihi-dev"
 # wrangler secret put R2_SECRET_ACCESS_KEY --env production
 # wrangler secret put GOOGLE_CLIENT_SECRET --env production
 # wrangler secret put SESSION_ENCRYPTION_KEY --env production
+# wrangler secret put GITHUB_TOKEN --env production
 #
 # 開発環境の秘匿情報設定：
 # wrangler secret put JWT_SECRET --env development
@@ -65,3 +66,4 @@ bucket_name = "orano-keihi-dev"
 # wrangler secret put R2_SECRET_ACCESS_KEY --env development
 # wrangler secret put GOOGLE_CLIENT_SECRET --env development
 # wrangler secret put SESSION_ENCRYPTION_KEY --env development
+# wrangler secret put GITHUB_TOKEN --env development
