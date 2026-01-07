@@ -70,7 +70,7 @@ Tauri v2のupdaterプラグインを使用して、GitHub Releasesの静的JSON�
   - すべてのテストが通ることを確認し、ユーザーに質問があれば尋ねる
 
 - [ ] 7. TypeScriptフロントエンドのUI改善
-  - [ ] 7.1 UpdaterServiceの機能拡張
+  - [x] 7.1 UpdaterServiceの機能拡張
     - 設定管理機能の追加
     - バージョン比較ロジックの改善
     - _要件: 2.1, 7.1, 7.2, 7.3, 7.4_
@@ -79,7 +79,7 @@ Tauri v2のupdaterプラグインを使用して、GitHub Releasesの静的JSON�
     - **プロパティ 6: バージョン比較の推移性**
     - **検証対象: 要件 2.1**
 
-  - [ ] 7.3 UpdateNotificationコンポーネントの改善
+  - [x] 7.3 UpdateNotificationコンポーネントの改善
     - スキップ機能の追加
     - エラー表示の改善
     - プログレス表示の強化

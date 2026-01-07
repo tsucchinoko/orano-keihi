@@ -17,6 +17,22 @@ export interface UpdateInfo {
 }
 
 /**
+ * アップデーター設定の型定義
+ */
+export interface UpdaterConfig {
+  /** 自動アップデートチェックの有効/無効 */
+  auto_check_enabled: boolean;
+  /** アップデートチェックの頻度（時間単位） */
+  check_interval_hours: number;
+  /** ベータ版アップデートの受信可否 */
+  include_prereleases: boolean;
+  /** スキップされたバージョンのリスト */
+  skipped_versions: string[];
+  /** 最後にチェックした時刻（Unix timestamp） */
+  last_check_time?: number;
+}
+
+/**
  * アップデート通知の状態
  */
 export interface UpdateNotificationState {
