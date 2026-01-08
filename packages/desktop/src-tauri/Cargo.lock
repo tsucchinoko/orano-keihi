@@ -3647,6 +3647,51 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "orano-keihi"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "aws-config",
+ "aws-sdk-s3",
+ "base64 0.21.7",
+ "chrono",
+ "chrono-tz",
+ "dirs 5.0.1",
+ "dotenv",
+ "env_logger 0.10.2",
+ "futures",
+ "http-body-util",
+ "hyper 1.8.1",
+ "hyper-util",
+ "log",
+ "oauth2",
+ "once_cell",
+ "quickcheck",
+ "quickcheck_macros",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-deep-link",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-shell",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "url",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
 name = "ordered-multimap"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5285,51 +5330,6 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
-
-[[package]]
-name = "subscription-memo"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "aws-config",
- "aws-sdk-s3",
- "base64 0.21.7",
- "chrono",
- "chrono-tz",
- "dirs 5.0.1",
- "dotenv",
- "env_logger 0.10.2",
- "futures",
- "http-body-util",
- "hyper 1.8.1",
- "hyper-util",
- "log",
- "oauth2",
- "once_cell",
- "quickcheck",
- "quickcheck_macros",
- "rand 0.8.5",
- "regex",
- "reqwest 0.11.27",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-deep-link",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-shell",
- "tauri-plugin-updater",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "url",
- "urlencoding",
- "uuid",
-]
 
 [[package]]
 name = "subtle"

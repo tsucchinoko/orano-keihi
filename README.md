@@ -27,7 +27,7 @@ Tauri + SvelteKit + TypeScript で構築されたサブスクリプション管�
 1. リポジトリをクローン
 ```bash
 git clone <repository-url>
-cd subscription-memo
+cd orano-keihi
 ```
 
 2. 依存関係をインストール（ワークスペース全体）

@@ -19,7 +19,7 @@ pub async fn get_database_connection() -> AppResult<Connection> {
     // アプリケーションデータディレクトリのパスを構築
     let app_data_dir = dirs::data_dir()
         .ok_or_else(|| AppError::configuration("アプリケーションデータディレクトリの取得に失敗"))?
-        .join("subscription-memo");
+        .join("orano-keihi");
 
     // ディレクトリが存在しない場合は作成
     if !app_data_dir.exists() {
