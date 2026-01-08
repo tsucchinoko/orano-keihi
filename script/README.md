@@ -121,3 +121,181 @@ GitHub Actionsワークフローでは、以下のようにスクリプトを実
 ```
 
 URLはHTTPS形式である必要があります。GITHUB_REPOSITORYの設定を確認してください。
+
+
+## sign-local-update.sh ⭐ NEW
+
+### 概要
+
+ローカル環境でビルドしたDMGファイルに署名を追加し、マニフェストファイルを更新するスクリプトです。
+
+### 使用方法
+
+```bash
+./script/sign-local-update.sh <DMGファイルのパス> [バージョン]
+```
+
+### 例
+
+```bash
+# aarch64版に署名
+./script/sign-local-update.sh \
+  packages/desktop/src-tauri/target/release/bundle/dmg/orano-keihi_0.1.1_aarch64.dmg \
+  v0.1.1
+
+# x64版に署名
+./script/sign-local-update.sh \
+  packages/desktop/src-tauri/target/release/bundle/dmg/orano-keihi_0.1.1_x64.dmg \
+  v0.1.1
+```
+
+### 機能
+
+1. DMGファイルにminisign署名を生成
+2. `.sig` ファイルを作成
+3. マニフェストファイルを自動更新（jqがインストールされている場合）
+
+### 前提条件
+
+- **Tauri CLI**: `cargo install tauri-cli`
+- **署名鍵**: `tauri signer generate -w ~/.tauri/orano-keihi.key`
+- **環境変数**: `TAURI_SIGNING_PRIVATE_KEY` または デフォルトパス `~/.tauri/orano-keihi.key`
+- **jq** (オプション): マニフェスト自動更新用
+
+### 署名鍵の生成
+
+```bash
+# 新しい署名鍵を生成
+tauri signer generate -w ~/.tauri/orano-keihi.key
+
+# 公開鍵を表示（tauri.conf.jsonに設定）
+tauri signer generate -w ~/.tauri/orano-keihi.key --ci
+```
+
+公開鍵を `packages/desktop/src-tauri/tauri.conf.json` の `plugins.updater.pubkey` に設定します。
+
+### 環境変数
+
+| 変数名 | 説明 | デフォルト値 |
+|--------|------|-------------|
+| `TAURI_SIGNING_PRIVATE_KEY` | 署名鍵のパス | `~/.tauri/orano-keihi.key` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 署名鍵のパスワード | なし |
+
+## ローカル環境での署名付きアップデートテスト手順
+
+### 1. 署名鍵の準備
+
+```bash
+# 署名鍵を生成（初回のみ）
+tauri signer generate -w ~/.tauri/orano-keihi.key
+
+# 公開鍵を取得
+tauri signer generate -w ~/.tauri/orano-keihi.key --ci
+```
+
+公開鍵を `packages/desktop/src-tauri/tauri.conf.json` の `plugins.updater.pubkey` に設定します。
+
+### 2. アプリケーションのビルド
+
+```bash
+cd packages/desktop
+pnpm tauri build
+```
+
+ビルドされたDMGファイルは以下のパスに生成されます：
+- `packages/desktop/src-tauri/target/release/bundle/dmg/orano-keihi_0.1.0_aarch64.dmg` (Apple Silicon)
+- `packages/desktop/src-tauri/target/release/bundle/dmg/orano-keihi_0.1.0_x64.dmg` (Intel)
+
+### 3. DMGファイルに署名
+
+```bash
+# 現在のアーキテクチャに応じて実行
+./script/sign-local-update.sh \
+  packages/desktop/src-tauri/target/release/bundle/dmg/orano-keihi_0.1.1_aarch64.dmg \
+  v0.1.1
+```
+
+### 4. マニフェストファイルの確認
+
+`update-manifests/darwin-aarch64.json` が更新されていることを確認します：
+
+```json
+{
+  "version": "0.1.1",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6...",
+      "url": "https://..."
+    }
+  }
+}
+```
+
+### 5. GitHub Releasesにアップロード
+
+1. GitHubでリリースを作成（例: `v0.1.1`）
+2. DMGファイルとマニフェストファイルをアップロード
+
+### 6. API Serverをデプロイ
+
+```bash
+cd packages/api-server
+pnpm deploy
+```
+
+### 7. アプリからテスト
+
+1. アプリを起動
+2. メニューバーの「ヘルプ」→「アップデートを確認」をクリック
+3. 署名検証が成功し、アップデートがインストールされることを確認
+
+## トラブルシューティング
+
+### 署名エラー: "Invalid encoding in minisign data"
+
+**原因**: マニフェストファイルの `signature` フィールドが空または無効
+
+**解決方法**: 
+```bash
+./script/sign-local-update.sh <DMGファイル> <バージョン>
+```
+
+### 404 Not Found エラー
+
+**原因**: 
+- GitHub Releasesにファイルが存在しない
+- URLが正しくない
+
+**解決方法**: マニフェストファイルのURLを確認
+
+### 署名鍵が見つからない
+
+**原因**: 署名鍵が生成されていない
+
+**解決方法**:
+```bash
+# 署名鍵を生成
+tauri signer generate -w ~/.tauri/orano-keihi.key
+
+# 環境変数を設定
+export TAURI_SIGNING_PRIVATE_KEY=~/.tauri/orano-keihi.key
+```
+
+### jqがインストールされていない
+
+**原因**: マニフェスト自動更新にjqが必要
+
+**解決方法**:
+```bash
+# macOS
+brew install jq
+
+# Ubuntu/Debian
+sudo apt-get install jq
+```
+
+## 参考資料
+
+- [Tauri Updater Documentation](https://v2.tauri.app/plugin/updater/)
+- [Minisign](https://jedisct1.github.io/minisign/)
+- [GitHub Releases](https://docs.github.com/en/repositories/releasing-projects-on-github)

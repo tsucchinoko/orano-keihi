@@ -149,6 +149,9 @@ jobs:
         APPLE_ID: ${{ secrets.APPLE_ID }}
         APPLE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        # Tauri署名関連
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         # アプリケーション環境設定
         ENVIRONMENT: production
         DEBUG: false
@@ -158,6 +161,43 @@ jobs:
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+    
+    - name: Tauri署名ファイルの生成
+      run: |
+        echo "🔐 Tauri署名ファイルを生成中..."
+        
+        # DMGファイルを検索
+        DMG_FILE=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -n 1)
+        
+        if [ -z "$DMG_FILE" ]; then
+          echo "❌ DMGファイルが見つかりません"
+          exit 1
+        fi
+        
+        echo "📦 署名対象ファイル: $DMG_FILE"
+        
+        # Tauri署名を生成
+        cd packages/desktop
+        if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+          pnpm tauri signer sign "../../$DMG_FILE" --private-key-path <(echo "$TAURI_SIGNING_PRIVATE_KEY") -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+        else
+          pnpm tauri signer sign "../../$DMG_FILE" --private-key-path <(echo "$TAURI_SIGNING_PRIVATE_KEY")
+        fi
+        cd ../..
+        
+        # 署名ファイルの確認
+        SIG_FILE="${DMG_FILE}.sig"
+        if [ -f "$SIG_FILE" ]; then
+          echo "✅ 署名ファイルが生成されました: $SIG_FILE"
+          echo "📋 署名内容:"
+          cat "$SIG_FILE"
+        else
+          echo "❌ 署名ファイルの生成に失敗しました"
+          exit 1
+        fi
+      env:
+        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
     
     - name: ビルド結果の確認
@@ -176,7 +216,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: macos-artifacts
-        path: src-tauri/target/release/bundle/dmg/*.dmg
+        path: |
+          src-tauri/target/release/bundle/dmg/*.dmg
+          src-tauri/target/release/bundle/dmg/*.dmg.sig
         retention-days: 7
     
     - name: MacOS署名環境のクリーンアップ
@@ -399,6 +441,24 @@ jobs:
             name: dmgFiles[0],
             data: dmgContent
           });
+          
+          // dmg署名ファイルのアップロード
+          const sigFiles = fs.readdirSync('./artifacts/macos-artifacts').filter(f => f.endsWith('.dmg.sig'));
+          if (sigFiles.length > 0) {
+            console.log('📤 MacOS署名ファイルをアップロード中...');
+            const sigPath = path.join('./artifacts/macos-artifacts', sigFiles[0]);
+            const sigContent = fs.readFileSync(sigPath);
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: sigFiles[0],
+              data: sigContent
+            });
+            console.log('✅ 署名ファイルをアップロードしました: ' + sigFiles[0]);
+          } else {
+            console.warn('⚠️  署名ファイルが見つかりません');
+          }
           
           // msiファイルのアップロード
           console.log('📤 Windows msiファイルをアップロード中...');

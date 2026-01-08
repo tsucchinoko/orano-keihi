@@ -52,6 +52,7 @@
     "longDescription": "A comprehensive personal expense tracking application built with Tauri and SvelteKit",
     "copyright": "Copyright © 2025 tsucchinoko. All rights reserved.",
     "licenseFile": null,
+    "createUpdaterArtifacts": true,
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.15",
@@ -122,7 +123,10 @@
         "https://orano-keihi.tsucchinoko.workers.dev/api/updater/manifest/{{target}}/{{arch}}"
       ],
       "dialog": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE5ODgyMzVBQzk2QTA4QkIKUldTN0NHckpXaU9JR2RwZ0pIUVIwbTE2WGF0ei9CWVRvejdLTnRlclV0ZmlzdUluNmhpbDdTUHEK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZDMzdDMEM2Qjc0QUUwNzUKUldSMTRFcTN4c0EzL0xFL041YUpQTC9vU21Wa0NSUVJFRkVka0hTQm9mZlhTc3ZPVDFnT3huRncK",
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

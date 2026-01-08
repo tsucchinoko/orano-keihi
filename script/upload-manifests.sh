@@ -23,8 +23,8 @@ if [ $# -lt 1 ]; then
     echo "  $0 <release-tag>"
     echo ""
     echo "例:"
-    echo "  $0 v0.1.0"
-    echo "  $0 v0.1.0-20260107"
+    echo "  $0 v0.1.1"
+    echo "  $0 v0.1.1-20260107"
     exit 1
 fi
 
