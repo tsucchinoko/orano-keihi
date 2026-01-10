@@ -6,6 +6,7 @@ node_modules
 .env
 .env.*
 !.env.example
+!.env.signing.example
 .env.signing
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*

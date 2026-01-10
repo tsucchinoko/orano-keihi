@@ -16,3 +16,6 @@ vite.config.ts.timestamp-*
 oauth_client.json
 
 update-manifests
+
+# 環境変数設定スクリプト（秘匿情報を含む）
+script/load-env.sh

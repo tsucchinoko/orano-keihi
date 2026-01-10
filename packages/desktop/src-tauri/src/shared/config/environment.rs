@@ -120,12 +120,16 @@ pub fn get_database_filename(env: Environment) -> &'static str {
     }
 }
 
-/// 環境に応じた.envファイルを読み込む
+/// 環境変数の読み込みを確認する
 ///
 /// # 処理内容
 /// 1. コンパイル時埋め込み環境変数をチェック
-/// 2. 環境に応じた.envファイルを読み込み
-/// 3. フォールバック処理
+/// 2. 開発環境（pnpm tauri dev）の場合のみ.envファイルを読み込み
+/// 3. 本番ビルドでは環境変数はビルドスクリプトから設定されることを前提とする
+///
+/// # 注意
+/// - 本番環境では.envファイルは読み込まれません（秘匿情報がバイナリに埋め込まれるのを防ぐため）
+/// - 本番ビルド時は script/load-env.sh から環境変数を設定してください
 pub fn load_environment_variables() {
     // コンパイル時に埋め込まれた環境設定があるかチェック
     let embedded_env = option_env!("EMBEDDED_ENVIRONMENT");
@@ -133,51 +137,36 @@ pub fn load_environment_variables() {
     if let Some(env) = embedded_env {
         // ログシステムが初期化されていないため、eprintlnを使用
         eprintln!("コンパイル時埋め込み環境設定を使用: {env}");
-        // コンパイル時に埋め込まれた環境変数がある場合は、実行時読み込みをスキップ
         return;
     }
 
-    // 本番環境かどうかを判定（ビルド設定ベース）
-    let is_production = !cfg!(debug_assertions);
+    // 開発環境かどうかを判定（デバッグビルド）
+    let is_development = cfg!(debug_assertions);
 
-    // 環境に応じた.envファイルを読み込み
-    let env_file = if is_production {
-        ".env.production"
-    } else {
-        ".env"
-    };
+    if is_development {
+        // 開発環境の場合のみ.envファイルを読み込む
+        eprintln!("開発環境: .envファイルを読み込みます");
 
-    eprintln!("環境判定: production={is_production}, 読み込み対象: {env_file}");
-
-    // 指定された.envファイルを読み込み
-    match dotenv::from_filename(env_file) {
-        Ok(path) => {
-            eprintln!("環境ファイルを読み込みました: {}", path.display());
-        }
-        Err(e) => {
-            eprintln!("環境ファイル({env_file})の読み込みに失敗: {e}");
-
-            // フォールバック: デフォルトの.envファイルを試行
-            match dotenv::dotenv() {
-                Ok(path) => {
-                    eprintln!(
-                        "フォールバック: デフォルト.envファイルを読み込みました: {}",
-                        path.display()
-                    );
-                }
-                Err(e2) => {
-                    eprintln!("デフォルト.envファイルの読み込みも失敗: {e2}");
-                    eprintln!("直接設定された環境変数を使用します。");
-                }
+        match dotenv::dotenv() {
+            Ok(path) => {
+                eprintln!("環境ファイルを読み込みました: {}", path.display());
+            }
+            Err(e) => {
+                eprintln!("環境ファイルの読み込みに失敗: {e}");
+                eprintln!("環境変数が設定されていることを確認してください");
             }
         }
+    } else {
+        // 本番環境では.envファイルを読み込まない
+        eprintln!("本番環境: 環境変数はビルドスクリプトから設定されます");
+        eprintln!("ビルド時は `source script/load-env.sh && pnpm tauri build` を使用してください");
     }
 
     // 読み込み後の環境変数を確認
     if let Ok(env_var) = std::env::var("ENVIRONMENT") {
         eprintln!("ENVIRONMENT環境変数: {env_var}");
     } else {
-        eprintln!("ENVIRONMENT環境変数が設定されていません");
+        eprintln!("ENVIRONMENT環境変数が設定されていません（デフォルト値を使用）");
     }
 }
 
@@ -229,146 +218,6 @@ pub struct R2Config {
     pub endpoint_url: String,
     /// R2のリージョン
     pub region: String,
-}
-
-impl R2Config {
-    /// 環境変数からR2設定を読み込む
-    ///
-    /// # 戻り値
-    /// R2設定、または設定が不完全な場合はNone
-    pub fn from_env() -> Option<Self> {
-        log::debug!("R2Config::from_env() - 環境変数の読み込みを開始");
-
-        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
-        let access_key_id = option_env!("R2_ACCESS_KEY_ID")
-            .map(|s| {
-                log::debug!("コンパイル時埋め込みR2_ACCESS_KEY_ID を使用");
-                s.to_string()
-            })
-            .or_else(|| {
-                std::env::var("R2_ACCESS_KEY_ID").ok().map(|val| {
-                    log::debug!("実行時R2_ACCESS_KEY_ID が見つかりました");
-                    val
-                })
-            });
-
-        let access_key_id = match access_key_id {
-            Some(val) => val,
-            None => {
-                log::error!("R2_ACCESS_KEY_ID が見つかりません");
-                return None;
-            }
-        };
-
-        let secret_access_key = option_env!("R2_SECRET_ACCESS_KEY")
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("R2_SECRET_ACCESS_KEY").ok());
-
-        let secret_access_key = match secret_access_key {
-            Some(val) => val,
-            None => {
-                log::error!("R2_SECRET_ACCESS_KEY が見つかりません");
-                return None;
-            }
-        };
-
-        let bucket_name = option_env!("R2_BUCKET_NAME")
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("R2_BUCKET_NAME").ok());
-
-        let bucket_name = match bucket_name {
-            Some(val) => val,
-            None => {
-                log::error!("R2_BUCKET_NAME が見つかりません");
-                return None;
-            }
-        };
-
-        let endpoint_url = option_env!("R2_ENDPOINT_URL")
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("R2_ENDPOINT_URL").ok());
-
-        let endpoint_url = match endpoint_url {
-            Some(val) => val,
-            None => {
-                log::error!("R2_ENDPOINT_URL が見つかりません");
-                return None;
-            }
-        };
-
-        let region = option_env!("R2_REGION")
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("R2_REGION").ok())
-            .unwrap_or_else(|| {
-                log::debug!("R2_REGION が設定されていないため、デフォルト値を使用");
-                "auto".to_string()
-            });
-
-        log::debug!("R2Config::from_env() - 設定の読み込みが完了しました");
-        log::info!("R2設定: bucket={bucket_name}, region={region}");
-
-        Some(Self {
-            access_key_id,
-            secret_access_key,
-            bucket_name,
-            endpoint_url,
-            region,
-        })
-    }
-
-    /// R2設定が有効かどうかを判定
-    ///
-    /// # 戻り値
-    /// 設定が有効な場合はtrue
-    pub fn is_valid(&self) -> bool {
-        !self.access_key_id.is_empty()
-            && !self.secret_access_key.is_empty()
-            && !self.bucket_name.is_empty()
-            && !self.endpoint_url.is_empty()
-    }
-
-    /// 設定を検証する
-    ///
-    /// # 戻り値
-    /// 設定が有効な場合はOk(())、無効な場合はErr
-    pub fn validate(&self) -> Result<(), String> {
-        if self.access_key_id.is_empty() {
-            return Err("R2アクセスキーIDが設定されていません".to_string());
-        }
-
-        if self.secret_access_key.is_empty() {
-            return Err("R2シークレットアクセスキーが設定されていません".to_string());
-        }
-
-        if self.bucket_name.is_empty() {
-            return Err("R2バケット名が設定されていません".to_string());
-        }
-
-        if self.endpoint_url.is_empty() {
-            return Err("R2エンドポイントURLが設定されていません".to_string());
-        }
-
-        Ok(())
-    }
-
-    /// デバッグ情報を取得
-    ///
-    /// # 戻り値
-    /// デバッグ情報のマップ
-    pub fn get_debug_info(&self) -> std::collections::HashMap<String, String> {
-        let mut info = std::collections::HashMap::new();
-        info.insert(
-            "access_key_id".to_string(),
-            format!(
-                "{}****",
-                &self.access_key_id[..4.min(self.access_key_id.len())]
-            ),
-        );
-        info.insert("bucket_name".to_string(), self.bucket_name.clone());
-        info.insert("endpoint_url".to_string(), self.endpoint_url.clone());
-        info.insert("region".to_string(), self.region.clone());
-        info
-    }
 }
 
 /// API設定を管理する構造体
