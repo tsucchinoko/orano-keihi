@@ -87,9 +87,9 @@ export async function uploadReceiptViaApi(
   const sessionToken = authStore.getSessionToken();
 
   return invoke('upload_receipt_via_api', {
-    expenseId: expenseId,
-    filePath: filePath,
-    sessionToken: sessionToken,
+    expense_id: expenseId,
+    file_path: filePath,
+    session_token: sessionToken,
   });
 }
 
@@ -108,8 +108,8 @@ export async function uploadMultipleReceiptsViaApi(
   const filePaths = files.map((file) => file.file_path);
 
   return invoke('upload_multiple_receipts_via_api', {
-    filePaths: filePaths,
-    sessionToken: sessionToken,
+    file_paths: filePaths,
+    session_token: sessionToken,
   });
 }
 
@@ -148,7 +148,7 @@ export async function deleteReceiptViaApi(
   const sessionToken = authStore.getSessionToken();
 
   return invoke('delete_receipt_via_api', {
-    receiptUrl: receiptUrl,
-    sessionToken: sessionToken,
+    receipt_url: receiptUrl,
+    session_token: sessionToken,
   });
 }

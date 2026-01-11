@@ -73,13 +73,13 @@ function formatAmount(amount: number): string {
 
 // 削除確認
 function confirmDelete() {
-	console.log(`⚠️ 削除確認ダイアログ表示: expense_id=${expense.id}`);
+	console.info(`⚠️ 削除確認ダイアログ表示: expense_id=${expense.id}`);
 	showDeleteConfirm = true;
 }
 
 // 削除実行
 function handleDelete() {
-	console.log(`🔴 削除ボタンクリック: expense_id=${expense.id}`);
+	console.info(`🔴 削除ボタンクリック: expense_id=${expense.id}`);
 	onDelete(expense.id);
 	showDeleteConfirm = false;
 }

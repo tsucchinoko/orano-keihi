@@ -91,7 +91,7 @@ impl UpdateLogger {
             .map_err(|e| UpdateError::file_system(format!("ログファイルのオープンに失敗: {e}")))?;
 
         let timestamp = chrono::DateTime::from_timestamp(entry.timestamp as i64, 0)
-            .unwrap_or_else(|| Utc::now())
+            .unwrap_or_else(Utc::now)
             .with_timezone(&Tokyo);
 
         let log_line = if let Some(context) = &entry.context {

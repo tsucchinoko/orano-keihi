@@ -147,20 +147,20 @@ pub async fn update_expense(
 /// 削除成功時はtrue、失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn delete_expense_receipt(
-    expenseId: i64,
-    sessionToken: Option<String>,
+    expense_id: i64,
+    session_token: Option<String>,
     state: State<'_, AppState>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<bool, String> {
-    info!("経費の領収書削除処理開始: expense_id={expenseId}");
+    info!("経費の領収書削除処理開始: expense_id={expense_id}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(sessionToken.as_deref(), "/expenses/delete-receipt")
+        .authenticate_request(session_token.as_deref(), "/expenses/delete-receipt")
         .await
         .map_err(|e| format!("認証エラー: {e}"))?;
 
-    info!("認証成功 - ユーザーID: {}, 経費ID: {expenseId}", user.id);
+    info!("認証成功 - ユーザーID: {}, 経費ID: {expense_id}", user.id);
 
     // データベース接続を取得
     let db = state
@@ -169,15 +169,15 @@ pub async fn delete_expense_receipt(
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
     // 経費の領収書URLを削除（空文字列でNULLに設定）
-    let result = repository::set_receipt_url(&db, expenseId, "".to_string(), user.id);
+    let result = repository::set_receipt_url(&db, expense_id, "".to_string(), user.id);
 
     match result {
         Ok(_) => {
-            info!("経費の領収書削除成功: expense_id={expenseId}");
+            info!("経費の領収書削除成功: expense_id={expense_id}");
             Ok(true)
         }
         Err(e) => {
-            error!("経費の領収書削除失敗: expense_id={expenseId}, error={e}");
+            error!("経費の領収書削除失敗: expense_id={expense_id}, error={e}");
             Err(e.to_string())
         }
     }

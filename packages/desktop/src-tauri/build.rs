@@ -23,10 +23,19 @@ fn main() {
 
     // Google OAuth設定
     // 本番環境ではスクリプトから環境変数を設定する必要がある
-    let google_client_id =
-        env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID environment variable must be set");
-    let google_client_secret = env::var("GOOGLE_CLIENT_SECRET")
-        .expect("GOOGLE_CLIENT_SECRET environment variable must be set");
+    // 開発環境ではダミー値を使用
+    let google_client_id = env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| {
+        if environment == "production" {
+            panic!("GOOGLE_CLIENT_ID environment variable must be set in production");
+        }
+        "dummy-client-id".to_string()
+    });
+    let google_client_secret = env::var("GOOGLE_CLIENT_SECRET").unwrap_or_else(|_| {
+        if environment == "production" {
+            panic!("GOOGLE_CLIENT_SECRET environment variable must be set in production");
+        }
+        "dummy-client-secret".to_string()
+    });
     let google_redirect_uri =
         env::var("GOOGLE_REDIRECT_URI").unwrap_or_else(|_| "http://127.0.0.1/callback".to_string());
 
@@ -41,8 +50,12 @@ fn main() {
     );
 
     // セッション暗号化キー
-    let session_key = env::var("SESSION_ENCRYPTION_KEY")
-        .expect("SESSION_ENCRYPTION_KEY environment variable must be set");
+    let session_key = env::var("SESSION_ENCRYPTION_KEY").unwrap_or_else(|_| {
+        if environment == "production" {
+            panic!("SESSION_ENCRYPTION_KEY environment variable must be set in production");
+        }
+        "dummy-session-key-32-bytes-long".to_string()
+    });
     println!("cargo:rustc-env=SESSION_ENCRYPTION_KEY={}", session_key);
 
     // ログレベル

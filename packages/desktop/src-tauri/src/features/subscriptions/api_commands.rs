@@ -485,8 +485,8 @@ fn validate_date_format(date: &str) -> Result<(), String> {
 /// APIサーバー経由でサブスクリプション領収書をR2にアップロードする
 ///
 /// # 引数
-/// * `subscriptionId` - サブスクリプションID
-/// * `filePath` - アップロードするファイルのパス
+/// * `subscription_id` - サブスクリプションID
+/// * `file_path` - アップロードするファイルのパス
 /// * `sessionToken` - セッショントークン
 /// * `auth_middleware` - 認証ミドルウェア
 ///
@@ -495,12 +495,12 @@ fn validate_date_format(date: &str) -> Result<(), String> {
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn upload_subscription_receipt_via_api(
-    subscriptionId: i64,
-    filePath: String,
+    subscription_id: i64,
+    file_path: String,
     sessionToken: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<String, String> {
-    info!("APIサーバー経由でサブスクリプション領収書アップロード開始 - ID: {subscriptionId}");
+    info!("APIサーバー経由でサブスクリプション領収書アップロード開始 - ID: {subscription_id}");
 
     // 認証チェック
     let user = auth_middleware
@@ -514,18 +514,18 @@ pub async fn upload_subscription_receipt_via_api(
     debug!("認証成功 - ユーザーID: {}", user.id);
 
     // ファイルの存在確認
-    if !Path::new(&filePath).exists() {
+    if !Path::new(&file_path).exists() {
         return Err("指定されたファイルが見つかりません".to_string());
     }
 
     // ファイルを読み込み
-    let file_data = fs::read(&filePath).map_err(|e| {
+    let file_data = fs::read(&file_path).map_err(|e| {
         error!("ファイル読み込みエラー: {e}");
         format!("ファイルの読み込みに失敗しました: {e}")
     })?;
 
     // ファイル名を取得
-    let file_name = Path::new(&filePath)
+    let file_name = Path::new(&file_path)
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("receipt")
@@ -540,7 +540,7 @@ pub async fn upload_subscription_receipt_via_api(
     // アップロード用のリクエストボディを作成
     #[derive(Serialize)]
     struct UploadRequest {
-        #[serde(rename = "subscriptionId")]
+        #[serde(rename = "subscription_id")]
         subscription_id: i64,
         #[serde(rename = "fileName")]
         file_name: String,
@@ -549,7 +549,7 @@ pub async fn upload_subscription_receipt_via_api(
     }
 
     let upload_request = UploadRequest {
-        subscription_id: subscriptionId,
+        subscription_id,
         file_name,
         file_data: general_purpose::STANDARD.encode(&file_data),
     };
@@ -585,7 +585,7 @@ pub async fn upload_subscription_receipt_via_api(
 /// APIサーバー経由でサブスクリプション領収書をR2から削除する
 ///
 /// # 引数
-/// * `subscriptionId` - サブスクリプションID
+/// * `subscription_id` - サブスクリプションID
 /// * `sessionToken` - セッショントークン
 /// * `auth_middleware` - 認証ミドルウェア
 ///
@@ -594,11 +594,11 @@ pub async fn upload_subscription_receipt_via_api(
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn delete_subscription_receipt_via_api(
-    subscriptionId: i64,
+    subscription_id: i64,
     sessionToken: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<bool, String> {
-    info!("APIサーバー経由でサブスクリプション領収書削除開始 - ID: {subscriptionId}");
+    info!("APIサーバー経由でサブスクリプション領収書削除開始 - ID: {subscription_id}");
 
     // 認証チェック
     let user = auth_middleware
@@ -620,7 +620,7 @@ pub async fn delete_subscription_receipt_via_api(
     // APIサーバーに削除リクエストを送信
     api_client
         .delete(
-            &format!("/api/v1/subscriptions/{subscriptionId}/receipt"),
+            &format!("/api/v1/subscriptions/{subscription_id}/receipt"),
             sessionToken.as_deref(),
         )
         .await
@@ -629,7 +629,7 @@ pub async fn delete_subscription_receipt_via_api(
             format!("サブスクリプション領収書の削除に失敗しました: {e}")
         })?;
 
-    info!("サブスクリプション領収書削除成功 - ID: {subscriptionId}");
+    info!("サブスクリプション領収書削除成功 - ID: {subscription_id}");
 
     Ok(true)
 }

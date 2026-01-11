@@ -223,7 +223,7 @@ impl UpdaterConfig {
 
         if let Some(last_check) = self.last_check_time {
             let dt = DateTime::from_timestamp(last_check as i64, 0)
-                .unwrap_or_else(|| Utc::now())
+                .unwrap_or_else(Utc::now)
                 .with_timezone(&Tokyo);
             info.insert(
                 "last_check_time".to_string(),
@@ -235,7 +235,7 @@ impl UpdaterConfig {
 
         if let Some(next_check) = self.get_next_check_time() {
             let dt = DateTime::from_timestamp(next_check as i64, 0)
-                .unwrap_or_else(|| Utc::now())
+                .unwrap_or_else(Utc::now)
                 .with_timezone(&Tokyo);
             info.insert(
                 "next_check_time".to_string(),
@@ -303,10 +303,11 @@ mod tests {
 
     #[test]
     fn test_should_check_now() {
-        let mut config = UpdaterConfig::default();
-
         // 自動チェックが無効の場合
-        config.auto_check_enabled = false;
+        let mut config = UpdaterConfig {
+            auto_check_enabled: false,
+            ..Default::default()
+        };
         assert!(!config.should_check_now());
 
         // 自動チェックが有効で初回の場合

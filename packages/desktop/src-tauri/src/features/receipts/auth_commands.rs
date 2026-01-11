@@ -9,6 +9,7 @@ use crate::features::security::service::SecurityManager;
 use tauri::State;
 
 /// 認証ミドルウェアを作成するヘルパー関数
+#[allow(dead_code)]
 async fn create_auth_middleware(
     auth_service: &State<'_, AuthService>,
     security_manager: &SecurityManager,

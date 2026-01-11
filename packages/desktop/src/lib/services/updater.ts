@@ -15,7 +15,7 @@ export class UpdaterService {
       return await invoke<UpdateInfo>('check_for_updates');
     } catch (error) {
       console.error('アップデートチェックエラー:', error);
-      throw new Error(`アップデートチェックに失敗しました: ${error}`);
+      throw new Error(`アップデートチェックに失敗しました: ${String(error)}`);
     }
   }
 
@@ -27,7 +27,7 @@ export class UpdaterService {
       return await invoke<UpdateInfo>('check_for_updates_force');
     } catch (error) {
       console.error('アップデート強制チェックエラー:', error);
-      throw new Error(`アップデートチェックに失敗しました: ${error}`);
+      throw new Error(`アップデートチェックに失敗しました: ${String(error)}`);
     }
   }
 
@@ -39,7 +39,9 @@ export class UpdaterService {
       await invoke<void>('download_and_install_update');
     } catch (error) {
       console.error('アップデートインストールエラー:', error);
-      throw new Error(`アップデートのインストールに失敗しました: ${error}`);
+      throw new Error(
+        `アップデートのインストールに失敗しました: ${String(error)}`
+      );
     }
   }
 
@@ -51,7 +53,7 @@ export class UpdaterService {
       return await invoke<string>('get_app_version');
     } catch (error) {
       console.error('バージョン取得エラー:', error);
-      throw new Error(`バージョンの取得に失敗しました: ${error}`);
+      throw new Error(`バージョンの取得に失敗しました: ${String(error)}`);
     }
   }
 
@@ -63,7 +65,7 @@ export class UpdaterService {
       return await invoke<UpdaterConfig>('get_updater_config');
     } catch (error) {
       console.error('設定取得エラー:', error);
-      throw new Error(`設定の取得に失敗しました: ${error}`);
+      throw new Error(`設定の取得に失敗しました: ${String(error)}`);
     }
   }
 
@@ -76,7 +78,7 @@ export class UpdaterService {
       await invoke<void>('update_updater_config', { config });
     } catch (error) {
       console.error('設定更新エラー:', error);
-      throw new Error(`設定の更新に失敗しました: ${error}`);
+      throw new Error(`設定の更新に失敗しました: ${String(error)}`);
     }
   }
 
@@ -89,7 +91,7 @@ export class UpdaterService {
       await invoke<void>('skip_version', { version });
     } catch (error) {
       console.error('バージョンスキップエラー:', error);
-      throw new Error(`バージョンのスキップに失敗しました: ${error}`);
+      throw new Error(`バージョンのスキップに失敗しました: ${String(error)}`);
     }
   }
 
@@ -101,7 +103,9 @@ export class UpdaterService {
       await invoke<void>('start_auto_update_check');
     } catch (error) {
       console.error('自動アップデートチェック開始エラー:', error);
-      throw new Error(`自動アップデートチェックの開始に失敗しました: ${error}`);
+      throw new Error(
+        `自動アップデートチェックの開始に失敗しました: ${String(error)}`
+      );
     }
   }
 
@@ -113,7 +117,9 @@ export class UpdaterService {
       await invoke<void>('stop_auto_update_check');
     } catch (error) {
       console.error('自動アップデートチェック停止エラー:', error);
-      throw new Error(`自動アップデートチェックの停止に失敗しました: ${error}`);
+      throw new Error(
+        `自動アップデートチェックの停止に失敗しました: ${String(error)}`
+      );
     }
   }
 
@@ -126,13 +132,13 @@ export class UpdaterService {
   ): Promise<() => void> {
     try {
       const unlisten = await listen<UpdateInfo>('update-available', (event) => {
-        console.log('アップデートが利用可能です:', event.payload);
+        console.info('アップデートが利用可能です:', event.payload);
         callback(event.payload);
       });
       return unlisten;
     } catch (error) {
       console.error('アップデート通知リスナー設定エラー:', error);
-      throw new Error(`アップデート通知の設定に失敗しました: ${error}`);
+      throw new Error(`アップデート通知の設定に失敗しました: ${String(error)}`);
     }
   }
 
@@ -143,13 +149,15 @@ export class UpdaterService {
   static async listenForNoUpdates(callback: () => void): Promise<() => void> {
     try {
       const unlisten = await listen('update-not-available', () => {
-        console.log('最新バージョンです');
+        console.info('最新バージョンです');
         callback();
       });
       return unlisten;
     } catch (error) {
       console.error('アップデート不要通知リスナー設定エラー:', error);
-      throw new Error(`アップデート不要通知の設定に失敗しました: ${error}`);
+      throw new Error(
+        `アップデート不要通知の設定に失敗しました: ${String(error)}`
+      );
     }
   }
 
@@ -168,7 +176,9 @@ export class UpdaterService {
       return unlisten;
     } catch (error) {
       console.error('アップデートエラーリスナー設定エラー:', error);
-      throw new Error(`アップデートエラー通知の設定に失敗しました: ${error}`);
+      throw new Error(
+        `アップデートエラー通知の設定に失敗しました: ${String(error)}`
+      );
     }
   }
 

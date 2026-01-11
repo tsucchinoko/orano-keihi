@@ -88,7 +88,7 @@ if (!isCloudflareWorkers) {
       },
       5 * 60 * 1000,
     );
-  } catch (error) {
+  } catch {
     // タイマーが利用できない環境では何もしない
     console.warn(
       "定期的なクリーンアップが利用できません。手動でクリーンアップを実行してください。",

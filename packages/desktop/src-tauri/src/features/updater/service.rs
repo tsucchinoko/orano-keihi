@@ -40,6 +40,7 @@ pub struct UpdaterService {
 
 /// セキュリティチェック結果
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SecurityCheckResult {
     /// HTTPS通信が使用されているか
     https_verified: bool,
@@ -372,7 +373,7 @@ impl UpdaterService {
                                         debug!("ダウンロード進捗: {progress}% ({chunk_length}/{total} bytes)");
 
                                         // ログ: ダウンロード進捗
-                                        logger.log_download_progress(chunk_length as u64, total as u64);
+                                        logger.log_download_progress(chunk_length as u64, total);
 
                                         // フロントエンドに進捗を通知
                                         if let Err(e) = app_handle.emit("download-progress", progress) {

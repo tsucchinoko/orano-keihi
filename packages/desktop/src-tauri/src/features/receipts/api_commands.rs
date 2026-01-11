@@ -65,15 +65,15 @@ pub struct HealthCheckResponse {
 /// 領収書データ（Base64エンコード）、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn get_receipt_via_api(
-    receiptUrl: String,
-    sessionToken: Option<String>,
+    receipt_url: String,
+    session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<String, String> {
-    info!("APIサーバー経由で領収書取得開始: receiptUrl={receiptUrl}");
+    info!("APIサーバー経由で領収書取得開始: receipt_url={receipt_url}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(sessionToken.as_deref(), "/api/receipts/get")
+        .authenticate_request(session_token.as_deref(), "/api/receipts/get")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -83,12 +83,12 @@ pub async fn get_receipt_via_api(
     debug!("認証成功 - ユーザーID: {}", user.id);
 
     // URLの基本検証
-    if !receiptUrl.starts_with("https://") {
+    if !receipt_url.starts_with("https://") {
         return Err("無効な領収書URLです".to_string());
     }
 
     // URLからファイルキーを抽出
-    let file_key = extract_file_key_from_url(&receiptUrl)?;
+    let file_key = extract_file_key_from_url(&receipt_url)?;
     debug!("抽出されたファイルキー: {file_key}");
 
     // APIクライアントを作成
@@ -103,7 +103,7 @@ pub async fn get_receipt_via_api(
     debug!("APIエンドポイント: {endpoint}");
 
     let response = api_client
-        .get::<ReceiptResponse>(&endpoint, sessionToken.as_deref())
+        .get::<ReceiptResponse>(&endpoint, session_token.as_deref())
         .await
         .map_err(|e| {
             error!("APIリクエストエラー: {e}");
@@ -130,16 +130,18 @@ pub async fn get_receipt_via_api(
 /// アップロード結果、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn upload_receipt_via_api(
-    expenseId: i64,
-    filePath: String,
-    sessionToken: Option<String>,
+    expense_id: i64,
+    file_path: String,
+    session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<String, String> {
-    info!("APIサーバー経由で領収書アップロード開始: expenseId={expenseId}, filePath={filePath}");
+    info!(
+        "APIサーバー経由で領収書アップロード開始: expense_id={expense_id}, file_path={file_path}"
+    );
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(sessionToken.as_deref(), "/api/receipts/upload")
+        .authenticate_request(session_token.as_deref(), "/api/receipts/upload")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -149,24 +151,24 @@ pub async fn upload_receipt_via_api(
     debug!("認証成功 - ユーザーID: {}", user.id);
 
     // セッショントークンが必要
-    let token = sessionToken.ok_or_else(|| {
+    let token = session_token.ok_or_else(|| {
         error!("セッショントークンが提供されていません");
         "セッショントークンが必要です".to_string()
     })?;
 
     // ファイルの存在確認
-    if !std::path::Path::new(&filePath).exists() {
+    if !std::path::Path::new(&file_path).exists() {
         return Err("指定されたファイルが存在しません".to_string());
     }
 
     // ファイルを読み込み
-    let file_data = tokio::fs::read(&filePath).await.map_err(|e| {
+    let file_data = tokio::fs::read(&file_path).await.map_err(|e| {
         error!("ファイル読み込みエラー: {e}");
         format!("ファイル読み込みエラー: {e}")
     })?;
 
     // ファイル名を取得
-    let filename = std::path::Path::new(&filePath)
+    let filename = std::path::Path::new(&file_path)
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| "ファイル名を取得できません".to_string())?;
@@ -180,7 +182,7 @@ pub async fn upload_receipt_via_api(
 
     // ファイルをアップロード
     match api_client
-        .upload_file(expenseId, &file_data, filename, &token)
+        .upload_file(expense_id, &file_data, filename, &token)
         .await
     {
         Ok(response) => {
@@ -206,18 +208,18 @@ pub async fn upload_receipt_via_api(
 /// アップロード結果、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn upload_multiple_receipts_via_api(
-    filePaths: Vec<String>,
-    sessionToken: Option<String>,
+    file_paths: Vec<String>,
+    session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<MultipleUploadResponse, String> {
     info!(
         "APIサーバー経由で複数領収書アップロード開始: ファイル数={}",
-        filePaths.len()
+        file_paths.len()
     );
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(sessionToken.as_deref(), "/api/receipts/upload/multiple")
+        .authenticate_request(session_token.as_deref(), "/api/receipts/upload/multiple")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -229,7 +231,7 @@ pub async fn upload_multiple_receipts_via_api(
     // 現在は未実装
     warn!("APIサーバー経由の複数ファイルアップロードは現在開発中です");
 
-    let results: Vec<UploadResult> = filePaths
+    let results: Vec<UploadResult> = file_paths
         .iter()
         .map(|path| UploadResult {
             file_name: std::path::Path::new(path)
@@ -247,9 +249,9 @@ pub async fn upload_multiple_receipts_via_api(
     Ok(MultipleUploadResponse {
         success: false,
         results,
-        total_files: filePaths.len(),
+        total_files: file_paths.len(),
         successful_uploads: 0,
-        failed_uploads: filePaths.len(),
+        failed_uploads: file_paths.len(),
     })
 }
 
@@ -352,15 +354,15 @@ pub async fn get_fallback_file_count() -> Result<i32, String> {
 /// 削除成功の場合はtrue、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn delete_receipt_via_api(
-    receiptUrl: String,
-    sessionToken: Option<String>,
+    receipt_url: String,
+    session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<bool, String> {
-    info!("APIサーバー経由で領収書削除開始: receiptUrl={receiptUrl}");
+    info!("APIサーバー経由で領収書削除開始: receipt_url={receipt_url}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(sessionToken.as_deref(), "/api/receipts/delete")
+        .authenticate_request(session_token.as_deref(), "/api/receipts/delete")
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -370,13 +372,13 @@ pub async fn delete_receipt_via_api(
     debug!("認証成功 - ユーザーID: {}", user.id);
 
     // セッショントークンが必要
-    let token = sessionToken.ok_or_else(|| {
+    let token = session_token.ok_or_else(|| {
         error!("セッショントークンが提供されていません");
         "セッショントークンが必要です".to_string()
     })?;
 
     // URLの基本検証
-    if !receiptUrl.starts_with("https://") {
+    if !receipt_url.starts_with("https://") {
         return Err("無効な領収書URLです".to_string());
     }
 
@@ -393,7 +395,7 @@ pub async fn delete_receipt_via_api(
 
     // 削除リクエストのペイロード
     let payload = serde_json::json!({
-        "receiptUrl": receiptUrl
+        "receipt_url": receipt_url
     });
 
     debug!(
@@ -407,7 +409,7 @@ pub async fn delete_receipt_via_api(
     debug!("APIエンドポイント: {endpoint}");
 
     let response = api_client
-        .delete_with_body::<serde_json::Value>(&endpoint, &payload, Some(&token))
+        .delete_with_body::<serde_json::Value>(endpoint, &payload, Some(&token))
         .await
         .map_err(|e| {
             error!("APIリクエストエラー: {e}");
@@ -429,7 +431,7 @@ pub async fn delete_receipt_via_api(
 
     if success {
         info!(
-            "領収書削除成功 - ユーザーID: {}, receiptUrl: {receiptUrl}",
+            "領収書削除成功 - ユーザーID: {}, receipt_url: {receipt_url}",
             user.id
         );
         Ok(true)
