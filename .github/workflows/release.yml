@@ -176,7 +176,7 @@ jobs:
           echo "🔐 Tauri署名ファイルを生成中..."
 
           # DMGファイルを検索
-          DMG_FILE=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -n 1)
+          DMG_FILE=$(find packages/desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" | head -n 1)
 
           if [ -z "$DMG_FILE" ]; then
             echo "❌ DMGファイルが見つかりません"
@@ -212,7 +212,7 @@ jobs:
         run: |
           echo "🎯 MacOSビルド完了"
           echo "📦 生成されたファイル:"
-          find src-tauri/target/release/bundle/dmg -name "*.dmg" -exec ls -lh {} \; || echo "dmgファイルが見つかりません"
+          find packages/desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" -exec ls -lh {} \; || echo "dmgファイルが見つかりません"
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
@@ -225,8 +225,8 @@ jobs:
         with:
           name: macos-artifacts
           path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/dmg/*.dmg.sig
+            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg.sig
           retention-days: 7
 
       - name: MacOS署名環境のクリーンアップ
@@ -298,7 +298,7 @@ jobs:
         run: |
           echo "🎯 Windowsビルド完了"
           echo "📦 生成されたファイル:"
-          Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Filter "*.msi" | ForEach-Object {
+          Get-ChildItem -Path "packages/desktop/src-tauri/target/release/bundle/msi" -Filter "*.msi" | ForEach-Object {
             Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)"
           }
 
@@ -313,7 +313,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
-          path: src-tauri/target/release/bundle/msi/*.msi
+          path: packages/desktop/src-tauri/target/release/bundle/msi/*.msi
           retention-days: 7
 
   # リリース作成

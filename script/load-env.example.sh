@@ -32,8 +32,20 @@ export SESSION_ENCRYPTION_KEY=your_32_byte_random_encryption_key_here
 export LOG_LEVEL=info
 
 # Apple署名設定（macOS用）
-# 例: "Developer ID Application: Your Name (TEAM_ID)"
-export APPLE_SIGNING_IDENTITY=your_apple_signing_identity_here
+# 証明書（base64エンコードされた.p12ファイル）
+# 生成方法: base64 -i /path/to/certificate.p12 -o certificate.p12.base64
+# export APPLE_CERTIFICATE=$(cat /path/to/certificate.p12.base64)
+
+# 証明書のパスワード
+# export APPLE_CERTIFICATE_PASSWORD=your_certificate_password_here
+
+# キーチェーンのパスワード（省略可、デフォルト: build-keychain-password）
+# export KEYCHAIN_PASSWORD=your_keychain_password_here
+
+# Apple ID（公証用、オプション）
+# export APPLE_ID=your_apple_id@example.com
+# export APPLE_ID_PASSWORD=your_app_specific_password_here
+# export APPLE_TEAM_ID=YOUR_TEAM_ID
 
 # Windows署名設定（Windows用）
 export WINDOWS_TIMESTAMP_URL=http://timestamp.digicert.com
