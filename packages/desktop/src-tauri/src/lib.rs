@@ -10,12 +10,10 @@ use features::security::service::SecurityManager;
 use features::{
     auth::commands as auth_commands,
     expenses::commands as expense_commands,
-    receipts::{
-        api_commands as receipt_api_commands, auth_commands as receipt_auth_commands,
-        commands as receipt_commands,
-    },
+    receipts::{api_commands as receipt_api_commands, commands as receipt_commands},
     security::commands as security_commands,
     subscriptions::{api_commands as subscription_api_commands, commands as subscription_commands},
+    updater::commands as updater_commands,
 };
 use log::info;
 use rusqlite::Connection;
@@ -24,7 +22,7 @@ use shared::config::environment::{
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// R2接続テストのキャッシュ
 #[derive(Debug)]
@@ -85,9 +83,75 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // 詳細なデバッグログを追加
             eprintln!("=== アプリケーション初期化開始 ===");
+
+            // メニューバーを作成
+            use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+
+            // ヘルプサブメニューを作成
+            let help_submenu = SubmenuBuilder::new(app, "ヘルプ")
+                .item(
+                    &MenuItemBuilder::new("アップデートを確認")
+                        .id("check_for_updates")
+                        .build(app)?,
+                )
+                .build()?;
+
+            // メインメニューを作成
+            let menu = MenuBuilder::new(app).item(&help_submenu).build()?;
+
+            app.set_menu(menu)?;
+
+            // メニューイベントをリッスン
+            let app_handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                if event.id() == "check_for_updates" {
+                    let app_handle = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        use log::info;
+                        info!("メニューから「アップデートを確認」が選択されました");
+
+                        // 強制チェックを実行
+                        use crate::features::updater::service::UpdaterService;
+                        let mut service = UpdaterService::new(app_handle.clone());
+
+                        match service.check_for_updates_force().await {
+                            Ok(update_info) => {
+                                if update_info.available {
+                                    info!(
+                                        "アップデートが利用可能です: {:?}",
+                                        update_info.latest_version
+                                    );
+                                    // フロントエンドに通知（ダイアログ表示用）
+                                    if let Err(e) =
+                                        app_handle.emit("show-update-dialog", &update_info)
+                                    {
+                                        log::error!("アップデート通知の送信に失敗: {e}");
+                                    }
+                                } else {
+                                    info!("最新バージョンです");
+                                    // フロントエンドに通知（ダイアログ表示用）
+                                    if let Err(e) = app_handle.emit("show-no-update-dialog", ()) {
+                                        log::error!("通知の送信に失敗: {e}");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("アップデートチェックエラー: {e}");
+                                // フロントエンドにエラーを通知（ダイアログ表示用）
+                                if let Err(emit_error) =
+                                    app_handle.emit("show-update-error-dialog", e.to_string())
+                                {
+                                    log::error!("エラー通知の送信に失敗: {emit_error}");
+                                }
+                            }
+                        }
+                    });
+                }
+            });
 
             // 環境に応じた.envファイルを読み込み（ログシステム初期化前に実行）
             eprintln!("環境変数を読み込み中...");
@@ -266,19 +330,20 @@ pub fn run() {
             expense_commands::get_expenses,
             expense_commands::update_expense,
             expense_commands::delete_expense,
+            expense_commands::delete_expense_receipt,
             // サブスクリプションコマンド
             subscription_commands::create_subscription,
             subscription_commands::get_subscriptions,
             subscription_commands::update_subscription,
             subscription_commands::toggle_subscription_status,
+            subscription_commands::delete_subscription,
             subscription_commands::get_monthly_subscription_total,
+            subscription_commands::save_subscription_receipt,
+            subscription_commands::delete_subscription_receipt,
+            subscription_commands::get_subscription_receipt_path,
             // サブスクリプションコマンド（APIサーバー経由）
-            subscription_api_commands::fetch_subscriptions_via_api,
-            subscription_api_commands::create_subscription_via_api,
-            subscription_api_commands::update_subscription_via_api,
-            subscription_api_commands::toggle_subscription_status_via_api,
-            subscription_api_commands::delete_subscription_via_api,
-            subscription_api_commands::fetch_monthly_subscription_total_via_api,
+            subscription_api_commands::upload_subscription_receipt_via_api,
+            subscription_api_commands::delete_subscription_receipt_via_api,
             // 領収書コマンド（APIサーバー経由）
             receipt_api_commands::upload_receipt_via_api,
             receipt_api_commands::upload_multiple_receipts_via_api,
@@ -287,24 +352,10 @@ pub fn run() {
             receipt_api_commands::sync_fallback_files,
             receipt_api_commands::get_fallback_file_count,
             receipt_api_commands::get_receipt_via_api,
-            // 領収書コマンド（認証付き）
-            receipt_auth_commands::upload_receipt_with_auth,
-            receipt_auth_commands::get_receipt_with_auth,
-            receipt_auth_commands::delete_receipt_with_auth,
-            receipt_auth_commands::download_receipt_with_auth,
-            receipt_auth_commands::extract_path_from_url_with_auth,
-            // サブスクリプション領収書コマンド（認証付き）
-            receipt_auth_commands::upload_subscription_receipt_with_auth,
-            receipt_auth_commands::delete_subscription_receipt_with_auth,
-            // 領収書コマンド（通常）
-            receipt_commands::get_receipt_from_r2,
-            receipt_commands::delete_receipt_from_r2,
+            receipt_api_commands::delete_receipt_via_api,
             receipt_commands::get_receipt_offline,
             receipt_commands::sync_cache_on_online,
             receipt_commands::get_cache_stats,
-            receipt_commands::upload_multiple_receipts_to_r2,
-            receipt_commands::test_r2_connection,
-            receipt_commands::get_r2_performance_stats,
             // マイグレーションコマンド
             features::migrations::commands::check_migration_status,
             features::migrations::commands::check_auto_migration_status,
@@ -313,19 +364,22 @@ pub fn run() {
             features::migrations::commands::execute_receipt_url_migration,
             features::migrations::commands::drop_receipt_path_column_command,
             features::migrations::commands::check_database_integrity,
-            // R2マイグレーションコマンド
-            features::migrations::r2_migration_commands::start_r2_migration,
-            features::migrations::r2_migration_commands::get_r2_migration_status,
-            features::migrations::r2_migration_commands::pause_r2_migration,
-            features::migrations::r2_migration_commands::resume_r2_migration,
-            features::migrations::r2_migration_commands::stop_r2_migration,
-            features::migrations::r2_migration_commands::validate_r2_migration_integrity,
             // データベース更新コマンド
             features::migrations::database_update_commands::detect_legacy_receipt_urls,
             features::migrations::database_update_commands::execute_database_update,
             features::migrations::database_update_commands::get_database_statistics,
             features::migrations::database_update_commands::update_specific_receipt_urls,
             features::migrations::database_update_commands::check_database_url_integrity,
+            // アップデートコマンド
+            updater_commands::check_for_updates,
+            updater_commands::check_for_updates_force,
+            updater_commands::download_and_install_update,
+            updater_commands::get_app_version,
+            updater_commands::get_updater_config,
+            updater_commands::update_updater_config,
+            updater_commands::skip_version,
+            updater_commands::start_auto_update_check,
+            updater_commands::stop_auto_update_check,
         ])
         .run(tauri::generate_context!())
         .expect("Tauriアプリケーションの実行中にエラーが発生しました");

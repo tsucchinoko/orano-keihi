@@ -563,9 +563,9 @@ impl From<AppError> for String {
 
 ```rust
 // データベースファイルパス
-// macOS: ~/Library/Application Support/com.daichitsuchiya.subscription-memo/expenses.db
-// Windows: C:\Users\{username}\AppData\Roaming\com.daichitsuchiya.subscription-memo\expenses.db
-// Linux: ~/.local/share/com.daichitsuchiya.subscription-memo/expenses.db
+// macOS: ~/Library/Application Support/com.daichitsuchiya.orano-keihi/expenses.db
+// Windows: C:\Users\{username}\AppData\Roaming\com.daichitsuchiya.orano-keihi\expenses.db
+// Linux: ~/.local/share/com.daichitsuchiya.orano-keihi/expenses.db
 
 use tauri::api::path::app_data_dir;
 

@@ -8,6 +8,7 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { R2Config } from "../types/config.js";
@@ -24,10 +25,14 @@ export interface UploadResult {
 
 export interface R2ClientInterface {
   putObject(key: string, data: Buffer, contentType: string): Promise<string>;
+  uploadFile(key: string, data: Buffer): Promise<string>;
   deleteObject(key: string): Promise<void>;
+  deleteFile(key: string): Promise<void>;
   getFile(key: string): Promise<Buffer | null>;
   generatePresignedUrl(key: string, expiresIn: number): Promise<string>;
   testConnection(): Promise<boolean>;
+  fileExists(key: string): Promise<boolean>;
+  listFiles(prefix: string): Promise<Array<{ key: string; size: number; lastModified: Date }>>;
   getConfig(): R2Config;
 }
 
@@ -115,26 +120,83 @@ export class R2Client implements R2ClientInterface {
   }
 
   /**
-   * ファイルをR2から削除
+   * ファイルをR2にアップロード（簡易版）
    * @param key ファイルキー（パス）
+   * @param data ファイルデータ
+   * @returns アップロードされたファイルのURL
    */
+  async uploadFile(key: string, data: Buffer): Promise<string> {
+    // ファイル拡張子からContent-Typeを推定
+    const extension = key.toLowerCase().split(".").pop();
+    let contentType = "application/octet-stream";
+
+    switch (extension) {
+      case "jpg":
+      case "jpeg":
+        contentType = "image/jpeg";
+        break;
+      case "png":
+        contentType = "image/png";
+        break;
+      case "gif":
+        contentType = "image/gif";
+        break;
+      case "webp":
+        contentType = "image/webp";
+        break;
+      case "pdf":
+        contentType = "application/pdf";
+        break;
+      case "txt":
+        contentType = "text/plain";
+        break;
+      case "json":
+        contentType = "application/json";
+        break;
+    }
+
+    return this.putObject(key, data, contentType);
+  }
   async deleteObject(key: string): Promise<void> {
     return withR2Retry(async () => {
       try {
+        logger.info("R2ファイル削除を開始します", {
+          fileKey: key,
+          bucketName: this.bucketName,
+        });
+
         const command = new DeleteObjectCommand({
           Bucket: this.bucketName,
           Key: key,
         });
 
-        await this.s3Client.send(command);
+        const result = await this.s3Client.send(command);
 
         logger.info("ファイルの削除が完了しました", {
           fileKey: key,
+          bucketName: this.bucketName,
+          result: {
+            $metadata: result.$metadata,
+            DeleteMarker: result.DeleteMarker,
+            VersionId: result.VersionId,
+          },
         });
+
+        // 削除が成功したかを確認するため、HTTPステータスコードをチェック
+        if (result.$metadata.httpStatusCode !== 204 && result.$metadata.httpStatusCode !== 200) {
+          logger.warn("削除リクエストが予期しないステータスコードを返しました", {
+            fileKey: key,
+            statusCode: result.$metadata.httpStatusCode,
+            result: result,
+          });
+        }
       } catch (error) {
         logger.error("ファイルの削除に失敗しました", {
           fileKey: key,
+          bucketName: this.bucketName,
           error: error instanceof Error ? error.message : String(error),
+          errorName: error instanceof Error ? error.name : undefined,
+          errorStack: error instanceof Error ? error.stack : undefined,
         });
 
         throw createR2Error(
@@ -144,6 +206,50 @@ export class R2Client implements R2ClientInterface {
         );
       }
     }, `R2削除: ${key}`);
+  }
+
+  /**
+   * ファイルをR2から削除（エイリアス）
+   * @param key ファイルキー（パス）
+   */
+  async deleteFile(key: string): Promise<void> {
+    return this.deleteObject(key);
+  }
+
+  /**
+   * ファイルの存在確認
+   * @param key ファイルキー（パス）
+   * @returns ファイルが存在する場合true
+   */
+  async fileExists(key: string): Promise<boolean> {
+    return withR2Retry(async () => {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: this.bucketName,
+          Key: key,
+        });
+
+        await this.s3Client.send(command);
+        return true;
+      } catch (error: any) {
+        // ファイルが存在しない場合
+        if (error.name === "NoSuchKey" || error.$metadata?.httpStatusCode === 404) {
+          return false;
+        }
+
+        // その他のエラーは再スロー
+        logger.error("ファイル存在確認でエラーが発生しました", {
+          fileKey: key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `R2存在確認エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2存在確認: ${key}`);
   }
 
   /**
@@ -293,18 +399,62 @@ export class R2Client implements R2ClientInterface {
    * @returns パブリックURL
    */
   private generatePublicUrl(key: string): string {
-    // R2のパブリックURLの形式
-    // https://<bucket-name>.<account-id>.r2.cloudflarestorage.com/<key>
-    const baseUrl = this.config.endpoint.startsWith("https://")
-      ? this.config.endpoint.replace("https://", `https://${this.bucketName}.`)
-      : `https://${this.bucketName}.${this.config.endpoint}.r2.cloudflarestorage.com`;
+    // CloudflareのR2パブリックURLの正しい形式
+    // https://<account-id>.r2.cloudflarestorage.com/<bucket-name>/<key>
 
-    return `${baseUrl}/${key}`;
+    // エンドポイントからアカウントIDを抽出
+    let accountId = this.config.endpoint;
+    if (accountId.startsWith("https://")) {
+      accountId = accountId.replace("https://", "").replace(".r2.cloudflarestorage.com", "");
+    }
+
+    // R2のパブリックURLはバケット名を含む
+    return `https://${accountId}.r2.cloudflarestorage.com/${this.bucketName}/${key}`;
   }
 
   /**
-   * 設定情報を取得（デバッグ用）
+   * 指定されたプレフィックスでファイル一覧を取得
+   * @param prefix ファイルキーのプレフィックス
+   * @returns ファイル一覧
    */
+  async listFiles(
+    prefix: string,
+  ): Promise<Array<{ key: string; size: number; lastModified: Date }>> {
+    return withR2Retry(async () => {
+      try {
+        const command = new ListObjectsV2Command({
+          Bucket: this.bucketName,
+          Prefix: prefix,
+        });
+
+        const response = await this.s3Client.send(command);
+
+        const files = (response.Contents || []).map((object) => ({
+          key: object.Key || "",
+          size: object.Size || 0,
+          lastModified: object.LastModified || new Date(),
+        }));
+
+        logger.debug("ファイル一覧を取得しました", {
+          prefix,
+          fileCount: files.length,
+        });
+
+        return files;
+      } catch (error) {
+        logger.error("ファイル一覧の取得に失敗しました", {
+          prefix,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `R2ファイル一覧取得エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2ファイル一覧取得: ${prefix}`);
+  }
   getConfig(): R2Config {
     return {
       endpoint: this.config.endpoint,

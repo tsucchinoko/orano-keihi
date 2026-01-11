@@ -6,6 +6,8 @@ import {
 	saveSubscriptionReceipt,
 	deleteSubscriptionReceipt,
 	getReceiptFromR2,
+	uploadSubscriptionReceiptToR2,
+	deleteSubscriptionReceiptFromR2,
 } from "$lib/utils/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -127,6 +129,18 @@ function validate(): boolean {
 	// 開始日のバリデーション
 	if (!startDate) {
 		newErrors.startDate = "開始日を入力してください";
+	} else {
+		// YYYY-MM-DD形式の確認
+		const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+		if (!dateRegex.test(startDate)) {
+			newErrors.startDate = "開始日はYYYY-MM-DD形式で入力してください";
+		} else {
+			// 日付の妥当性チェック
+			const dateObj = new Date(startDate + 'T00:00:00');
+			if (isNaN(dateObj.getTime())) {
+				newErrors.startDate = "有効な日付を入力してください";
+			}
+		}
 	}
 
 	// カテゴリのバリデーション
@@ -179,9 +193,17 @@ async function deleteReceipt() {
 	}
 
 	try {
-		const result = await deleteSubscriptionReceipt(subscription.id);
-		if (result.error) {
-			toastStore.error(`領収書の削除に失敗しました: ${result.error}`);
+		// R2から領収書を削除
+		const r2DeleteResult = await deleteSubscriptionReceiptFromR2(subscription.id);
+		if (r2DeleteResult.error) {
+			toastStore.error(`R2からの領収書削除に失敗しました: ${r2DeleteResult.error}`);
+			return;
+		}
+
+		// データベースからも領収書パスを削除
+		const dbDeleteResult = await deleteSubscriptionReceipt(subscription.id);
+		if (dbDeleteResult.error) {
+			toastStore.error(`データベースからの領収書削除に失敗しました: ${dbDeleteResult.error}`);
 			return;
 		}
 
@@ -211,7 +233,7 @@ async function handleSubmit(event: Event) {
 			name: name.trim(),
 			amount: Number.parseFloat(amount),
 			billing_cycle: billingCycle,
-			start_date: new Date(startDate).toISOString(),
+			start_date: startDate, // YYYY-MM-DD形式のまま送信
 			category,
 		};
 
@@ -244,14 +266,23 @@ async function handleSubmit(event: Event) {
 			return;
 		}
 
-		// 領収書ファイルがある場合は保存
+		// 領収書ファイルがある場合はR2にアップロード
 		if (receiptFile && savedSubscriptionId) {
-			const receiptResult = await saveSubscriptionReceipt(
+			const uploadResult = await uploadSubscriptionReceiptToR2(
 				savedSubscriptionId,
 				receiptFile,
 			);
-			if (receiptResult.error) {
-				toastStore.error(`領収書の保存に失敗しました: ${receiptResult.error}`);
+			if (uploadResult.error) {
+				toastStore.error(`領収書のアップロードに失敗しました: ${uploadResult.error}`);
+			} else if (uploadResult.data) {
+				// アップロード成功時は、データベースにHTTPS URLを保存
+				const saveResult = await saveSubscriptionReceipt(
+					savedSubscriptionId,
+					uploadResult.data,
+				);
+				if (saveResult.error) {
+					toastStore.error(`領収書パスの保存に失敗しました: ${saveResult.error}`);
+				}
 			}
 		}
 
@@ -280,7 +311,7 @@ const monthlyAmount = $derived(() => {
 </script>
 
 <div class="card max-w-2xl mx-auto">
-	<h2 class="text-2xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+	<h2 class="text-2xl font-bold mb-6 bg-linear-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
 		{subscription ? 'サブスクリプションを編集' : '新しいサブスクリプションを追加'}
 	</h2>
 

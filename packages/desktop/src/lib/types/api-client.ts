@@ -81,21 +81,35 @@ export async function uploadReceiptViaApi(
   filePath: string
 ): Promise<string> {
   const { invoke } = await import('@tauri-apps/api/core');
+
+  // セッショントークンを取得
+  const { authStore } = await import('../stores/auth.svelte');
+  const sessionToken = authStore.getSessionToken();
+
   return invoke('upload_receipt_via_api', {
-    expenseId,
-    filePath,
+    expense_id: expenseId,
+    file_path: filePath,
+    session_token: sessionToken,
   });
 }
 
 // APIサーバー経由での複数ファイル並列アップロード関数
 export async function uploadMultipleReceiptsViaApi(
   files: MultipleFileUploadInput[],
-  maxConcurrent?: number
+  _maxConcurrent?: number
 ): Promise<MultipleUploadResult> {
   const { invoke } = await import('@tauri-apps/api/core');
+
+  // セッショントークンを取得
+  const { authStore } = await import('../stores/auth.svelte');
+  const sessionToken = authStore.getSessionToken();
+
+  // ファイルパスのリストに変換
+  const filePaths = files.map((file) => file.file_path);
+
   return invoke('upload_multiple_receipts_via_api', {
-    files,
-    maxConcurrent,
+    file_paths: filePaths,
+    session_token: sessionToken,
   });
 }
 
@@ -121,4 +135,20 @@ export async function syncFallbackFiles(): Promise<SyncResult> {
 export async function getFallbackFileCount(): Promise<number> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke('get_fallback_file_count');
+}
+
+// APIサーバー経由でのファイル削除関数
+export async function deleteReceiptViaApi(
+  receiptUrl: string
+): Promise<boolean> {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  // セッショントークンを取得
+  const { authStore } = await import('../stores/auth.svelte');
+  const sessionToken = authStore.getSessionToken();
+
+  return invoke('delete_receipt_via_api', {
+    receipt_url: receiptUrl,
+    session_token: sessionToken,
+  });
 }

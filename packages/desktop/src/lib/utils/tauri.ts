@@ -140,12 +140,14 @@ export async function updateExpense(
  */
 export async function deleteExpense(id: number): Promise<TauriResult<void>> {
   const sessionToken = getAuthToken();
-  return handleTauriCommand(
+  const result = await handleTauriCommand(
     invoke<void>('delete_expense', {
       id,
       sessionToken,
     })
   );
+
+  return result;
 }
 
 /**
@@ -160,7 +162,10 @@ export async function saveReceipt(
   filePath: string
 ): Promise<TauriResult<string>> {
   return handleTauriCommand(
-    invoke<string>('save_receipt', { expenseId, filePath })
+    invoke<string>('save_receipt', {
+      expense_id: expenseId,
+      file_path: filePath,
+    })
   );
 }
 
@@ -181,7 +186,7 @@ export async function createSubscription(
   return handleTauriCommand(
     invoke<Subscription>('create_subscription', {
       dto: subscription,
-      sessionToken,
+      session_token: sessionToken,
     })
   );
 }
@@ -198,8 +203,8 @@ export async function getSubscriptions(
   const sessionToken = getAuthToken();
   return handleTauriCommand(
     invoke<Subscription[]>('get_subscriptions', {
-      activeOnly,
-      sessionToken,
+      active_only: activeOnly,
+      session_token: sessionToken,
     })
   );
 }
@@ -220,7 +225,7 @@ export async function updateSubscription(
     invoke<Subscription>('update_subscription', {
       id,
       dto: subscription,
-      sessionToken,
+      session_token: sessionToken,
     })
   );
 }
@@ -238,7 +243,7 @@ export async function toggleSubscriptionStatus(
   return handleTauriCommand(
     invoke<Subscription>('toggle_subscription_status', {
       id,
-      sessionToken,
+      session_token: sessionToken,
     })
   );
 }
@@ -254,7 +259,7 @@ export async function getMonthlySubscriptionTotal(): Promise<
   const sessionToken = getAuthToken();
   return handleTauriCommand(
     invoke<number>('get_monthly_subscription_total', {
-      sessionToken,
+      session_token: sessionToken,
     })
   );
 }
@@ -270,10 +275,33 @@ export async function saveSubscriptionReceipt(
   subscriptionId: number,
   filePath: string
 ): Promise<TauriResult<string>> {
+  const sessionToken = getAuthToken();
   return handleTauriCommand(
-    invoke<string>('save_subscription_receipt', { subscriptionId, filePath })
+    invoke<string>('save_subscription_receipt', {
+      subscription_id: subscriptionId,
+      file_path: filePath,
+      session_token: sessionToken,
+    })
   );
 }
+/**
+ * 経費の領収書を削除する
+ *
+ * @param expenseId - 経費ID
+ * @returns 成功またはエラー
+ */
+export async function deleteExpenseReceipt(
+  expenseId: number
+): Promise<TauriResult<boolean>> {
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<boolean>('delete_expense_receipt', {
+      expense_id: expenseId,
+      session_token: sessionToken,
+    })
+  );
+}
+
 /**
  * 経費の領収書を削除する
  *
@@ -283,7 +311,9 @@ export async function saveSubscriptionReceipt(
 export async function deleteReceipt(
   expenseId: number
 ): Promise<TauriResult<boolean>> {
-  return handleTauriCommand(invoke<boolean>('delete_receipt', { expenseId }));
+  return handleTauriCommand(
+    invoke<boolean>('delete_receipt', { expense_id: expenseId })
+  );
 }
 
 /**
@@ -295,8 +325,12 @@ export async function deleteReceipt(
 export async function deleteSubscriptionReceipt(
   subscriptionId: number
 ): Promise<TauriResult<boolean>> {
+  const sessionToken = getAuthToken();
   return handleTauriCommand(
-    invoke<boolean>('delete_subscription_receipt', { subscriptionId })
+    invoke<boolean>('delete_subscription_receipt', {
+      subscription_id: subscriptionId,
+      session_token: sessionToken,
+    })
   );
 }
 
@@ -325,9 +359,9 @@ export async function uploadReceiptToR2(
 
   return handleTauriCommand(
     invoke<string>('upload_receipt_with_auth', {
-      sessionToken,
-      expenseId,
-      filePath,
+      session_token: sessionToken,
+      expense_id: expenseId,
+      file_path: filePath,
     })
   );
 }
@@ -351,8 +385,8 @@ export async function getReceiptFromR2(
 
   return handleTauriCommand(
     invoke<string>('get_receipt_via_api', {
-      sessionToken,
-      receiptUrl,
+      session_token: sessionToken,
+      receipt_url: receiptUrl,
     })
   );
 }
@@ -360,11 +394,11 @@ export async function getReceiptFromR2(
 /**
  * R2から領収書を削除する（ユーザー認証付き）
  *
- * @param expenseId - 経費ID
+ * @param receiptUrl - 削除する領収書のHTTPS URL
  * @returns 成功またはエラー
  */
 export async function deleteReceiptFromR2(
-  expenseId: number
+  receiptUrl: string
 ): Promise<TauriResult<boolean>> {
   const sessionToken = getAuthToken();
   if (!sessionToken) {
@@ -375,9 +409,9 @@ export async function deleteReceiptFromR2(
   }
 
   return handleTauriCommand(
-    invoke<boolean>('delete_receipt_with_auth', {
-      sessionToken,
-      expenseId,
+    invoke<boolean>('delete_receipt_via_api', {
+      receipt_url: receiptUrl,
+      session_token: sessionToken,
     })
   );
 }
@@ -571,7 +605,7 @@ export async function validateSession(
 ): Promise<TauriResult<import('../types').ValidateSessionResponse>> {
   return handleTauriCommand(
     invoke<import('../types').ValidateSessionResponse>('validate_session', {
-      sessionToken,
+      session_token: sessionToken,
     })
   );
 }
@@ -583,7 +617,9 @@ export async function validateSession(
  * @returns ログアウト結果またはエラー
  */
 export async function logout(sessionToken: string): Promise<TauriResult<void>> {
-  return handleTauriCommand(invoke<void>('logout', { sessionToken }));
+  return handleTauriCommand(
+    invoke<void>('logout', { session_token: sessionToken })
+  );
 }
 
 /**
@@ -596,7 +632,9 @@ export async function getAuthState(
   sessionToken?: string
 ): Promise<TauriResult<import('../types').AuthState>> {
   return handleTauriCommand(
-    invoke<import('../types').AuthState>('get_auth_state', { sessionToken })
+    invoke<import('../types').AuthState>('get_auth_state', {
+      session_token: sessionToken,
+    })
   );
 }
 
@@ -624,10 +662,10 @@ export async function uploadSubscriptionReceiptToR2(
   }
 
   return handleTauriCommand(
-    invoke<string>('upload_subscription_receipt_with_auth', {
-      sessionToken,
-      subscriptionId,
-      filePath,
+    invoke<string>('upload_subscription_receipt_via_api', {
+      subscription_id: subscriptionId,
+      file_path: filePath,
+      session_token: sessionToken,
     })
   );
 }
@@ -650,9 +688,26 @@ export async function deleteSubscriptionReceiptFromR2(
   }
 
   return handleTauriCommand(
-    invoke<boolean>('delete_subscription_receipt_with_auth', {
-      sessionToken,
-      subscriptionId,
+    invoke<boolean>('delete_subscription_receipt_via_api', {
+      subscription_id: subscriptionId,
+      session_token: sessionToken,
+    })
+  );
+}
+/**
+ * サブスクリプションを削除する
+ *
+ * @param id - 削除するサブスクリプションのID
+ * @returns 成功またはエラー
+ */
+export async function deleteSubscription(
+  id: number
+): Promise<TauriResult<void>> {
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<void>('delete_subscription', {
+      id,
+      session_token: sessionToken,
     })
   );
 }

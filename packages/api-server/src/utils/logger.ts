@@ -21,7 +21,7 @@ if (!isCloudflareWorkers) {
       fs.mkdirSync(logDir, { recursive: true });
     }
     canUseFileSystem = true;
-  } catch (error) {
+  } catch {
     // ファイルシステムが利用できない環境では何もしない
     console.warn("ファイルシステムが利用できません。ログはコンソールのみに出力されます。");
     canUseFileSystem = false;

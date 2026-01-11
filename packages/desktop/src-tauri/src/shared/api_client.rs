@@ -230,6 +230,30 @@ impl ApiClient {
         }
     }
 
+    /// ボディ付きDELETEリクエストを送信
+    pub async fn delete_with_body<T>(
+        &self,
+        endpoint: &str,
+        body: &serde_json::Value,
+        auth_token: Option<&str>,
+    ) -> Result<T, AppError>
+    where
+        T: DeserializeOwned,
+    {
+        info!("ボディ付きDELETEリクエスト送信: endpoint={endpoint}");
+
+        let url = format!("{}{endpoint}", self.config.base_url);
+        let mut request = self.client.delete(&url).json(body);
+
+        // 認証トークンがある場合は追加
+        if let Some(token) = auth_token {
+            request = request.header("Authorization", format!("Bearer {token}"));
+        }
+
+        self.send_request_with_retry(request, "DELETE", endpoint)
+            .await
+    }
+
     /// リトライ機能付きでリクエストを送信
     async fn send_request_with_retry<T>(
         &self,

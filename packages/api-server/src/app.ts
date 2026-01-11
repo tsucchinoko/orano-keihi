@@ -22,7 +22,7 @@ import {
   createR2TestService,
   createAuthService,
   createFileUploadService,
-  createSubscriptionService,
+  createTauriSubscriptionService,
 } from "./services/index.js";
 import {
   createAuthMiddleware,
@@ -32,6 +32,8 @@ import {
   logError,
   logSecurityEvent,
 } from "./middleware/index.js";
+import { updaterApp } from "./routes/updater.js";
+import { createReceiptsRouter } from "./routes/receipts.js";
 
 /**
  * ファイルキーからContent-Typeを推定する
@@ -66,12 +68,13 @@ function getContentTypeFromFileKey(fileKey: string): string {
  * Honoアプリケーションを作成
  * @param config API サーバー設定
  * @param r2Bucket Workers環境でのR2バケットバインディング（オプション）
+ * @param accountId CloudflareアカウントID（Workers環境で必要）
  */
-export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
+export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket, accountId?: string): Hono {
   const app = new Hono();
 
   // 環境に応じたR2クライアントを初期化
-  const r2Client = createEnvironmentAwareR2Client(config.r2, r2Bucket);
+  const r2Client = createEnvironmentAwareR2Client(config.r2, r2Bucket, accountId);
   const r2TestService = createR2TestService(r2Client);
 
   // 認証サービスを初期化
@@ -80,8 +83,8 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
   // ファイルアップロードサービスを初期化
   const fileUploadService = createFileUploadService(r2Client, config.fileUpload);
 
-  // サブスクリプションサービスを初期化
-  const subscriptionService = createSubscriptionService();
+  // サブスクリプションサービスを初期化（Tauri経由）
+  const subscriptionService = createTauriSubscriptionService();
 
   // 認証ミドルウェアを作成
   const authMiddleware = createAuthMiddleware(authService);
@@ -129,6 +132,14 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
       environment: config.nodeEnv,
     });
   });
+
+  // アップデーター関連エンドポイント
+  app.route("/api/updater", updaterApp);
+
+  // 領収書関連エンドポイント（認証が必要）
+  const receiptsRouter = createReceiptsRouter(r2Client);
+  app.use("/api/v1/receipts/*", authMiddleware);
+  app.route("/api/v1/receipts", receiptsRouter);
 
   // R2接続テストエンドポイント（認証が必要）
   app.get("/api/v1/system/r2/test", authMiddleware, async (c) => {
@@ -463,6 +474,111 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket): Hono {
     } catch (error) {
       return handleError(c, error instanceof Error ? error : new Error(String(error)), {
         context: "月額サブスクリプション合計取得",
+      });
+    }
+  });
+
+  // サブスクリプション領収書アップロード
+  app.post("/api/v1/subscriptions/receipt/upload", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const body = await c.req.json();
+
+      const { subscriptionId, fileName, fileData } = body;
+
+      if (!subscriptionId || !fileName || !fileData) {
+        throw createValidationError(
+          "必要なパラメータが不足しています",
+          "body",
+          { subscriptionId, fileName, fileData: !!fileData },
+          "subscriptionId, fileName, fileData are required",
+        );
+      }
+
+      // Base64データをデコード
+      const buffer = Buffer.from(fileData, "base64");
+
+      // ファイルキーを生成（users/subscriptionsフォルダを使用）
+      const timestamp = Date.now();
+      const fileKey = `users/${user.id}/subscriptions/${subscriptionId}/${timestamp}_${fileName}`;
+
+      // R2にアップロード
+      await r2Client.uploadFile(fileKey, buffer);
+
+      // HTTPS URLを生成（R2クライアントのputObjectメソッドが返すURLを使用）
+      const httpsUrl = await r2Client.putObject(fileKey, buffer, "application/octet-stream");
+
+      logger.info("サブスクリプション領収書をアップロードしました", {
+        userId: user.id,
+        subscriptionId,
+        fileKey,
+        fileSize: buffer.length,
+        httpsUrl,
+      });
+
+      return c.json({
+        success: true,
+        url: httpsUrl,
+        fileKey,
+        fileSize: buffer.length,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプション領収書アップロード",
+      });
+    }
+  });
+
+  // サブスクリプション領収書削除
+  app.delete("/api/v1/subscriptions/:id/receipt", authMiddleware, async (c) => {
+    try {
+      const user = c.get("user");
+      const subscriptionId = parseInt(c.req.param("id"), 10);
+
+      if (isNaN(subscriptionId)) {
+        throw createValidationError(
+          "有効なサブスクリプションIDが指定されていません",
+          "id",
+          subscriptionId,
+          "valid number required",
+        );
+      }
+
+      // サブスクリプションフォルダ内のファイルを削除
+      const folderPrefix = `users/${user.id}/subscriptions/${subscriptionId}/`;
+
+      try {
+        // フォルダ内のファイル一覧を取得して削除
+        const files = await r2Client.listFiles(folderPrefix);
+        for (const file of files) {
+          await r2Client.deleteFile(file.key);
+        }
+      } catch (error) {
+        // ファイルが存在しない場合は正常として扱う
+        logger.debug("サブスクリプション領収書フォルダが見つかりませんでした", {
+          userId: user.id,
+          subscriptionId,
+          folderPrefix,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      logger.info("サブスクリプション領収書を削除しました", {
+        userId: user.id,
+        subscriptionId,
+        folderPrefix,
+      });
+
+      return c.json({
+        success: true,
+        message: "サブスクリプション領収書が正常に削除されました",
+        subscriptionId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプション領収書削除",
       });
     }
   });

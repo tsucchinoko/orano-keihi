@@ -183,6 +183,9 @@ pub async fn get_monthly_subscription_total(
 /// # 戻り値
 /// バリデーション成功時はOk(())、失敗時はエラーメッセージ
 fn validate_create_subscription_dto(dto: &CreateSubscriptionDto) -> Result<(), String> {
+    // デバッグログを追加
+    log::info!("バリデーション開始 - 受信した日付: {}", dto.start_date);
+
     // バリデーション: サービス名は必須
     if dto.name.trim().is_empty() {
         return Err("サービス名を入力してください".to_string());
@@ -265,26 +268,39 @@ fn validate_update_subscription_dto(dto: &UpdateSubscriptionDto) -> Result<(), S
 /// # 戻り値
 /// バリデーション成功時はOk(())、失敗時はエラーメッセージ
 fn validate_date_format(date: &str) -> Result<(), String> {
+    // 空文字チェック
+    if date.is_empty() {
+        return Err("日付が空です".to_string());
+    }
+
     // YYYY-MM-DD形式の基本チェック
     if date.len() != 10 {
-        return Err("日付はYYYY-MM-DD形式で入力してください".to_string());
+        return Err(format!(
+            "日付はYYYY-MM-DD形式で入力してください（受信: '{}', 長さ: {}）",
+            date,
+            date.len()
+        ));
     }
 
     let parts: Vec<&str> = date.split('-').collect();
     if parts.len() != 3 {
-        return Err("日付はYYYY-MM-DD形式で入力してください".to_string());
+        return Err(format!(
+            "日付はYYYY-MM-DD形式で入力してください（受信: '{}', 分割数: {}）",
+            date,
+            parts.len()
+        ));
     }
 
     // 年、月、日が数値かチェック
     let year: i32 = parts[0]
         .parse()
-        .map_err(|_| "年は数値で入力してください".to_string())?;
+        .map_err(|_| format!("年は数値で入力してください（受信: '{}'）", parts[0]))?;
     let month: u32 = parts[1]
         .parse()
-        .map_err(|_| "月は数値で入力してください".to_string())?;
+        .map_err(|_| format!("月は数値で入力してください（受信: '{}'）", parts[1]))?;
     let day: u32 = parts[2]
         .parse()
-        .map_err(|_| "日は数値で入力してください".to_string())?;
+        .map_err(|_| format!("日は数値で入力してください（受信: '{}'）", parts[2]))?;
 
     // 基本的な範囲チェック
     if !(1900..=2100).contains(&year) {
@@ -298,4 +314,144 @@ fn validate_date_format(date: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// サブスクリプションを削除する
+///
+/// # 引数
+/// * `id` - サブスクリプションID
+/// * `session_token` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_subscription(
+    id: i64,
+    session_token: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<(), String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/delete")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 認証されたユーザーのサブスクリプションを削除
+    repository::delete(&db, id, user.id).map_err(|e| e.user_message().to_string())
+}
+/// サブスクリプションの領収書ファイルを保存する
+///
+/// # 引数
+/// * `subscription_id` - サブスクリプションID
+/// * `file_path` - 保存するファイルのパス
+/// * `session_token` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 保存されたファイルパス、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn save_subscription_receipt(
+    subscription_id: i64,
+    file_path: String,
+    session_token: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<String, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/receipt/save")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 領収書パスを設定
+    repository::set_receipt_path(&db, subscription_id, file_path.clone(), user.id)
+        .map_err(|e| e.user_message().to_string())?;
+
+    Ok(file_path)
+}
+
+/// サブスクリプションの領収書を削除する
+///
+/// # 引数
+/// * `subscription_id` - サブスクリプションID
+/// * `session_token` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_subscription_receipt(
+    subscription_id: i64,
+    session_token: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<bool, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/receipt/delete")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 領収書パスを削除（空文字列を設定）
+    repository::set_receipt_path(&db, subscription_id, String::new(), user.id)
+        .map_err(|e| e.user_message().to_string())?;
+
+    Ok(true)
+}
+
+/// サブスクリプションの領収書パスを取得する
+///
+/// # 引数
+/// * `subscription_id` - サブスクリプションID
+/// * `session_token` - セッショントークン
+/// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 領収書パス（存在する場合）、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn get_subscription_receipt_path(
+    subscription_id: i64,
+    session_token: Option<String>,
+    state: State<'_, AppState>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<Option<String>, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/receipt/get")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // データベース接続を取得
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| format!("データベースロックエラー: {e}"))?;
+
+    // 領収書パスを取得
+    repository::get_receipt_path(&db, subscription_id, user.id)
+        .map_err(|e| e.user_message().to_string())
 }

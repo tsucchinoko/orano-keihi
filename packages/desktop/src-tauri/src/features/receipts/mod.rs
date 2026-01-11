@@ -6,7 +6,6 @@ pub mod auth_commands;
 pub mod cache;
 pub mod commands;
 pub mod models;
-pub mod service;
 pub mod user_path_manager;
 
 // 公開インターフェース
@@ -17,9 +16,6 @@ pub use models::{
     PerformanceStats, R2ConnectionTestResult, R2DebugInfo, R2UsageInfo, ReceiptCache,
     SingleUploadResult, TestStepResult, UploadProgress, UploadResult, UploadStatus,
 };
-
-// サービス
-pub use service::R2Client;
 
 // ユーザーパス管理
 pub use user_path_manager::UserPathManager;
@@ -39,16 +35,7 @@ pub use api_commands::{
 };
 
 // コマンド（Tauriコマンドハンドラー）
-pub use commands::{
-    delete_receipt_from_r2, get_cache_stats, get_r2_performance_stats, get_receipt_from_r2,
-    get_receipt_offline, sync_cache_on_online, test_r2_connection, upload_multiple_receipts_to_r2,
-};
-
-// 認証付きコマンド（新規）
-pub use auth_commands::{
-    delete_receipt_with_auth, download_receipt_with_auth, extract_path_from_url_with_auth,
-    get_receipt_with_auth, upload_receipt_with_auth,
-};
+pub use commands::{get_cache_stats, get_receipt_offline, sync_cache_on_online};
 
 /// 領収書機能の初期化とセットアップ
 pub fn initialize() {
@@ -58,35 +45,6 @@ pub fn initialize() {
     // 例：キャッシュディレクトリの作成、設定の検証など
 
     log::info!("領収書機能モジュールの初期化が完了しました");
-}
-
-/// 領収書機能のヘルスチェック
-pub async fn health_check() -> Result<(), String> {
-    log::info!("領収書機能のヘルスチェックを実行しています...");
-
-    // R2接続テスト
-    match crate::shared::config::environment::R2Config::from_env() {
-        Some(config) => match R2Client::new(config).await {
-            Ok(client) => match client.test_connection().await {
-                Ok(_) => {
-                    log::info!("領収書機能のヘルスチェックが成功しました");
-                    Ok(())
-                }
-                Err(e) => {
-                    log::warn!("R2接続テストに失敗しました: {e}");
-                    Err(format!("R2接続テストに失敗しました: {e}"))
-                }
-            },
-            Err(e) => {
-                log::warn!("R2クライアントの初期化に失敗しました: {e}");
-                Err(format!("R2クライアントの初期化に失敗しました: {e}"))
-            }
-        },
-        None => {
-            log::warn!("R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません");
-            Err("R2設定の読み込みに失敗しました: 必要な環境変数が設定されていません".to_string())
-        }
-    }
 }
 
 /// 領収書機能の統計情報を取得

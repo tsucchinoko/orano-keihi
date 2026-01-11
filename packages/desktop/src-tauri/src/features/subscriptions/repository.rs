@@ -183,7 +183,6 @@ pub fn toggle_status(conn: &Connection, id: i64, user_id: i64) -> Result<Subscri
 ///
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラー
-#[allow(dead_code)]
 pub fn delete(conn: &Connection, id: i64, user_id: i64) -> Result<(), AppError> {
     let rows_affected = conn.execute(
         "DELETE FROM subscriptions WHERE id = ?1 AND user_id = ?2",

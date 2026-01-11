@@ -6,17 +6,21 @@ import {
 	getR2DebugInfo,
 	getR2PerformanceStats,
 } from "$lib/utils/tauri";
+import { UpdaterService } from "$lib/services/updater";
 import type {
 	R2ConnectionTestResult,
 	R2UsageInfo,
 	R2DebugInfo,
 	PerformanceStats,
 } from "$lib/types";
+import type { UpdateInfo } from "$lib/types/updater";
 
 let connectionTestResult: R2ConnectionTestResult | null = null;
 let usageInfo: R2UsageInfo | null = null;
 let debugInfo: R2DebugInfo | null = null;
 let performanceStats: PerformanceStats | null = null;
+let updateInfo: UpdateInfo | null = null;
+let currentVersion: string = "";
 let isLoading = false;
 let error: string | null = null;
 
@@ -92,6 +96,42 @@ async function loadPerformanceStats() {
 	}
 }
 
+async function checkForUpdates() {
+	isLoading = true;
+	error = null;
+
+	try {
+		updateInfo = await UpdaterService.checkForUpdates();
+	} catch (e) {
+		error = `アップデートチェックエラー: ${e}`;
+	} finally {
+		isLoading = false;
+	}
+}
+
+async function downloadAndInstallUpdate() {
+	if (!updateInfo?.available) return;
+
+	isLoading = true;
+	error = null;
+
+	try {
+		await UpdaterService.downloadAndInstall();
+		// インストール成功後はアプリケーションが再起動される
+	} catch (e) {
+		error = `アップデートインストールエラー: ${e}`;
+		isLoading = false;
+	}
+}
+
+async function getCurrentVersion() {
+	try {
+		currentVersion = await UpdaterService.getAppVersion();
+	} catch (e) {
+		console.error("バージョン取得エラー:", e);
+	}
+}
+
 function formatBytes(bytes: number): string {
 	if (bytes === 0) return "0 Bytes";
 	const k = 1024;
@@ -108,6 +148,8 @@ function formatDuration(ms: number): string {
 onMount(() => {
 	// ページ読み込み時にパフォーマンス統計を自動取得
 	loadPerformanceStats();
+	// 現在のバージョンを取得
+	getCurrentVersion();
 });
 </script>
 
@@ -127,12 +169,105 @@ onMount(() => {
 		</div>
 	{/if}
 
+	<!-- アップデート機能テストセクション -->
+	<div class="card bg-base-100 shadow-xl mb-6">
+		<div class="card-body">
+			<h2 class="card-title">アップデート機能テスト</h2>
+			
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+				<div class="stat">
+					<div class="stat-title">現在のバージョン</div>
+					<div class="stat-value text-primary">{currentVersion || "取得中..."}</div>
+				</div>
+				{#if updateInfo}
+					<div class="stat">
+						<div class="stat-title">最新バージョン</div>
+						<div class="stat-value" class:text-success={!updateInfo.available} class:text-warning={updateInfo.available}>
+							{updateInfo.latest_version || "N/A"}
+						</div>
+					</div>
+				{/if}
+			</div>
+
+			<div class="flex gap-2 mb-4">
+				<button 
+					class="btn btn-primary" 
+					class:loading={isLoading}
+					onclick={checkForUpdates}
+					disabled={isLoading}
+				>
+					アップデートチェック
+				</button>
+				
+				{#if updateInfo?.available}
+					<button 
+						class="btn btn-warning" 
+						class:loading={isLoading}
+						onclick={downloadAndInstallUpdate}
+						disabled={isLoading}
+					>
+						アップデートをインストール
+					</button>
+				{/if}
+			</div>
+
+			{#if updateInfo}
+				<div class="card bg-base-200">
+					<div class="card-body p-4">
+						<h3 class="font-semibold flex items-center gap-2">
+							アップデート情報
+							<div class="badge" class:badge-success={!updateInfo.available} class:badge-warning={updateInfo.available}>
+								{updateInfo.available ? 'アップデート利用可能' : '最新版です'}
+							</div>
+						</h3>
+						
+						{#if updateInfo.available}
+							<div class="space-y-2 mt-2">
+								<div class="flex justify-between text-sm">
+									<span>現在のバージョン:</span>
+									<span class="font-mono">{updateInfo.current_version}</span>
+								</div>
+								<div class="flex justify-between text-sm">
+									<span>最新バージョン:</span>
+									<span class="font-mono text-warning">{updateInfo.latest_version}</span>
+								</div>
+								{#if updateInfo.content_length}
+									<div class="flex justify-between text-sm">
+										<span>ダウンロードサイズ:</span>
+										<span class="font-mono">{UpdaterService.formatFileSize(updateInfo.content_length)}</span>
+									</div>
+								{/if}
+								<div class="flex justify-between text-sm">
+									<span>最終チェック:</span>
+									<span class="font-mono">{UpdaterService.formatTimestamp(updateInfo.last_checked)}</span>
+								</div>
+								
+								{#if updateInfo.release_notes}
+									<div class="mt-3">
+										<h4 class="font-semibold text-sm mb-1">リリースノート:</h4>
+										<div class="text-xs bg-base-300 p-2 rounded max-h-32 overflow-y-auto whitespace-pre-wrap">
+											{updateInfo.release_notes}
+										</div>
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<p class="text-sm text-gray-600 mt-2">
+								現在のバージョン {updateInfo.current_version} が最新です。
+							</p>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</div>
+	</div>
+
 	<!-- アクションボタン -->
 	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
 		<button 
 			class="btn btn-primary" 
 			class:loading={isLoading}
-			on:click={runConnectionTest}
+			onclick={runConnectionTest}
 			disabled={isLoading}
 		>
 			接続テスト実行
@@ -141,7 +276,7 @@ onMount(() => {
 		<button 
 			class="btn btn-secondary" 
 			class:loading={isLoading}
-			on:click={loadUsageInfo}
+			onclick={loadUsageInfo}
 			disabled={isLoading}
 		>
 			使用量情報取得
@@ -150,7 +285,7 @@ onMount(() => {
 		<button 
 			class="btn btn-accent" 
 			class:loading={isLoading}
-			on:click={loadDebugInfo}
+			onclick={loadDebugInfo}
 			disabled={isLoading}
 		>
 			デバッグ情報取得
@@ -159,7 +294,7 @@ onMount(() => {
 		<button 
 			class="btn btn-info" 
 			class:loading={isLoading}
-			on:click={loadPerformanceStats}
+			onclick={loadPerformanceStats}
 			disabled={isLoading}
 		>
 			パフォーマンス統計

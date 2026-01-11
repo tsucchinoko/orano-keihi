@@ -1,5 +1,5 @@
 {
-	"name": "subscription-memo-workspace",
+	"name": "orano-keihi-workspace",
 	"version": "0.1.0",
 	"description": "サブスクリプション管理アプリケーションのワークスペース",
 	"type": "module",

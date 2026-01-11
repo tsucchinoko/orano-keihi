@@ -51,7 +51,7 @@ Node.js + pnpm
 ### package.json構造
 ```json
 {
-  "name": "subscription-memo",
+  "name": "orano-keihi",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

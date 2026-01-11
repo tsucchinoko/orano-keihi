@@ -1,17 +1,13 @@
 <script lang="ts">
 import { onMount } from "svelte";
 import { goto } from "$app/navigation";
-// 一時的にコンポーネントのインポートをコメントアウト
-// import { SubscriptionForm, SubscriptionList } from "$features/subscriptions";
-// import { ExpenseForm } from "$features/expenses";
+import { ExpenseForm } from "$features/expenses";
 import type { Expense, Subscription } from "$lib/types";
 import {
 	getExpenses,
+    getMonthlySubscriptionTotal,
+    getSubscriptions,
 } from "$lib/utils/tauri";
-import {
-	fetchSubscriptions,
-	fetchMonthlySubscriptionTotal,
-} from "$lib/utils/api-client";
 import { authStore } from "$lib/stores";
 
 // 状態管理
@@ -23,12 +19,6 @@ let error = $state<string | null>(null);
 
 // 認証状態のリアクティブな値
 let isAuthenticated = $derived(authStore.isAuthenticated);
-let isLoading = $derived(authStore.isLoading);
-let authError = $derived(authStore.error);
-
-// モーダル表示状態（サブスクリプション編集）
-let showEditModal = $state(false);
-let editingSubscription = $state<Subscription | undefined>(undefined);
 
 // モーダル表示状態（経費追加）
 let showExpenseModal = $state(false);
@@ -73,20 +63,31 @@ async function loadData() {
 		// 認証されている場合のみサブスクリプションデータを取得
 		if (isAuthenticated) {
 			try {
-				// サブスクリプションを取得（APIサーバー経由）
-				const subscriptionsResponse = await fetchSubscriptions(true);
-				subscriptions = subscriptionsResponse.subscriptions || [];
+				// サブスクリプションを取得（Tauriコマンド経由）
+				const subscriptionsResult = await getSubscriptions(true);
+				
+				if (subscriptionsResult.error) {
+					console.warn("サブスクリプション取得エラー:", subscriptionsResult.error);
+					subscriptions = [];
+				} else {
+					subscriptions = subscriptionsResult.data || [];
+				}
 				
 				// 月額合計を別途取得
 				try {
-					const monthlyTotalResponse = await fetchMonthlySubscriptionTotal();
-					monthlySubscriptionTotal = monthlyTotalResponse.total || 0;
+					const monthlyTotalResult = await getMonthlySubscriptionTotal();
+					if (monthlyTotalResult.error) {
+						console.warn("月額合計取得エラー:", monthlyTotalResult.error);
+						monthlySubscriptionTotal = 0;
+					} else {
+						monthlySubscriptionTotal = monthlyTotalResult.data || 0;
+					}
 				} catch (totalError) {
 					console.warn("月額合計の取得に失敗:", totalError);
 					monthlySubscriptionTotal = 0;
 				}
 			} catch (apiError) {
-				console.warn("APIサーバー経由でのサブスクリプション取得に失敗:", apiError);
+				console.warn("サブスクリプション取得に失敗:", apiError);
 				// フォールバック: 空のデータを設定
 				subscriptions = [];
 				monthlySubscriptionTotal = 0;
@@ -121,25 +122,6 @@ function handleExpenseFormCancel() {
 	showExpenseModal = false;
 }
 
-// サブスクリプション編集ハンドラー
-function handleEditSubscription(subscription: Subscription) {
-	editingSubscription = subscription;
-	showEditModal = true;
-}
-
-// サブスクリプションフォーム成功時
-function handleSubscriptionFormSuccess() {
-	showEditModal = false;
-	editingSubscription = undefined;
-	// データを再読み込み
-	loadData();
-}
-
-// サブスクリプションフォームキャンセル時
-function handleSubscriptionFormCancel() {
-	showEditModal = false;
-	editingSubscription = undefined;
-}
 
 onMount(() => {
 	loadData();
@@ -320,45 +302,27 @@ function getCategoryColor(category: string): string {
 			class="modal-overlay" 
 			role="dialog" 
 			aria-modal="true"
+			tabindex="0"
 			onclick={handleExpenseFormCancel}
 			onkeydown={(e) => e.key === 'Escape' && handleExpenseFormCancel()}
 		>
 			<div 
 				class="modal-content" 
-				role="document"
+				role="button"
+				tabindex="-1"
 				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => e.stopPropagation()}
 			>
-				<!-- 一時的にコンポーネントをコメントアウト -->
-				<p>経費フォーム（開発中）</p>
-				<!-- <ExpenseForm
-					onSuccess={handleExpenseFormSuccess}
-					onCancel={handleExpenseFormCancel}
-				/> -->
-			</div>
-		</div>
-	{/if}
-
-	<!-- サブスクリプション編集モーダル -->
-	{#if showEditModal}
-		<div 
-			class="modal-overlay" 
-			role="dialog" 
-			aria-modal="true"
-			onclick={handleSubscriptionFormCancel}
-			onkeydown={(e) => e.key === 'Escape' && handleSubscriptionFormCancel()}
-		>
-			<div 
-				class="modal-content" 
-				role="document"
-				onclick={(e) => e.stopPropagation()}
-			>
-				<!-- 一時的にコンポーネントをコメントアウト -->
-				<p>サブスクリプションフォーム（開発中）</p>
-				<!-- <SubscriptionForm
-					subscription={editingSubscription}
-					onSuccess={handleSubscriptionFormSuccess}
-					onCancel={handleSubscriptionFormCancel}
-				/> -->
+				<div class="modal-header">
+					<h2 class="modal-title">経費を追加</h2>
+					<button class="modal-close" onclick={handleExpenseFormCancel} aria-label="閉じる">×</button>
+				</div>
+				<div class="modal-body">
+					<ExpenseForm
+						onSuccess={handleExpenseFormSuccess}
+						onCancel={handleExpenseFormCancel}
+					/>
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -693,7 +657,7 @@ function getCategoryColor(category: string): string {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		z-index: 1000;
+		z-index: 50;
 		padding: 1rem;
 		backdrop-filter: blur(4px);
 		animation: fadeIn 0.2s ease-out;
@@ -701,14 +665,53 @@ function getCategoryColor(category: string): string {
 
 	.modal-content {
 		background: white;
-		border-radius: 16px;
-		padding: 2rem;
+		border-radius: 12px;
 		max-width: 600px;
 		width: 100%;
 		max-height: 90vh;
 		overflow-y: auto;
 		box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 		animation: modalSlideIn 0.3s ease-out;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1.5rem;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.modal-title {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #1f2937;
+		margin: 0;
+	}
+
+	.modal-close {
+		background: none;
+		border: none;
+		font-size: 2rem;
+		color: #9ca3af;
+		cursor: pointer;
+		padding: 0;
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 4px;
+		transition: all 0.2s ease-in-out;
+	}
+
+	.modal-close:hover {
+		background: #f3f4f6;
+		color: #374151;
+	}
+
+	.modal-body {
+		padding: 1.5rem;
 	}
 
 	@keyframes fadeIn {
@@ -758,8 +761,12 @@ function getCategoryColor(category: string): string {
 		}
 
 		.modal-content {
-			padding: 1.5rem;
 			max-height: 95vh;
+		}
+
+		.modal-header,
+		.modal-body {
+			padding: 1rem;
 		}
 	}
 </style>

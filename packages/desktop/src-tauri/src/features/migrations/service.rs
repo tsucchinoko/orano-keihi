@@ -146,20 +146,30 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
             category TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
             receipt_path TEXT,
+            user_id INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )",
         [],
     )?;
 
-    // 既存のサブスクリプションテーブルにreceipt_pathカラムを追加（存在しない場合）
+    // 既存のサブスクリプションテーブルに必要なカラムを追加（存在しない場合）
     // SQLiteはALTER TABLE ADD COLUMN IF NOT EXISTSをサポートしていないため、
     // エラーを無視する方法で対応
     let _ = conn.execute("ALTER TABLE subscriptions ADD COLUMN receipt_path TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE subscriptions ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1",
+        [],
+    );
 
     // サブスクリプションテーブルのインデックスを作成
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_subscriptions_active ON subscriptions(is_active)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)",
         [],
     )?;
 

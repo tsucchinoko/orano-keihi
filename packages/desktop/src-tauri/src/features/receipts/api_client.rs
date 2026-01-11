@@ -115,8 +115,7 @@ impl ApiClient {
     pub async fn upload_file(
         &self,
         expense_id: i64,
-        _file_path: &str,
-        file_data: Vec<u8>,
+        file_data: &[u8],
         filename: &str,
         auth_token: &str,
     ) -> Result<UploadResponse, AppError> {
@@ -131,7 +130,7 @@ impl ApiClient {
             let form = multipart::Form::new()
                 .part(
                     "file",
-                    multipart::Part::bytes(file_data.clone())
+                    multipart::Part::bytes(file_data.to_vec())
                         .file_name(filename.to_string())
                         .mime_str(&self.get_content_type(filename))
                         .map_err(|e| AppError::Validation(format!("MIMEタイプ設定エラー: {e}")))?,

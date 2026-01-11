@@ -16,9 +16,11 @@ export class R2WorkerClient implements R2ClientInterface {
   constructor(
     private r2Bucket: R2Bucket,
     private bucketName: string,
+    private accountId: string,
   ) {
     logger.info("Workers環境用R2クライアントを初期化しました", {
       bucketName: this.bucketName,
+      accountId: this.accountId,
     });
   }
 
@@ -92,6 +94,14 @@ export class R2WorkerClient implements R2ClientInterface {
         );
       }
     }, `R2削除: ${key}`);
+  }
+
+  /**
+   * ファイルをR2から削除（エイリアス）
+   * @param key ファイルキー（パス）
+   */
+  async deleteFile(key: string): Promise<void> {
+    return this.deleteObject(key);
   }
 
   /**
@@ -204,22 +214,91 @@ export class R2WorkerClient implements R2ClientInterface {
 
   /**
    * パブリックURLを生成
-   * Workers環境では通常カスタムドメインやWorkers経由でアクセスするため、
-   * 実際のパブリックURLは使用しない
    * @param key ファイルキー
-   * @returns ダミーURL（実際にはWorkers経由でアクセス）
+   * @returns 実際のR2パブリックURL
    */
   private generatePublicUrl(key: string): string {
-    // Workers環境では直接的なパブリックURLは使用せず、
-    // Workers経由でファイルにアクセスする
-    return `/api/v1/receipts/${encodeURIComponent(key)}/data`;
+    // CloudflareのR2パブリックURLの正しい形式（バケット名を含む）
+    return `https://${this.accountId}.r2.cloudflarestorage.com/${this.bucketName}/${key}`;
   }
 
   /**
-   * ファイルの存在確認
-   * @param key ファイルキー
-   * @returns ファイルが存在する場合true
+   * ファイルをR2にアップロード（簡易版）
+   * @param key ファイルキー（パス）
+   * @param data ファイルデータ
+   * @returns アップロードされたファイルのURL
    */
+  async uploadFile(key: string, data: Buffer): Promise<string> {
+    // ファイル拡張子からContent-Typeを推定
+    const extension = key.toLowerCase().split(".").pop();
+    let contentType = "application/octet-stream";
+
+    switch (extension) {
+      case "jpg":
+      case "jpeg":
+        contentType = "image/jpeg";
+        break;
+      case "png":
+        contentType = "image/png";
+        break;
+      case "gif":
+        contentType = "image/gif";
+        break;
+      case "webp":
+        contentType = "image/webp";
+        break;
+      case "pdf":
+        contentType = "application/pdf";
+        break;
+      case "txt":
+        contentType = "text/plain";
+        break;
+      case "json":
+        contentType = "application/json";
+        break;
+    }
+
+    return this.putObject(key, data, contentType);
+  }
+
+  /**
+   * 指定されたプレフィックスでファイル一覧を取得
+   * @param prefix ファイルキーのプレフィックス
+   * @returns ファイル一覧
+   */
+  async listFiles(
+    prefix: string,
+  ): Promise<Array<{ key: string; size: number; lastModified: Date }>> {
+    return withR2Retry(async () => {
+      try {
+        const objects = await this.r2Bucket.list({ prefix });
+
+        const files = objects.objects.map((object) => ({
+          key: object.key,
+          size: object.size,
+          lastModified: object.uploaded,
+        }));
+
+        logger.debug("ファイル一覧を取得しました", {
+          prefix,
+          fileCount: files.length,
+        });
+
+        return files;
+      } catch (error) {
+        logger.error("ファイル一覧の取得に失敗しました", {
+          prefix,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        throw createR2Error(
+          ErrorCode.R2_CONNECTION_ERROR,
+          `R2ファイル一覧取得エラー: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
+      }
+    }, `R2ファイル一覧取得: ${prefix}`);
+  }
   async fileExists(key: string): Promise<boolean> {
     try {
       const object = await this.r2Bucket.head(key);
@@ -268,8 +347,13 @@ export class R2WorkerClient implements R2ClientInterface {
  * Workers環境用R2クライアントのファクトリー関数
  * @param r2Bucket R2バケットバインディング
  * @param bucketName バケット名
+ * @param accountId CloudflareアカウントID
  * @returns Workers環境用R2クライアントインスタンス
  */
-export function createR2WorkerClient(r2Bucket: R2Bucket, bucketName: string): R2WorkerClient {
-  return new R2WorkerClient(r2Bucket, bucketName);
+export function createR2WorkerClient(
+  r2Bucket: R2Bucket,
+  bucketName: string,
+  accountId: string,
+): R2WorkerClient {
+  return new R2WorkerClient(r2Bucket, bucketName, accountId);
 }

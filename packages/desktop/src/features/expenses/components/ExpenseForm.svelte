@@ -174,10 +174,64 @@ async function selectReceipt() {
 }
 
 // 領収書削除
-function removeReceipt() {
-	receiptFile = undefined;
-	receiptPreview = undefined;
-	toastStore.success("領収書を削除しました");
+async function removeReceipt() {
+	if (!expense?.id) {
+		// 新規作成時は単純にUIから削除
+		receiptFile = undefined;
+		receiptPreview = undefined;
+		toastStore.success("領収書を削除しました");
+		return;
+	}
+
+	if (!expense.receipt_url) {
+		// 領収書URLがない場合はUIからのみ削除
+		receiptFile = undefined;
+		receiptPreview = undefined;
+		toastStore.success("領収書を削除しました");
+		return;
+	}
+
+	try {
+		console.info(`🗑️ 経費の領収書削除開始: expense_id=${expense.id}, receipt_url=${expense.receipt_url}`);
+		
+		// R2から領収書を削除（deleteReceiptFromR2関数を使用）
+		const { deleteReceiptFromR2 } = await import("$lib/utils/tauri");
+		
+		const r2DeleteResult = await deleteReceiptFromR2(expense.receipt_url);
+		if (r2DeleteResult.error) {
+			toastStore.error(`R2からの領収書削除に失敗しました: ${r2DeleteResult.error}`);
+			return;
+		}
+		
+		console.info(`🗑️ R2削除結果:`, r2DeleteResult);
+
+		// データベースからも領収書URLを削除（専用の削除関数を使用）
+		console.info(`🗑️ DB更新開始: expense_id=${expense.id}, 専用削除関数を使用`);
+		
+		const { deleteExpenseReceipt } = await import("$lib/utils/tauri");
+		
+		const dbDeleteResult = await deleteExpenseReceipt(expense.id);
+		if (dbDeleteResult.error) {
+			toastStore.error(`データベースからの領収書削除に失敗しました: ${dbDeleteResult.error}`);
+			return;
+		}
+		
+		console.info(`🗑️ DB削除結果:`, dbDeleteResult);
+
+		// 経費ストアを再読み込みして最新データを取得
+		await expenseStore.loadExpenses();
+
+		// プレビューとファイル選択をクリア
+		receiptPreview = undefined;
+		receiptFile = undefined;
+
+		toastStore.success("領収書を削除しました");
+		
+		console.info(`🗑️ 経費の領収書削除完了: expense_id=${expense.id}`);
+	} catch (error) {
+		console.error("領収書削除エラー:", error);
+		toastStore.error(`領収書の削除に失敗しました: ${error}`);
+	}
 }
 
 // フォーム送信
@@ -231,17 +285,29 @@ async function handleSubmit(event: Event) {
 
 			isUploading = true;
 			try {
+				console.info("領収書アップロード開始:", { targetExpenseId, receiptFile });
 				const uploadResult = await uploadReceiptViaApi(
 					targetExpenseId,
 					receiptFile,
 				);
-				// 成功時はstringのURLが返される
+				console.info("領収書アップロード結果:", uploadResult);
+				
+				// 成功時は完全なURLが返される
 				if (uploadResult) {
+					console.info("経費データ更新開始:", { targetExpenseId, receipt_url: uploadResult });
 					// 経費データを更新してreceipt_urlを設定
-					await expenseStore.modifyExpense(targetExpenseId, {
+					const updateResult = await expenseStore.modifyExpense(targetExpenseId, {
 						receipt_url: uploadResult,
 					});
-					toastStore.success("経費と領収書を保存しました");
+					console.info("経費データ更新結果:", updateResult);
+					
+					if (updateResult) {
+						toastStore.success("経費と領収書を保存しました");
+					} else {
+						toastStore.warning("領収書はアップロードされましたが、経費データの更新に失敗しました");
+					}
+				} else {
+					toastStore.warning("領収書のアップロードに失敗しました（空の結果）");
 				}
 			} catch (uploadError) {
 				console.warn("領収書アップロードエラー:", uploadError);

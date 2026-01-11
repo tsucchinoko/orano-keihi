@@ -8,6 +8,7 @@ export interface R2Config {
   secretAccessKey: string;
   bucketName: string;
   region: string;
+  publicDomain?: string;
 }
 
 export interface CorsConfig {
