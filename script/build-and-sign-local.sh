@@ -104,17 +104,9 @@ pnpm install
 echo -e "${YELLOW}🏗️  フロントエンドをビルド中...${NC}"
 pnpm build
 
-# Apple Developer証明書のインポート（macOS用）
+# Apple Developer証明書のセットアップ（macOS用）
 setup_macos_signing() {
-    if [ -z "$APPLE_CERTIFICATE" ]; then
-        echo -e "${YELLOW}⚠️  Apple Developer証明書がないため、署名設定をスキップします${NC}"
-        return 0
-    fi
-
-    echo -e "${YELLOW}🔐 Apple Developer証明書をインポート中...${NC}"
-
-    # 証明書をデコードして一時ファイルに保存
-    echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+    echo -e "${YELLOW}🔐 Apple Developer証明書をセットアップ中...${NC}"
 
     # 新しいキーチェーンを作成
     security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain 2>/dev/null || true
@@ -122,23 +114,36 @@ setup_macos_signing() {
     security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
     security set-keychain-settings -t 3600 -u build.keychain
 
-    # 証明書をキーチェーンにインポート
-    security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+    # loginキーチェーンもキーチェーン検索パスに追加（証明書チェーン用）
+    # 注: loginキーチェーンは通常既にアンロックされています
+    security list-keychains -d user -s build.keychain login.keychain
 
-    # インポートされた証明書を確認
-    echo -e "${BLUE}📋 インポートされた証明書:${NC}"
-    security find-identity -v -p codesigning build.keychain
+    echo -e "${BLUE}💳 login.keychainから証明書を使用します${NC}"
+
+    # Apple中間証明書とルート証明書をダウンロードしてインポート
+    echo -e "${BLUE}📥 Apple中間証明書をダウンロード中...${NC}"
+    curl -s https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o DeveloperIDG2CA.cer
+    curl -s https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o AppleWWDRCAG3.cer
+
+    security import DeveloperIDG2CA.cer -k build.keychain -T /usr/bin/codesign -A
+    security import AppleWWDRCAG3.cer -k build.keychain -T /usr/bin/codesign -A
 
     # 一時ファイルを削除
-    rm certificate.p12
+    rm DeveloperIDG2CA.cer AppleWWDRCAG3.cer 2>/dev/null || true
 
-    echo -e "${GREEN}✅ Apple Developer証明書のインポートが完了しました${NC}"
+    # build.keychainの中間証明書にアクセス許可を設定
+    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain 2>/dev/null || true
+
+    # 利用可能な証明書を確認
+    echo -e "${BLUE}📋 利用可能な証明書:${NC}"
+    security find-identity -v -p codesigning
+
+    echo -e "${GREEN}✅ Apple Developer証明書のセットアップが完了しました${NC}"
     echo ""
 
-    # 証明書情報を取得
+    # 証明書情報を取得（全キーチェーンから）
     echo -e "${YELLOW}🔍 証明書情報を確認中...${NC}"
-    CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Apple Development\|Developer ID Application")
+    CERT_INFO=$(security find-identity -v -p codesigning | grep "Developer ID Application")
 
     if [ -z "$CERT_INFO" ]; then
         echo -e "${RED}❌ 有効な証明書が見つかりません${NC}"
