@@ -43,7 +43,7 @@ jobs:
         id: version
         run: |
           # package.jsonからバージョンを取得
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./packages/desktop/package.json').version")
 
           # 日本時間でのタイムスタンプ生成
           TIMESTAMP=$(TZ=Asia/Tokyo date '+%Y%m%d-%H%M%S')
