@@ -48,7 +48,7 @@ export class TauriSubscriptionService {
         // Tauriコマンドを実行してサブスクリプション一覧を取得
         const subscriptions = await this.tauriExecutor.invoke<Subscription[]>("get_subscriptions", {
           activeOnly,
-          session_token: this.getSessionTokenForUser(userId),
+          sessionToken: this.getSessionTokenForUser(userId),
         });
 
         // 統計情報を計算

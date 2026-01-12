@@ -2,6 +2,7 @@
 import type { Subscription } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
+import { ReceiptViewer } from "$features/receipts";
 
 // Props
 interface Props {
@@ -9,6 +10,11 @@ interface Props {
 }
 
 let { onEdit }: Props = $props();
+
+// 領収書表示状態
+let showReceiptViewer = $state(false);
+let currentReceiptUrl = $state<string | undefined>(undefined);
+let currentReceiptPath = $state<string | undefined>(undefined);
 
 // ストアからサブスクリプションデータを取得
 const subscriptions = $derived(expenseStore.subscriptions);
@@ -117,6 +123,22 @@ function getNextBillingDate(subscription: Subscription): string {
 		});
 	}
 }
+
+// 領収書表示ハンドラー
+function handleViewReceipt(receiptPath?: string) {
+	if (!receiptPath) return;
+
+	currentReceiptUrl = receiptPath.startsWith('http') ? receiptPath : undefined;
+	currentReceiptPath = !receiptPath.startsWith('http') ? receiptPath : undefined;
+	showReceiptViewer = true;
+}
+
+// 領収書表示を閉じる
+function handleCloseReceiptViewer() {
+	showReceiptViewer = false;
+	currentReceiptUrl = undefined;
+	currentReceiptPath = undefined;
+}
 </script>
 
 <div class="space-y-6">
@@ -172,6 +194,19 @@ function getNextBillingDate(subscription: Subscription): string {
 										<span>{categoryIcons[subscription.category]} {subscription.category}</span>
 										<span>📅 次回: {getNextBillingDate(subscription)}</span>
 									</div>
+
+									<!-- 領収書表示ボタン -->
+									{#if subscription.receipt_path}
+										<div class="mt-2">
+											<button
+												type="button"
+												onclick={() => handleViewReceipt(subscription.receipt_path)}
+												class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+											>
+												📄 領収書を表示
+											</button>
+										</div>
+									{/if}
 								</div>
 
 								<!-- 右側：アクションボタン -->
@@ -235,6 +270,19 @@ function getNextBillingDate(subscription: Subscription): string {
 									<div class="text-sm text-gray-500">
 										{categoryIcons[subscription.category]} {subscription.category}
 									</div>
+
+									<!-- 領収書表示ボタン -->
+									{#if subscription.receipt_path}
+										<div class="mt-2">
+											<button
+												type="button"
+												onclick={() => handleViewReceipt(subscription.receipt_path)}
+												class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+											>
+												📄 領収書を表示
+											</button>
+										</div>
+									{/if}
 								</div>
 
 								<!-- 右側：アクションボタン -->
@@ -273,6 +321,15 @@ function getNextBillingDate(subscription: Subscription): string {
 		</div>
 	{/if}
 </div>
+
+<!-- 領収書表示モーダル -->
+{#if showReceiptViewer && (currentReceiptUrl || currentReceiptPath)}
+	<ReceiptViewer
+		receiptUrl={currentReceiptUrl}
+		receiptPath={currentReceiptPath}
+		onClose={handleCloseReceiptViewer}
+	/>
+{/if}
 
 <style>
 	/* グラデーションホバー効果 */
