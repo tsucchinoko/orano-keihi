@@ -252,14 +252,37 @@ jobs:
             echo "🚀 mainブランチへのpush - リリース作成準備完了"
           fi
 
+      - name: MacOS成果物の整理とアップロード準備
+        run: |
+          echo "📦 MacOS成果物を整理中..."
+          mkdir -p ./macos-artifacts
+
+          # .app.tar.gzファイルをコピー
+          if [ -f packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz ]; then
+            cp packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz ./macos-artifacts/
+            echo "✅ .app.tar.gzファイルをコピーしました"
+          fi
+
+          # .app.tar.gz.sigファイルをコピー
+          if [ -f packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig ]; then
+            cp packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig ./macos-artifacts/
+            echo "✅ .app.tar.gz.sigファイルをコピーしました"
+          fi
+
+          # DMGファイルをコピー
+          if [ -f packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg ]; then
+            cp packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg ./macos-artifacts/
+            echo "✅ DMGファイルをコピーしました"
+          fi
+
+          echo "📁 整理された成果物:"
+          ls -lh ./macos-artifacts/
+
       - name: MacOS成果物のアップロード
         uses: actions/upload-artifact@v4
         with:
           name: macos-artifacts
-          path: |
-            packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz
-            packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
-            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          path: ./macos-artifacts/
           retention-days: 7
 
       - name: MacOS署名環境のクリーンアップ
@@ -445,14 +468,47 @@ jobs:
           }
         shell: pwsh
 
+      - name: Windows成果物の整理とアップロード準備
+        run: |
+          Write-Host "📦 Windows成果物を整理中..."
+          New-Item -ItemType Directory -Force -Path ./windows-artifacts | Out-Null
+
+          # MSI.zipファイルをコピー
+          $msiZipFiles = Get-ChildItem -Path packages/desktop/src-tauri/target/release/bundle/msi -Filter "*.msi.zip" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*.sig" }
+          if ($msiZipFiles) {
+            foreach ($file in $msiZipFiles) {
+              Copy-Item $file.FullName -Destination ./windows-artifacts/
+              Write-Host "✅ $($file.Name)をコピーしました"
+            }
+          }
+
+          # MSI.zip.sigファイルをコピー
+          $msiZipSigFiles = Get-ChildItem -Path packages/desktop/src-tauri/target/release/bundle/msi -Filter "*.msi.zip.sig" -ErrorAction SilentlyContinue
+          if ($msiZipSigFiles) {
+            foreach ($file in $msiZipSigFiles) {
+              Copy-Item $file.FullName -Destination ./windows-artifacts/
+              Write-Host "✅ $($file.Name)をコピーしました"
+            }
+          }
+
+          # MSIファイルをコピー（.msi.zipではないもの）
+          $msiFiles = Get-ChildItem -Path packages/desktop/src-tauri/target/release/bundle/msi -Filter "*.msi" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*.zip*" }
+          if ($msiFiles) {
+            foreach ($file in $msiFiles) {
+              Copy-Item $file.FullName -Destination ./windows-artifacts/
+              Write-Host "✅ $($file.Name)をコピーしました"
+            }
+          }
+
+          Write-Host "📁 整理された成果物:"
+          Get-ChildItem ./windows-artifacts/ | Format-Table Name, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB, 2)}}
+        shell: pwsh
+
       - name: Windows成果物のアップロード
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
-          path: |
-            packages/desktop/src-tauri/target/release/bundle/msi/*.msi.zip
-            packages/desktop/src-tauri/target/release/bundle/msi/*.msi.zip.sig
-            packages/desktop/src-tauri/target/release/bundle/msi/*.msi
+          path: ./windows-artifacts/
           retention-days: 7
 
   # リリース作成
@@ -587,6 +643,12 @@ jobs:
             if (dmgFiles.length === 0) {
               console.error('❌ DMGファイルが見つかりません');
               console.log('   MacOSディレクトリ内容: ' + macosFiles.join(', '));
+              console.log('   詳細なファイルタイプ分析:');
+              macosFiles.forEach(f => {
+                const fullPath = path.join(macosArtifactsDir, f);
+                const stats = fs.statSync(fullPath);
+                console.log('     - ' + f + ' (' + (stats.isDirectory() ? 'ディレクトリ' : 'ファイル ' + (stats.size / 1024 / 1024).toFixed(2) + ' MB') + ')');
+              });
               throw new Error('DMGファイルが見つかりません');
             }
 
