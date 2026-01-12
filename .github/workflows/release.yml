@@ -175,27 +175,37 @@ jobs:
         run: |
           echo "🔐 Tauri署名ファイルを生成中..."
 
-          # DMGファイルを検索
-          DMG_FILE=$(find packages/desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" | head -n 1)
+          # DMGファイルを検索（モノレポ構造に対応）
+          DMG_FILE=$(find . -type f -name "*.dmg" -path "*/target/release/bundle/dmg/*" | head -n 1)
 
           if [ -z "$DMG_FILE" ]; then
             echo "❌ DMGファイルが見つかりません"
             exit 1
           fi
 
-          echo "📦 署名対象ファイル: $DMG_FILE"
+          # 絶対パスに変換
+          DMG_FILE_ABS=$(realpath "$DMG_FILE")
+          echo "📦 署名対象ファイル: $DMG_FILE_ABS"
+
+          # 秘密鍵を一時ファイルに保存
+          TEMP_KEY_FILE=$(mktemp)
+          echo "$TAURI_SIGNING_PRIVATE_KEY" > "$TEMP_KEY_FILE"
+          chmod 600 "$TEMP_KEY_FILE"
 
           # Tauri署名を生成
           cd packages/desktop
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            pnpm tauri signer sign "../../$DMG_FILE" --private-key-path <(echo "$TAURI_SIGNING_PRIVATE_KEY") -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            pnpm tauri signer sign "$DMG_FILE_ABS" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
           else
-            pnpm tauri signer sign "../../$DMG_FILE" --private-key-path <(echo "$TAURI_SIGNING_PRIVATE_KEY")
+            pnpm tauri signer sign "$DMG_FILE_ABS" --private-key-path "$TEMP_KEY_FILE"
           fi
           cd ../..
 
+          # 一時ファイルを削除
+          rm -f "$TEMP_KEY_FILE"
+
           # 署名ファイルの確認
-          SIG_FILE="${DMG_FILE}.sig"
+          SIG_FILE="${DMG_FILE_ABS}.sig"
           if [ -f "$SIG_FILE" ]; then
             echo "✅ 署名ファイルが生成されました: $SIG_FILE"
             echo "📋 署名内容:"
@@ -212,7 +222,16 @@ jobs:
         run: |
           echo "🎯 MacOSビルド完了"
           echo "📦 生成されたファイル:"
-          find packages/desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" -exec ls -lh {} \; || echo "dmgファイルが見つかりません"
+
+          # dmgファイルを再帰的に検索
+          find . -type f -name "*.dmg" -path "*/target/release/bundle/dmg/*" -exec ls -lh {} \; 2>/dev/null || {
+            echo "⚠️ dmgファイルが見つかりません"
+            echo "ディレクトリ構造を確認中..."
+            find . -type d -name "bundle" -path "*/target/release/*" 2>/dev/null | while read dir; do
+              echo "  - $dir"
+              ls -la "$dir" 2>/dev/null || true
+            done
+          }
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
@@ -225,8 +244,8 @@ jobs:
         with:
           name: macos-artifacts
           path: |
-            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg.sig
+            **/target/release/bundle/dmg/*.dmg
+            **/target/release/bundle/dmg/*.dmg.sig
           retention-days: 7
 
       - name: MacOS署名環境のクリーンアップ
@@ -298,8 +317,24 @@ jobs:
         run: |
           echo "🎯 Windowsビルド完了"
           echo "📦 生成されたファイル:"
-          Get-ChildItem -Path "packages/desktop/src-tauri/target/release/bundle/msi" -Filter "*.msi" | ForEach-Object {
-            Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)"
+
+          # msiファイルを再帰的に検索
+          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
+
+          if ($msiFiles) {
+            foreach ($file in $msiFiles) {
+              Write-Host "  - $($file.Name) ($([math]::Round($file.Length/1MB, 2)) MB)"
+              Write-Host "    場所: $($file.DirectoryName)"
+            }
+          } else {
+            Write-Host "⚠️ msiファイルが見つかりません"
+            Write-Host "ディレクトリ構造を確認中..."
+            Get-ChildItem -Path . -Directory -Recurse -Filter "bundle" -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "  - $($_.FullName)"
+              Get-ChildItem -Path $_.FullName -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "    - $($_.Name)"
+              }
+            }
           }
 
           if ("${{ github.event_name }}" -eq "pull_request") {
@@ -313,7 +348,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
-          path: packages/desktop/src-tauri/target/release/bundle/msi/*.msi
+          path: |
+            **/target/release/bundle/msi/*.msi
           retention-days: 7
 
   # リリース作成
