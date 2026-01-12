@@ -356,7 +356,7 @@ jobs:
   create-release:
     needs: [version-tag, build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/release'
+    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release')
 
     steps:
       - uses: actions/checkout@v4
