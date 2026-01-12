@@ -187,9 +187,9 @@ jobs:
           DMG_FILE_ABS=$(realpath "$DMG_FILE")
           echo "📦 署名対象ファイル: $DMG_FILE_ABS"
 
-          # 秘密鍵を一時ファイルに保存
+          # 秘密鍵を一時ファイルに保存（改行を削除）
           TEMP_KEY_FILE=$(mktemp)
-          echo "$TAURI_SIGNING_PRIVATE_KEY" > "$TEMP_KEY_FILE"
+          echo "$TAURI_SIGNING_PRIVATE_KEY" | tr -d '\n' > "$TEMP_KEY_FILE"
           chmod 600 "$TEMP_KEY_FILE"
 
           # Tauri署名を生成
