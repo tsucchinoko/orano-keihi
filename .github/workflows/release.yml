@@ -133,7 +133,7 @@ jobs:
 
           # 証明書IDを抽出
           CERT_ID=$(echo "$CERT_INFO" | head -n 1 | awk -F'"' '{print $2}')
-          echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
+          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_ENV
 
           echo "✅ 証明書が確認されました: $CERT_ID"
 
@@ -149,6 +149,7 @@ jobs:
           # Apple署名関連
           APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -317,47 +318,52 @@ jobs:
 
       - name: Tauri署名ファイルの生成（Windows）
         run: |
-          echo "🔐 Windows用Tauri署名ファイルを生成中..."
+          Write-Host "🔐 Windows用Tauri署名ファイルを生成中..."
 
           # MSIファイルを検索（モノレポ構造に対応）
-          MSI_FILE=$(find . -type f -name "*.msi" -path "*/target/release/bundle/msi/*" | head -n 1)
+          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
 
-          if [ -z "$MSI_FILE" ]; then
-            echo "❌ MSIファイルが見つかりません"
+          if ($msiFiles.Count -eq 0) {
+            Write-Host "❌ MSIファイルが見つかりません"
             exit 1
-          fi
+          }
 
-          # 絶対パスに変換
-          MSI_FILE_ABS=$(realpath "$MSI_FILE")
-          echo "📦 署名対象ファイル: $MSI_FILE_ABS"
+          $msiFile = $msiFiles[0].FullName
+          Write-Host "📦 署名対象ファイル: $msiFile"
 
           # 秘密鍵を一時ファイルに保存（改行を削除）
-          TEMP_KEY_FILE=$(mktemp)
-          echo "$TAURI_SIGNING_PRIVATE_KEY" | tr -d '\n' > "$TEMP_KEY_FILE"
-          chmod 600 "$TEMP_KEY_FILE"
+          $tempKeyFile = [System.IO.Path]::GetTempFileName()
+          $env:TAURI_SIGNING_PRIVATE_KEY -replace "`n", "" -replace "`r", "" | Out-File -FilePath $tempKeyFile -Encoding ASCII -NoNewline
 
-          # Tauri署名を生成
-          cd packages/desktop
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            pnpm tauri signer sign "$MSI_FILE_ABS" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-          else
-            pnpm tauri signer sign "$MSI_FILE_ABS" --private-key-path "$TEMP_KEY_FILE"
-          fi
-          cd ../..
+          try {
+            # Tauri署名を生成
+            Set-Location "packages/desktop"
+            
+            if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+              pnpm tauri signer sign "$msiFile" --private-key-path "$tempKeyFile" -p "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            } else {
+              pnpm tauri signer sign "$msiFile" --private-key-path "$tempKeyFile"
+            }
+            
+            Set-Location "../.."
 
-          # 一時ファイルを削除
-          rm -f "$TEMP_KEY_FILE"
-
-          # 署名ファイルの確認
-          SIG_FILE="${MSI_FILE_ABS}.sig"
-          if [ -f "$SIG_FILE" ]; then
-            echo "✅ 署名ファイルが生成されました: $SIG_FILE"
-            echo "📋 署名内容:"
-            cat "$SIG_FILE"
-          else
-            echo "❌ 署名ファイルの生成に失敗しました"
-            exit 1
-          fi
+            # 署名ファイルの確認
+            $sigFile = "$msiFile.sig"
+            if (Test-Path $sigFile) {
+              Write-Host "✅ 署名ファイルが生成されました: $sigFile"
+              Write-Host "📋 署名内容:"
+              Get-Content $sigFile
+            } else {
+              Write-Host "❌ 署名ファイルの生成に失敗しました"
+              exit 1
+            }
+          } finally {
+            # 一時ファイルを削除
+            if (Test-Path $tempKeyFile) {
+              Remove-Item $tempKeyFile -Force
+            }
+          }
+        shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
