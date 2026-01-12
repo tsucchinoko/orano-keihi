@@ -132,7 +132,6 @@ function generateFileName(target, arch, version, extension) {
  */
 function generateUpdateManifest(config, envInfo) {
     const fileName = generateFileName(config.target, config.arch, envInfo.version, config.fileExtension);
-    const downloadUrl = generateDownloadUrl(envInfo.githubRepo, envInfo.releaseTag, fileName);
     
     // 実際のファイルパス（ビルド成果物の場所）
     const actualFilePath = getActualFilePath(config, fileName);
@@ -141,7 +140,10 @@ function generateUpdateManifest(config, envInfo) {
     console.log(`   期待されるファイル名: ${fileName}`);
     console.log(`   ファイルパス: ${actualFilePath}`);
     
-    // ファイルの存在確認
+    let finalFileName = fileName;
+    let finalFilePath = actualFilePath;
+    
+    // ファイルの存在確認と実際のファイル名の取得
     if (!fs.existsSync(actualFilePath)) {
         // ファイルが見つからない場合、ディレクトリ内の類似ファイルを探す
         const dir = path.dirname(actualFilePath);
@@ -150,33 +152,21 @@ function generateUpdateManifest(config, envInfo) {
             console.log(`   ディレクトリ内のファイル: ${files.join(', ')}`);
             
             // 拡張子が一致するファイルを探す
-            const matchingFiles = files.filter(f => f.endsWith(`.${config.fileExtension}`));
+            const matchingFiles = files.filter(f => f.endsWith(`.${config.fileExtension}`) && !f.endsWith(`.${config.fileExtension}.sig`));
             if (matchingFiles.length > 0) {
-                const actualFileName = matchingFiles[0];
-                const correctedPath = path.join(dir, actualFileName);
-                console.log(`   実際のファイル名を使用: ${actualFileName}`);
-                
-                const signature = getSignature(correctedPath);
-                const correctedUrl = generateDownloadUrl(envInfo.githubRepo, envInfo.releaseTag, actualFileName);
-                
-                return {
-                    version: envInfo.version,
-                    notes: envInfo.releaseNotes,
-                    pub_date: envInfo.pubDate,
-                    platforms: {
-                        [`${config.target}-${config.arch}`]: {
-                            signature: signature,
-                            url: correctedUrl
-                        }
-                    }
-                };
+                finalFileName = matchingFiles[0];
+                finalFilePath = path.join(dir, finalFileName);
+                console.log(`   実際のファイル名を使用: ${finalFileName}`);
+            } else {
+                console.warn(`⚠️  ${config.fileExtension}ファイルが見つかりません: ${dir}`);
             }
+        } else {
+            console.warn(`⚠️  ディレクトリが見つかりません: ${dir}`);
         }
-        
-        console.warn(`⚠️  ファイルが見つかりません: ${actualFilePath}`);
     }
     
-    const signature = getSignature(actualFilePath);
+    const downloadUrl = generateDownloadUrl(envInfo.githubRepo, envInfo.releaseTag, finalFileName);
+    const signature = getSignature(finalFilePath);
     
     return {
         version: envInfo.version,
@@ -201,10 +191,47 @@ function getActualFilePath(config, fileName) {
     
     if (config.target === 'darwin') {
         // MacOS成果物: artifacts/macos-artifacts/*.dmg
-        return path.join(artifactsBasePath, 'macos-artifacts', fileName);
+        const macosDir = path.join(artifactsBasePath, 'macos-artifacts');
+        
+        // 実際のファイル名を検索（バージョンやアーキテクチャが異なる場合に対応）
+        if (fs.existsSync(macosDir)) {
+            const files = fs.readdirSync(macosDir);
+            const dmgFiles = files.filter(f => f.endsWith('.dmg') && !f.endsWith('.dmg.sig'));
+            
+            if (dmgFiles.length > 0) {
+                // アーキテクチャに応じたファイルを選択
+                let targetFile = dmgFiles[0]; // デフォルト
+                
+                if (config.arch === 'x86_64') {
+                    // Intel Mac用ファイルを探す（x64またはx86_64を含む）
+                    const intelFile = dmgFiles.find(f => f.includes('x64') || f.includes('x86_64'));
+                    if (intelFile) targetFile = intelFile;
+                } else if (config.arch === 'aarch64') {
+                    // Apple Silicon用ファイルを探す（aarch64またはarm64を含む）
+                    const armFile = dmgFiles.find(f => f.includes('aarch64') || f.includes('arm64'));
+                    if (armFile) targetFile = armFile;
+                }
+                
+                return path.join(macosDir, targetFile);
+            }
+        }
+        
+        return path.join(macosDir, fileName);
     } else if (config.target === 'windows') {
         // Windows成果物: artifacts/windows-artifacts/*.msi
-        return path.join(artifactsBasePath, 'windows-artifacts', fileName);
+        const windowsDir = path.join(artifactsBasePath, 'windows-artifacts');
+        
+        // 実際のファイル名を検索
+        if (fs.existsSync(windowsDir)) {
+            const files = fs.readdirSync(windowsDir);
+            const msiFiles = files.filter(f => f.endsWith('.msi') && !f.endsWith('.msi.sig'));
+            
+            if (msiFiles.length > 0) {
+                return path.join(windowsDir, msiFiles[0]);
+            }
+        }
+        
+        return path.join(windowsDir, fileName);
     }
     
     return path.join(artifactsBasePath, fileName);

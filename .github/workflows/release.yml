@@ -146,10 +146,9 @@ jobs:
       - name: MacOSアプリケーションのビルド
         run: pnpm tauri build
         env:
-          # Apple署名関連（動的に取得した証明書IDを使用）
+          # Apple署名関連
           APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-          APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -244,8 +243,8 @@ jobs:
         with:
           name: macos-artifacts
           path: |
-            **/target/release/bundle/dmg/*.dmg
-            **/target/release/bundle/dmg/*.dmg.sig
+            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg.sig
           retention-days: 7
 
       - name: MacOS署名環境のクリーンアップ
@@ -316,6 +315,53 @@ jobs:
           # Windows署名設定
           WINDOWS_TIMESTAMP_URL: http://timestamp.digicert.com
 
+      - name: Tauri署名ファイルの生成（Windows）
+        run: |
+          echo "🔐 Windows用Tauri署名ファイルを生成中..."
+
+          # MSIファイルを検索（モノレポ構造に対応）
+          MSI_FILE=$(find . -type f -name "*.msi" -path "*/target/release/bundle/msi/*" | head -n 1)
+
+          if [ -z "$MSI_FILE" ]; then
+            echo "❌ MSIファイルが見つかりません"
+            exit 1
+          fi
+
+          # 絶対パスに変換
+          MSI_FILE_ABS=$(realpath "$MSI_FILE")
+          echo "📦 署名対象ファイル: $MSI_FILE_ABS"
+
+          # 秘密鍵を一時ファイルに保存（改行を削除）
+          TEMP_KEY_FILE=$(mktemp)
+          echo "$TAURI_SIGNING_PRIVATE_KEY" | tr -d '\n' > "$TEMP_KEY_FILE"
+          chmod 600 "$TEMP_KEY_FILE"
+
+          # Tauri署名を生成
+          cd packages/desktop
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            pnpm tauri signer sign "$MSI_FILE_ABS" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          else
+            pnpm tauri signer sign "$MSI_FILE_ABS" --private-key-path "$TEMP_KEY_FILE"
+          fi
+          cd ../..
+
+          # 一時ファイルを削除
+          rm -f "$TEMP_KEY_FILE"
+
+          # 署名ファイルの確認
+          SIG_FILE="${MSI_FILE_ABS}.sig"
+          if [ -f "$SIG_FILE" ]; then
+            echo "✅ 署名ファイルが生成されました: $SIG_FILE"
+            echo "📋 署名内容:"
+            cat "$SIG_FILE"
+          else
+            echo "❌ 署名ファイルの生成に失敗しました"
+            exit 1
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
       - name: ビルド結果の確認
         run: |
           echo "🎯 Windowsビルド完了"
@@ -352,7 +398,8 @@ jobs:
         with:
           name: windows-artifacts
           path: |
-            **/target/release/bundle/msi/*.msi
+            packages/desktop/src-tauri/target/release/bundle/msi/*.msi
+            packages/desktop/src-tauri/target/release/bundle/msi/*.msi.sig
           retention-days: 7
 
   # リリース作成
@@ -435,54 +482,70 @@ jobs:
             console.log('🚀 リリース作成開始: ' + releaseTag);
 
             // 成果物ディレクトリの存在確認
-            const macosArtifactsDir = './artifacts/macos-artifacts';
-            const windowsArtifactsDir = './artifacts/windows-artifacts';
+            const artifactsDir = './artifacts';
+            const macosArtifactsDir = path.join(artifactsDir, 'macos-artifacts');
+            const windowsArtifactsDir = path.join(artifactsDir, 'windows-artifacts');
+
+            console.log('📁 成果物ディレクトリの確認:');
+            
+            if (!fs.existsSync(artifactsDir)) {
+              console.error('❌ artifactsディレクトリが見つかりません: ' + artifactsDir);
+              throw new Error('artifactsディレクトリが見つかりません');
+            }
+
+            // 利用可能なディレクトリを表示
+            const availableDirs = fs.readdirSync(artifactsDir);
+            console.log('   利用可能なディレクトリ: ' + availableDirs.join(', '));
 
             if (!fs.existsSync(macosArtifactsDir)) {
               console.error('❌ MacOS成果物ディレクトリが見つかりません: ' + macosArtifactsDir);
-              console.log('📁 利用可能なディレクトリ:');
-              if (fs.existsSync('./artifacts')) {
-                fs.readdirSync('./artifacts').forEach(dir => {
-                  console.log('  - ' + dir);
-                });
-              }
               throw new Error('MacOS成果物ディレクトリが見つかりません');
             }
 
             if (!fs.existsSync(windowsArtifactsDir)) {
               console.error('❌ Windows成果物ディレクトリが見つかりません: ' + windowsArtifactsDir);
-              console.log('📁 利用可能なディレクトリ:');
-              if (fs.existsSync('./artifacts')) {
-                fs.readdirSync('./artifacts').forEach(dir => {
-                  console.log('  - ' + dir);
-                });
-              }
               throw new Error('Windows成果物ディレクトリが見つかりません');
             }
 
-            // 成果物ファイルの検索
-            const dmgFiles = fs.readdirSync(macosArtifactsDir).filter(f => f.endsWith('.dmg'));
-            const msiFiles = fs.readdirSync(windowsArtifactsDir).filter(f => f.endsWith('.msi'));
+            // 成果物ファイルの検索（より柔軟な検索）
+            const macosFiles = fs.readdirSync(macosArtifactsDir);
+            const windowsFiles = fs.readdirSync(windowsArtifactsDir);
+            
+            const dmgFiles = macosFiles.filter(f => f.endsWith('.dmg') && !f.endsWith('.dmg.sig'));
+            const msiFiles = windowsFiles.filter(f => f.endsWith('.msi') && !f.endsWith('.msi.sig'));
+            const dmgSigFiles = macosFiles.filter(f => f.endsWith('.dmg.sig'));
+            const msiSigFiles = windowsFiles.filter(f => f.endsWith('.msi.sig'));
 
-            if (dmgFiles.length === 0 || msiFiles.length === 0) {
-              console.error('❌ 必要な成果物ファイルが見つかりません');
-              console.log('📦 MacOS成果物: ' + dmgFiles.length + '個');
-              console.log('📦 Windows成果物: ' + msiFiles.length + '個');
-              throw new Error('必要な成果物ファイルが見つかりません');
+            console.log('📦 検出された成果物:');
+            console.log('   MacOS DMG: ' + dmgFiles.length + '個 (' + dmgFiles.join(', ') + ')');
+            console.log('   MacOS署名: ' + dmgSigFiles.length + '個 (' + dmgSigFiles.join(', ') + ')');
+            console.log('   Windows MSI: ' + msiFiles.length + '個 (' + msiFiles.join(', ') + ')');
+            console.log('   Windows署名: ' + msiSigFiles.length + '個 (' + msiSigFiles.join(', ') + ')');
+
+            if (dmgFiles.length === 0) {
+              console.error('❌ DMGファイルが見つかりません');
+              console.log('   MacOSディレクトリ内容: ' + macosFiles.join(', '));
+              throw new Error('DMGファイルが見つかりません');
             }
 
+            if (msiFiles.length === 0) {
+              console.error('❌ MSIファイルが見つかりません');
+              console.log('   Windowsディレクトリ内容: ' + windowsFiles.join(', '));
+              throw new Error('MSIファイルが見つかりません');
+            }
+
+            // ファイルパスとサイズの取得
             const dmgPath = path.join(macosArtifactsDir, dmgFiles[0]);
             const msiPath = path.join(windowsArtifactsDir, msiFiles[0]);
 
-            // ファイルサイズの取得
             const dmgStats = fs.statSync(dmgPath);
             const msiStats = fs.statSync(msiPath);
             const dmgSizeMB = (dmgStats.size / 1024 / 1024).toFixed(2);
             const msiSizeMB = (msiStats.size / 1024 / 1024).toFixed(2);
 
-            console.log('📦 成果物ファイル:');
-            console.log('  - MacOS: ' + dmgFiles[0] + ' (' + dmgSizeMB + ' MB)');
-            console.log('  - Windows: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
+            console.log('📊 ファイルサイズ:');
+            console.log('   - MacOS: ' + dmgFiles[0] + ' (' + dmgSizeMB + ' MB)');
+            console.log('   - Windows: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
 
             // リリースノートの生成
             const releaseNotes = [
@@ -536,45 +599,46 @@ jobs:
 
             console.log('✅ リリースが作成されました: ' + release.data.html_url);
 
-            // dmgファイルのアップロード
-            console.log('📤 MacOS dmgファイルをアップロード中...');
-            const dmgContent = fs.readFileSync(dmgPath);
-            await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.data.id,
-              name: dmgFiles[0],
-              data: dmgContent
-            });
-
-            // dmg署名ファイルのアップロード
-            const sigFiles = fs.readdirSync(macosArtifactsDir).filter(f => f.endsWith('.dmg.sig'));
-            if (sigFiles.length > 0) {
-              console.log('📤 MacOS署名ファイルをアップロード中...');
-              const sigPath = path.join(macosArtifactsDir, sigFiles[0]);
-              const sigContent = fs.readFileSync(sigPath);
-              await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.data.id,
-                name: sigFiles[0],
-                data: sigContent
-              });
-              console.log('✅ 署名ファイルをアップロードしました: ' + sigFiles[0]);
-            } else {
-              console.warn('⚠️  署名ファイルが見つかりません');
+            // ファイルアップロード関数
+            async function uploadFile(filePath, fileName, description) {
+              try {
+                console.log('📤 ' + description + 'をアップロード中: ' + fileName);
+                const fileContent = fs.readFileSync(filePath);
+                await github.rest.repos.uploadReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.data.id,
+                  name: fileName,
+                  data: fileContent
+                });
+                console.log('✅ アップロード完了: ' + fileName);
+              } catch (error) {
+                console.error('❌ アップロード失敗: ' + fileName + ' - ' + error.message);
+                throw error;
+              }
             }
 
-            // msiファイルのアップロード
-            console.log('📤 Windows msiファイルをアップロード中...');
-            const msiContent = fs.readFileSync(msiPath);
-            await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release.data.id,
-              name: msiFiles[0],
-              data: msiContent
-            });
+            // DMGファイルのアップロード
+            await uploadFile(dmgPath, dmgFiles[0], 'MacOS DMGファイル');
+
+            // DMG署名ファイルのアップロード
+            if (dmgSigFiles.length > 0) {
+              const dmgSigPath = path.join(macosArtifactsDir, dmgSigFiles[0]);
+              await uploadFile(dmgSigPath, dmgSigFiles[0], 'MacOS署名ファイル');
+            } else {
+              console.warn('⚠️  MacOS署名ファイルが見つかりません');
+            }
+
+            // MSIファイルのアップロード
+            await uploadFile(msiPath, msiFiles[0], 'Windows MSIファイル');
+
+            // MSI署名ファイルのアップロード
+            if (msiSigFiles.length > 0) {
+              const msiSigPath = path.join(windowsArtifactsDir, msiSigFiles[0]);
+              await uploadFile(msiSigPath, msiSigFiles[0], 'Windows署名ファイル');
+            } else {
+              console.warn('⚠️  Windows署名ファイルが見つかりません');
+            }
 
             // 静的JSONファイルのアップロード
             console.log('📤 静的JSONマニフェストファイルをアップロード中...');
@@ -584,16 +648,7 @@ jobs:
 
               for (const manifestFile of manifestFiles) {
                 const manifestPath = path.join(manifestDir, manifestFile);
-                const manifestContent = fs.readFileSync(manifestPath);
-
-                console.log('  - アップロード中: ' + manifestFile);
-                await github.rest.repos.uploadReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: release.data.id,
-                  name: manifestFile,
-                  data: manifestContent
-                });
+                await uploadFile(manifestPath, manifestFile, 'マニフェストファイル');
               }
 
               console.log('✅ ' + manifestFiles.length + '個のマニフェストファイルをアップロードしました');
