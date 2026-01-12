@@ -371,6 +371,28 @@ jobs:
         with:
           path: ./artifacts
 
+      - name: ダウンロードされた成果物の確認
+        run: |
+          echo "📁 ダウンロードされた成果物を確認中..."
+          echo "=== artifacts ディレクトリ構造 ==="
+          ls -la ./artifacts/ || echo "❌ artifactsディレクトリが見つかりません"
+
+          if [ -d "./artifacts/macos-artifacts" ]; then
+            echo ""
+            echo "=== MacOS成果物 ==="
+            ls -la ./artifacts/macos-artifacts/
+          else
+            echo "⚠️ MacOS成果物が見つかりません"
+          fi
+
+          if [ -d "./artifacts/windows-artifacts" ]; then
+            echo ""
+            echo "=== Windows成果物 ==="
+            ls -la ./artifacts/windows-artifacts/
+          else
+            echo "⚠️ Windows成果物が見つかりません"
+          fi
+
       - name: 静的JSONファイルの生成
         run: |
           echo "🔧 Tauri自動アップデート用静的JSONファイルを生成中..."
@@ -409,16 +431,45 @@ jobs:
 
             console.log('🚀 リリース作成開始: ' + releaseTag);
 
+            // 成果物ディレクトリの存在確認
+            const macosArtifactsDir = './artifacts/macos-artifacts';
+            const windowsArtifactsDir = './artifacts/windows-artifacts';
+
+            if (!fs.existsSync(macosArtifactsDir)) {
+              console.error('❌ MacOS成果物ディレクトリが見つかりません: ' + macosArtifactsDir);
+              console.log('📁 利用可能なディレクトリ:');
+              if (fs.existsSync('./artifacts')) {
+                fs.readdirSync('./artifacts').forEach(dir => {
+                  console.log('  - ' + dir);
+                });
+              }
+              throw new Error('MacOS成果物ディレクトリが見つかりません');
+            }
+
+            if (!fs.existsSync(windowsArtifactsDir)) {
+              console.error('❌ Windows成果物ディレクトリが見つかりません: ' + windowsArtifactsDir);
+              console.log('📁 利用可能なディレクトリ:');
+              if (fs.existsSync('./artifacts')) {
+                fs.readdirSync('./artifacts').forEach(dir => {
+                  console.log('  - ' + dir);
+                });
+              }
+              throw new Error('Windows成果物ディレクトリが見つかりません');
+            }
+
             // 成果物ファイルの検索
-            const dmgFiles = fs.readdirSync('./artifacts/macos-artifacts').filter(f => f.endsWith('.dmg'));
-            const msiFiles = fs.readdirSync('./artifacts/windows-artifacts').filter(f => f.endsWith('.msi'));
+            const dmgFiles = fs.readdirSync(macosArtifactsDir).filter(f => f.endsWith('.dmg'));
+            const msiFiles = fs.readdirSync(windowsArtifactsDir).filter(f => f.endsWith('.msi'));
 
             if (dmgFiles.length === 0 || msiFiles.length === 0) {
+              console.error('❌ 必要な成果物ファイルが見つかりません');
+              console.log('📦 MacOS成果物: ' + dmgFiles.length + '個');
+              console.log('📦 Windows成果物: ' + msiFiles.length + '個');
               throw new Error('必要な成果物ファイルが見つかりません');
             }
 
-            const dmgPath = path.join('./artifacts/macos-artifacts', dmgFiles[0]);
-            const msiPath = path.join('./artifacts/windows-artifacts', msiFiles[0]);
+            const dmgPath = path.join(macosArtifactsDir, dmgFiles[0]);
+            const msiPath = path.join(windowsArtifactsDir, msiFiles[0]);
 
             // ファイルサイズの取得
             const dmgStats = fs.statSync(dmgPath);
@@ -494,10 +545,10 @@ jobs:
             });
 
             // dmg署名ファイルのアップロード
-            const sigFiles = fs.readdirSync('./artifacts/macos-artifacts').filter(f => f.endsWith('.dmg.sig'));
+            const sigFiles = fs.readdirSync(macosArtifactsDir).filter(f => f.endsWith('.dmg.sig'));
             if (sigFiles.length > 0) {
               console.log('📤 MacOS署名ファイルをアップロード中...');
-              const sigPath = path.join('./artifacts/macos-artifacts', sigFiles[0]);
+              const sigPath = path.join(macosArtifactsDir, sigFiles[0]);
               const sigContent = fs.readFileSync(sigPath);
               await github.rest.repos.uploadReleaseAsset({
                 owner: context.repo.owner,
