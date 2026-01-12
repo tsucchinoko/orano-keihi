@@ -118,7 +118,9 @@ class AuthStore {
             'ブラウザでGoogleログインを完了してください。認証完了まで待機中...'
           );
 
+          console.info('🔐 waitForAuthCompletion()を呼び出す直前');
           const authResult = await waitForAuthCompletion();
+          console.info('🔐 waitForAuthCompletion()が完了しました');
           console.info('🔐 認証完了結果:', authResult);
 
           if (authResult.error) {
@@ -130,17 +132,30 @@ class AuthStore {
 
           if (authResult.data) {
             const { user, session_token } = authResult.data;
+            console.info('🔐 認証データを受け取りました:', {
+              user,
+              session_token,
+            });
 
             // 認証状態を更新
+            console.info('🔐 認証状態を更新します...');
             this.user = user;
-            this.isAuthenticated = true;
             this.sessionToken = session_token;
 
             // セッショントークンをローカルストレージに保存
             localStorage.setItem(this.SESSION_TOKEN_KEY, session_token);
+            console.info(
+              '🔐 ローカルストレージにセッショントークンを保存しました'
+            );
+
+            // 最後に認証状態をtrueに設定（リアクティブな更新をトリガー）
+            this.isAuthenticated = true;
+            console.info('🔐 isAuthenticated =', this.isAuthenticated);
 
             toastStore.success(`${user.name}さん、ログインしました`);
             console.info('🔐 ログイン処理が正常に完了しました');
+          } else {
+            console.warn('🔐 authResult.dataが存在しません');
           }
         } catch (openError) {
           console.warn('🔐 外部ブラウザでの認証URLオープンに失敗:', openError);
@@ -169,9 +184,11 @@ class AuthStore {
               if (authResult.data) {
                 const { user, session_token } = authResult.data;
                 this.user = user;
-                this.isAuthenticated = true;
                 this.sessionToken = session_token;
                 localStorage.setItem(this.SESSION_TOKEN_KEY, session_token);
+
+                // 最後に認証状態をtrueに設定
+                this.isAuthenticated = true;
                 toastStore.success(`${user.name}さん、ログインしました`);
               }
             }
@@ -237,6 +254,13 @@ class AuthStore {
    */
   async checkSession(): Promise<void> {
     console.info('セッション状態を確認します');
+
+    // localStorageから最新のセッショントークンを取得
+    const storedToken = localStorage.getItem(this.SESSION_TOKEN_KEY);
+    if (storedToken) {
+      this.sessionToken = storedToken;
+      console.info('localStorageからセッショントークンを復元しました');
+    }
 
     if (!this.sessionToken) {
       console.info('セッショントークンがないため、未認証状態に設定します');

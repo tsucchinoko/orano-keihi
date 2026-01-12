@@ -395,7 +395,7 @@ pub async fn delete_receipt_via_api(
 
     // 削除リクエストのペイロード
     let payload = serde_json::json!({
-        "receipt_url": receipt_url
+        "receiptUrl": receipt_url
     });
 
     debug!(

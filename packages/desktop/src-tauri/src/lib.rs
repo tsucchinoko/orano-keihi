@@ -89,7 +89,29 @@ pub fn run() {
             eprintln!("=== アプリケーション初期化開始 ===");
 
             // メニューバーを作成
-            use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+            use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+
+            // アプリメニューを作成（macOS標準）
+            let app_submenu = SubmenuBuilder::new(app, "オラの経費")
+                .item(&PredefinedMenuItem::about(app, None, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::hide(app, None)?)
+                .item(&PredefinedMenuItem::hide_others(app, None)?)
+                .item(&PredefinedMenuItem::show_all(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::quit(app, None)?)
+                .build()?;
+
+            // 編集メニューを作成
+            let edit_submenu = SubmenuBuilder::new(app, "編集")
+                .item(&PredefinedMenuItem::undo(app, None)?)
+                .item(&PredefinedMenuItem::redo(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::cut(app, None)?)
+                .item(&PredefinedMenuItem::copy(app, None)?)
+                .item(&PredefinedMenuItem::paste(app, None)?)
+                .item(&PredefinedMenuItem::select_all(app, None)?)
+                .build()?;
 
             // ヘルプサブメニューを作成
             let help_submenu = SubmenuBuilder::new(app, "ヘルプ")
@@ -101,7 +123,11 @@ pub fn run() {
                 .build()?;
 
             // メインメニューを作成
-            let menu = MenuBuilder::new(app).item(&help_submenu).build()?;
+            let menu = MenuBuilder::new(app)
+                .item(&app_submenu)
+                .item(&edit_submenu)
+                .item(&help_submenu)
+                .build()?;
 
             app.set_menu(menu)?;
 

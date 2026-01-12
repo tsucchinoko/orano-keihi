@@ -497,14 +497,17 @@ fn validate_date_format(date: &str) -> Result<(), String> {
 pub async fn upload_subscription_receipt_via_api(
     subscription_id: i64,
     file_path: String,
-    sessionToken: Option<String>,
+    session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<String, String> {
     info!("APIサーバー経由でサブスクリプション領収書アップロード開始 - ID: {subscription_id}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(sessionToken.as_deref(), "/api/subscriptions/receipt/upload")
+        .authenticate_request(
+            session_token.as_deref(),
+            "/api/subscriptions/receipt/upload",
+        )
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -538,28 +541,18 @@ pub async fn upload_subscription_receipt_via_api(
     })?;
 
     // アップロード用のリクエストボディを作成
-    #[derive(Serialize)]
-    struct UploadRequest {
-        #[serde(rename = "subscription_id")]
-        subscription_id: i64,
-        #[serde(rename = "fileName")]
-        file_name: String,
-        #[serde(rename = "fileData")]
-        file_data: String, // Base64エンコードされたファイルデータ
-    }
-
-    let upload_request = UploadRequest {
-        subscription_id,
-        file_name,
-        file_data: general_purpose::STANDARD.encode(&file_data),
-    };
+    let upload_request = serde_json::json!({
+        "subscriptionId": subscription_id,
+        "fileName": file_name,
+        "fileData": general_purpose::STANDARD.encode(&file_data)
+    });
 
     // APIサーバーにアップロードリクエストを送信
     let response = api_client
-        .post::<UploadRequest, serde_json::Value>(
+        .post::<serde_json::Value, serde_json::Value>(
             "/api/v1/subscriptions/receipt/upload",
             &upload_request,
-            sessionToken.as_deref(),
+            session_token.as_deref(),
         )
         .await
         .map_err(|e| {
@@ -595,14 +588,17 @@ pub async fn upload_subscription_receipt_via_api(
 #[allow(non_snake_case)]
 pub async fn delete_subscription_receipt_via_api(
     subscription_id: i64,
-    sessionToken: Option<String>,
+    session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<bool, String> {
     info!("APIサーバー経由でサブスクリプション領収書削除開始 - ID: {subscription_id}");
 
     // 認証チェック
     let user = auth_middleware
-        .authenticate_request(sessionToken.as_deref(), "/api/subscriptions/receipt/delete")
+        .authenticate_request(
+            session_token.as_deref(),
+            "/api/subscriptions/receipt/delete",
+        )
         .await
         .map_err(|e| {
             error!("認証エラー: {e}");
@@ -621,7 +617,7 @@ pub async fn delete_subscription_receipt_via_api(
     api_client
         .delete(
             &format!("/api/v1/subscriptions/{subscription_id}/receipt"),
-            sessionToken.as_deref(),
+            session_token.as_deref(),
         )
         .await
         .map_err(|e| {

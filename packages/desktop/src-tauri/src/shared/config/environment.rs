@@ -64,21 +64,10 @@ impl EnvironmentConfig {
 /// 現在の実行環境（Development または Production）
 ///
 /// # 判定ロジック
-/// 1. コンパイル時埋め込み環境変数を最優先
-/// 2. 実行時環境変数 ENVIRONMENT を確認
-/// 3. デバッグビルドの場合は Development
-/// 4. リリースビルドの場合は Production
+/// 1. 実行時環境変数 ENVIRONMENT を確認
+/// 2. デバッグビルドの場合は Development
+/// 3. リリースビルドの場合は Production
 pub fn get_environment() -> Environment {
-    // コンパイル時埋め込み環境変数を最優先
-    if let Some(embedded_env) = option_env!("EMBEDDED_ENVIRONMENT") {
-        let env = match embedded_env {
-            "production" => Environment::Production,
-            _ => Environment::Development,
-        };
-        log::debug!("環境判定: コンパイル時埋め込み値を使用 -> {embedded_env} -> {env:?}");
-        return env;
-    }
-
     // 実行時環境変数を確認
     if let Ok(env_var) = std::env::var("ENVIRONMENT") {
         let env = match env_var.as_str() {
@@ -123,23 +112,13 @@ pub fn get_database_filename(env: Environment) -> &'static str {
 /// 環境変数の読み込みを確認する
 ///
 /// # 処理内容
-/// 1. コンパイル時埋め込み環境変数をチェック
-/// 2. 開発環境（pnpm tauri dev）の場合のみ.envファイルを読み込み
-/// 3. 本番ビルドでは環境変数はビルドスクリプトから設定されることを前提とする
+/// 1. 開発環境（pnpm tauri dev）の場合のみ.envファイルを読み込み
+/// 2. 本番ビルドでは環境変数は実行時に設定されることを前提とする
 ///
 /// # 注意
 /// - 本番環境では.envファイルは読み込まれません（秘匿情報がバイナリに埋め込まれるのを防ぐため）
-/// - 本番ビルド時は script/load-env.sh から環境変数を設定してください
+/// - 本番実行時は環境変数を設定してからアプリケーションを起動してください
 pub fn load_environment_variables() {
-    // コンパイル時に埋め込まれた環境設定があるかチェック
-    let embedded_env = option_env!("EMBEDDED_ENVIRONMENT");
-
-    if let Some(env) = embedded_env {
-        // ログシステムが初期化されていないため、eprintlnを使用
-        eprintln!("コンパイル時埋め込み環境設定を使用: {env}");
-        return;
-    }
-
     // 開発環境かどうかを判定（デバッグビルド）
     let is_development = cfg!(debug_assertions);
 
@@ -158,8 +137,7 @@ pub fn load_environment_variables() {
         }
     } else {
         // 本番環境では.envファイルを読み込まない
-        eprintln!("本番環境: 環境変数はビルドスクリプトから設定されます");
-        eprintln!("ビルド時は `source script/load-env.sh && pnpm tauri build` を使用してください");
+        eprintln!("本番環境: 環境変数は実行時に設定されます");
     }
 
     // 読み込み後の環境変数を確認
@@ -239,17 +217,12 @@ impl ApiConfig {
     pub fn from_env() -> Self {
         log::debug!("ApiConfig::from_env() - 環境変数の読み込みを開始");
 
-        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
-        let base_url = option_env!("API_SERVER_URL")
-            .map(|s| {
-                log::debug!("コンパイル時埋め込みAPI_SERVER_URL を使用: {s}");
-                s.to_string()
-            })
-            .or_else(|| {
-                std::env::var("API_SERVER_URL").ok().map(|val| {
-                    log::debug!("実行時API_SERVER_URL が見つかりました: {val}");
-                    val
-                })
+        // 実行時環境変数を使用
+        let base_url = std::env::var("API_SERVER_URL")
+            .ok()
+            .map(|val| {
+                log::debug!("実行時API_SERVER_URL が見つかりました: {val}");
+                val
             })
             .unwrap_or_else(|| {
                 let default_url = "http://localhost:3000";
@@ -259,25 +232,17 @@ impl ApiConfig {
                 default_url.to_string()
             });
 
-        let timeout_seconds = option_env!("API_TIMEOUT_SECONDS")
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                std::env::var("API_TIMEOUT_SECONDS")
-                    .ok()
-                    .and_then(|val| val.parse().ok())
-            })
+        let timeout_seconds = std::env::var("API_TIMEOUT_SECONDS")
+            .ok()
+            .and_then(|val| val.parse().ok())
             .unwrap_or_else(|| {
                 log::debug!("API_TIMEOUT_SECONDS が設定されていないため、デフォルト値30秒を使用");
                 30
             });
 
-        let max_retries = option_env!("API_MAX_RETRIES")
-            .and_then(|s| s.parse().ok())
-            .or_else(|| {
-                std::env::var("API_MAX_RETRIES")
-                    .ok()
-                    .and_then(|val| val.parse().ok())
-            })
+        let max_retries = std::env::var("API_MAX_RETRIES")
+            .ok()
+            .and_then(|val| val.parse().ok())
             .unwrap_or_else(|| {
                 log::debug!("API_MAX_RETRIES が設定されていないため、デフォルト値3回を使用");
                 3
@@ -365,38 +330,27 @@ impl GoogleOAuthConfig {
     pub fn from_env() -> Option<Self> {
         log::debug!("GoogleOAuthConfig::from_env() - 環境変数の読み込みを開始");
 
-        // コンパイル時埋め込み値を優先し、見つからない場合は実行時環境変数を使用
-        let client_id = option_env!("GOOGLE_CLIENT_ID")
-            .map(|s| {
-                log::debug!(
-                    "コンパイル時埋め込みGOOGLE_CLIENT_ID を使用: {}****",
-                    &s[..8.min(s.len())]
-                );
-                s.to_string()
-            })
-            .or_else(|| {
-                std::env::var("GOOGLE_CLIENT_ID").ok().map(|val| {
-                    log::debug!(
-                        "実行時GOOGLE_CLIENT_ID が見つかりました: {}****",
-                        &val[..8.min(val.len())]
-                    );
-                    val
-                })
-            });
+        // 実行時環境変数を使用
+        let client_id = std::env::var("GOOGLE_CLIENT_ID").ok().map(|val| {
+            log::debug!(
+                "実行時GOOGLE_CLIENT_ID が見つかりました: {}****",
+                &val[..8.min(val.len())]
+            );
+            val
+        });
 
         let client_id = match client_id {
             Some(val) => val,
             None => {
-                log::error!("GOOGLE_CLIENT_ID が見つかりません（コンパイル時埋め込み値・実行時環境変数ともに）");
+                log::error!("GOOGLE_CLIENT_ID が見つかりません");
                 return None;
             }
         };
 
         // ネイティブアプリではクライアントシークレットは不要（PKCE使用）
         // 一時的にクライアントシークレットを使用
-        let client_secret = option_env!("GOOGLE_CLIENT_SECRET")
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("GOOGLE_CLIENT_SECRET").ok())
+        let client_secret = std::env::var("GOOGLE_CLIENT_SECRET")
+            .ok()
             .unwrap_or_else(|| {
                 log::debug!("GOOGLE_CLIENT_SECRET が設定されていません");
                 String::new()
@@ -404,21 +358,17 @@ impl GoogleOAuthConfig {
 
         log::debug!("一時的にクライアントシークレットを使用します（テスト用）");
 
-        let redirect_uri = option_env!("GOOGLE_REDIRECT_URI")
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("GOOGLE_REDIRECT_URI").ok())
+        let redirect_uri = std::env::var("GOOGLE_REDIRECT_URI")
+            .ok()
             .unwrap_or_else(|| {
                 log::debug!("GOOGLE_REDIRECT_URI が設定されていないため、デフォルト値を使用");
                 "http://127.0.0.1/callback".to_string()
             });
 
-        let session_encryption_key = option_env!("EMBEDDED_SESSION_ENCRYPTION_KEY")
-            .map(|s| s.to_string())
-            .or_else(|| std::env::var("SESSION_ENCRYPTION_KEY").ok())
-            .unwrap_or_else(|| {
-                log::warn!("SESSION_ENCRYPTION_KEY が設定されていないため、デフォルト値を使用（本番環境では必ず設定してください）");
-                "default_32_byte_encryption_key_123".to_string()
-            });
+        let session_encryption_key = std::env::var("SESSION_ENCRYPTION_KEY").ok().unwrap_or_else(|| {
+            log::warn!("SESSION_ENCRYPTION_KEY が設定されていないため、デフォルト値を使用（本番環境では必ず設定してください）");
+            "default_32_byte_encryption_key_123".to_string()
+        });
 
         log::debug!("GoogleOAuthConfig::from_env() - 設定の読み込みが完了しました");
         Some(Self {

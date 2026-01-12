@@ -124,7 +124,25 @@ function handleExpenseFormCancel() {
 
 
 onMount(() => {
-	loadData();
+	// 認証状態の初期化を待ってからデータを読み込み
+	const initializeAndLoad = async () => {
+		console.info("🏠 メインページ: 認証状態の初期化を開始");
+		await authStore.initialize();
+		console.info("🏠 メインページ: 認証状態の初期化完了。isAuthenticated =", authStore.isAuthenticated);
+		
+		// 認証されていない場合はログインページにリダイレクト
+		if (!authStore.isAuthenticated) {
+			console.info("🏠 メインページ: 未認証のためログインページにリダイレクト");
+			goto("/login");
+			return;
+		}
+		
+		// 認証済みの場合はデータを読み込み
+		console.info("🏠 メインページ: 認証済みのためデータを読み込み");
+		loadData();
+	};
+	
+	initializeAndLoad();
 });
 
 // 認証状態が変更されたときにデータを再読み込み

@@ -48,7 +48,7 @@ export class TauriSubscriptionService {
         // Tauriコマンドを実行してサブスクリプション一覧を取得
         const subscriptions = await this.tauriExecutor.invoke<Subscription[]>("get_subscriptions", {
           activeOnly,
-          sessionToken: this.getSessionTokenForUser(userId),
+          session_token: this.getSessionTokenForUser(userId),
         });
 
         // 統計情報を計算
@@ -69,7 +69,10 @@ export class TauriSubscriptionService {
           monthlyTotal,
         };
       } catch (error) {
-        logger.error("サブスクリプション一覧の取得に失敗しました", { userId, error });
+        logger.error("サブスクリプション一覧の取得に失敗しました", {
+          userId,
+          error,
+        });
         throw new AppError(ErrorCode.DATABASE_ERROR, "サブスクリプション一覧の取得に失敗しました");
       }
     });
@@ -99,7 +102,11 @@ export class TauriSubscriptionService {
 
         return subscription;
       } catch (error) {
-        logger.error("サブスクリプションの作成に失敗しました", { userId, dto, error });
+        logger.error("サブスクリプションの作成に失敗しました", {
+          userId,
+          dto,
+          error,
+        });
         throw new AppError(ErrorCode.DATABASE_ERROR, "サブスクリプションの作成に失敗しました");
       }
     });
@@ -246,7 +253,10 @@ export class TauriSubscriptionService {
           activeSubscriptions: subscriptions.length,
         };
       } catch (error) {
-        logger.error("月額サブスクリプション合計の取得に失敗しました", { userId, error });
+        logger.error("月額サブスクリプション合計の取得に失敗しました", {
+          userId,
+          error,
+        });
         throw new AppError(
           ErrorCode.DATABASE_ERROR,
           "月額サブスクリプション合計の取得に失敗しました",
