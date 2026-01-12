@@ -44,19 +44,19 @@ function getPlatformConfigurations() {
         {
             target: 'darwin',
             arch: 'x86_64',
-            fileExtension: 'dmg',
+            fileExtension: 'app.tar.gz',
             description: 'macOS Intel'
         },
         {
             target: 'darwin',
             arch: 'aarch64',
-            fileExtension: 'dmg',
+            fileExtension: 'app.tar.gz',
             description: 'macOS Apple Silicon'
         },
         {
             target: 'windows',
             arch: 'x86_64',
-            fileExtension: 'msi',
+            fileExtension: 'msi.zip',
             description: 'Windows 64bit'
         }
     ];
@@ -190,47 +190,47 @@ function getActualFilePath(config, fileName) {
     const artifactsBasePath = path.join(__dirname, '..', 'artifacts');
     
     if (config.target === 'darwin') {
-        // MacOS成果物: artifacts/macos-artifacts/*.dmg
+        // MacOS成果物: artifacts/macos-artifacts/*.app.tar.gz
         const macosDir = path.join(artifactsBasePath, 'macos-artifacts');
-        
+
         // 実際のファイル名を検索（バージョンやアーキテクチャが異なる場合に対応）
         if (fs.existsSync(macosDir)) {
             const files = fs.readdirSync(macosDir);
-            const dmgFiles = files.filter(f => f.endsWith('.dmg') && !f.endsWith('.dmg.sig'));
-            
-            if (dmgFiles.length > 0) {
+            const appFiles = files.filter(f => f.endsWith('.app.tar.gz') && !f.endsWith('.app.tar.gz.sig'));
+
+            if (appFiles.length > 0) {
                 // アーキテクチャに応じたファイルを選択
-                let targetFile = dmgFiles[0]; // デフォルト
-                
+                let targetFile = appFiles[0]; // デフォルト
+
                 if (config.arch === 'x86_64') {
                     // Intel Mac用ファイルを探す（x64またはx86_64を含む）
-                    const intelFile = dmgFiles.find(f => f.includes('x64') || f.includes('x86_64'));
+                    const intelFile = appFiles.find(f => f.includes('x64') || f.includes('x86_64'));
                     if (intelFile) targetFile = intelFile;
                 } else if (config.arch === 'aarch64') {
                     // Apple Silicon用ファイルを探す（aarch64またはarm64を含む）
-                    const armFile = dmgFiles.find(f => f.includes('aarch64') || f.includes('arm64'));
+                    const armFile = appFiles.find(f => f.includes('aarch64') || f.includes('arm64'));
                     if (armFile) targetFile = armFile;
                 }
-                
+
                 return path.join(macosDir, targetFile);
             }
         }
-        
+
         return path.join(macosDir, fileName);
     } else if (config.target === 'windows') {
-        // Windows成果物: artifacts/windows-artifacts/*.msi
+        // Windows成果物: artifacts/windows-artifacts/*.msi.zip
         const windowsDir = path.join(artifactsBasePath, 'windows-artifacts');
-        
+
         // 実際のファイル名を検索
         if (fs.existsSync(windowsDir)) {
             const files = fs.readdirSync(windowsDir);
-            const msiFiles = files.filter(f => f.endsWith('.msi') && !f.endsWith('.msi.sig'));
-            
-            if (msiFiles.length > 0) {
-                return path.join(windowsDir, msiFiles[0]);
+            const msiZipFiles = files.filter(f => f.endsWith('.msi.zip') && !f.endsWith('.msi.zip.sig'));
+
+            if (msiZipFiles.length > 0) {
+                return path.join(windowsDir, msiZipFiles[0]);
             }
         }
-        
+
         return path.join(windowsDir, fileName);
     }
     

@@ -175,17 +175,22 @@ jobs:
         run: |
           echo "🔐 Tauri署名ファイルを生成中..."
 
-          # DMGファイルを検索（モノレポ構造に対応）
-          DMG_FILE=$(find . -type f -name "*.dmg" -path "*/target/release/bundle/dmg/*" | head -n 1)
+          # アップデーター用の.app.tar.gzファイルを検索
+          APP_TAR_GZ=$(find . -type f -name "*.app.tar.gz" -path "*/target/release/bundle/macos/*" | head -n 1)
 
-          if [ -z "$DMG_FILE" ]; then
-            echo "❌ DMGファイルが見つかりません"
+          if [ -z "$APP_TAR_GZ" ]; then
+            echo "❌ .app.tar.gzファイルが見つかりません"
+            echo "ディレクトリ構造を確認中..."
+            find . -type d -name "macos" -path "*/target/release/bundle/*"
+            find . -type f -name "*.app.tar.gz" -o -name "*.tar.gz"
             exit 1
           fi
 
           # 絶対パスに変換
-          DMG_FILE_ABS=$(realpath "$DMG_FILE")
-          echo "📦 署名対象ファイル: $DMG_FILE_ABS"
+          APP_TAR_GZ_ABS=$(realpath "$APP_TAR_GZ")
+          echo "📦 署名対象ファイル: $APP_TAR_GZ_ABS"
+          echo "📊 ファイルサイズ:"
+          ls -lh "$APP_TAR_GZ_ABS"
 
           # 秘密鍵を一時ファイルに保存（改行を削除）
           TEMP_KEY_FILE=$(mktemp)
@@ -195,9 +200,9 @@ jobs:
           # Tauri署名を生成
           cd packages/desktop
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            pnpm tauri signer sign "$DMG_FILE_ABS" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            pnpm tauri signer sign "$APP_TAR_GZ_ABS" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
           else
-            pnpm tauri signer sign "$DMG_FILE_ABS" --private-key-path "$TEMP_KEY_FILE"
+            pnpm tauri signer sign "$APP_TAR_GZ_ABS" --private-key-path "$TEMP_KEY_FILE"
           fi
           cd ../..
 
@@ -205,7 +210,7 @@ jobs:
           rm -f "$TEMP_KEY_FILE"
 
           # 署名ファイルの確認
-          SIG_FILE="${DMG_FILE_ABS}.sig"
+          SIG_FILE="${APP_TAR_GZ_ABS}.sig"
           if [ -f "$SIG_FILE" ]; then
             echo "✅ 署名ファイルが生成されました: $SIG_FILE"
             echo "📋 署名内容:"
@@ -223,14 +228,22 @@ jobs:
           echo "🎯 MacOSビルド完了"
           echo "📦 生成されたファイル:"
 
-          # dmgファイルを再帰的に検索
+          # .app.tar.gzファイルを再帰的に検索
+          echo "🔍 アップデーター用ファイル (.app.tar.gz):"
+          find . -type f -name "*.app.tar.gz" -path "*/target/release/bundle/macos/*" -exec ls -lh {} \; 2>/dev/null || {
+            echo "⚠️ .app.tar.gzファイルが見つかりません"
+          }
+
+          # 署名ファイルを確認
+          echo "🔍 署名ファイル (.app.tar.gz.sig):"
+          find . -type f -name "*.app.tar.gz.sig" -path "*/target/release/bundle/macos/*" -exec ls -lh {} \; 2>/dev/null || {
+            echo "⚠️ 署名ファイルが見つかりません"
+          }
+
+          # DMGファイルも確認（ユーザー配布用）
+          echo "🔍 ユーザー配布用DMG:"
           find . -type f -name "*.dmg" -path "*/target/release/bundle/dmg/*" -exec ls -lh {} \; 2>/dev/null || {
-            echo "⚠️ dmgファイルが見つかりません"
-            echo "ディレクトリ構造を確認中..."
-            find . -type d -name "bundle" -path "*/target/release/*" 2>/dev/null | while read dir; do
-              echo "  - $dir"
-              ls -la "$dir" 2>/dev/null || true
-            done
+            echo "⚠️ DMGファイルが見つかりません"
           }
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -244,8 +257,9 @@ jobs:
         with:
           name: macos-artifacts
           path: |
+            packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg.sig
           retention-days: 7
 
       - name: MacOS署名環境のクリーンアップ
@@ -320,16 +334,19 @@ jobs:
         run: |
           Write-Host "🔐 Windows用Tauri署名ファイルを生成中..."
 
-          # MSIファイルを検索（モノレポ構造に対応）
-          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
+          # アップデーター用の.msi.zipファイルを検索
+          $msiZipFiles = Get-ChildItem -Path . -Filter "*.msi.zip" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
 
-          if ($msiFiles.Count -eq 0) {
-            Write-Host "❌ MSIファイルが見つかりません"
+          if ($msiZipFiles.Count -eq 0) {
+            Write-Host "❌ .msi.zipファイルが見つかりません"
+            Write-Host "ディレクトリ構造を確認中..."
+            Get-ChildItem -Path . -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" } | Select-Object FullName
             exit 1
           }
 
-          $msiFile = $msiFiles[0].FullName
-          Write-Host "📦 署名対象ファイル: $msiFile"
+          $msiZipFile = $msiZipFiles[0].FullName
+          Write-Host "📦 署名対象ファイル: $msiZipFile"
+          Write-Host "📊 ファイルサイズ: $([math]::Round((Get-Item $msiZipFile).Length/1MB, 2)) MB"
 
           # 秘密鍵を一時ファイルに保存（改行を削除）
           $tempKeyFile = [System.IO.Path]::GetTempFileName()
@@ -338,17 +355,17 @@ jobs:
           try {
             # Tauri署名を生成
             Set-Location "packages/desktop"
-            
+
             if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
-              pnpm tauri signer sign "$msiFile" --private-key-path "$tempKeyFile" -p "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+              pnpm tauri signer sign "$msiZipFile" --private-key-path "$tempKeyFile" -p "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
             } else {
-              pnpm tauri signer sign "$msiFile" --private-key-path "$tempKeyFile"
+              pnpm tauri signer sign "$msiZipFile" --private-key-path "$tempKeyFile"
             }
-            
+
             Set-Location "../.."
 
             # 署名ファイルの確認
-            $sigFile = "$msiFile.sig"
+            $sigFile = "$msiZipFile.sig"
             if (Test-Path $sigFile) {
               Write-Host "✅ 署名ファイルが生成されました: $sigFile"
               Write-Host "📋 署名内容:"
@@ -370,32 +387,50 @@ jobs:
 
       - name: ビルド結果の確認
         run: |
-          echo "🎯 Windowsビルド完了"
-          echo "📦 生成されたファイル:"
+          Write-Host "🎯 Windowsビルド完了"
+          Write-Host "📦 生成されたファイル:"
 
-          # msiファイルを再帰的に検索
-          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
+          # アップデーター用ファイル (.msi.zip) を検索
+          Write-Host "🔍 アップデーター用ファイル (.msi.zip):"
+          $msiZipFiles = Get-ChildItem -Path . -Filter "*.msi.zip" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
 
-          if ($msiFiles) {
-            foreach ($file in $msiFiles) {
+          if ($msiZipFiles) {
+            foreach ($file in $msiZipFiles) {
               Write-Host "  - $($file.Name) ($([math]::Round($file.Length/1MB, 2)) MB)"
               Write-Host "    場所: $($file.DirectoryName)"
             }
           } else {
-            Write-Host "⚠️ msiファイルが見つかりません"
-            Write-Host "ディレクトリ構造を確認中..."
-            Get-ChildItem -Path . -Directory -Recurse -Filter "bundle" -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "  - $($_.FullName)"
-              Get-ChildItem -Path $_.FullName -ErrorAction SilentlyContinue | ForEach-Object {
-                Write-Host "    - $($_.Name)"
-              }
+            Write-Host "⚠️ .msi.zipファイルが見つかりません"
+          }
+
+          # 署名ファイルを確認
+          Write-Host "🔍 署名ファイル (.msi.zip.sig):"
+          $sigFiles = Get-ChildItem -Path . -Filter "*.msi.zip.sig" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
+
+          if ($sigFiles) {
+            foreach ($file in $sigFiles) {
+              Write-Host "  - $($file.Name)"
             }
+          } else {
+            Write-Host "⚠️ 署名ファイルが見つかりません"
+          }
+
+          # ユーザー配布用MSIファイルも確認
+          Write-Host "🔍 ユーザー配布用MSI:"
+          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" -and $_.FullName -notlike "*.msi.zip" }
+
+          if ($msiFiles) {
+            foreach ($file in $msiFiles) {
+              Write-Host "  - $($file.Name) ($([math]::Round($file.Length/1MB, 2)) MB)"
+            }
+          } else {
+            Write-Host "⚠️ MSIファイルが見つかりません"
           }
 
           if ("${{ github.event_name }}" -eq "pull_request") {
-            echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
+            Write-Host "✅ PR用ビルドテスト完了 - リリースは作成されません"
           } else {
-            echo "🚀 mainブランチへのpush - リリース作成準備完了"
+            Write-Host "🚀 mainブランチへのpush - リリース作成準備完了"
           }
         shell: pwsh
 
@@ -404,8 +439,9 @@ jobs:
         with:
           name: windows-artifacts
           path: |
+            packages/desktop/src-tauri/target/release/bundle/msi/*.msi.zip
+            packages/desktop/src-tauri/target/release/bundle/msi/*.msi.zip.sig
             packages/desktop/src-tauri/target/release/bundle/msi/*.msi
-            packages/desktop/src-tauri/target/release/bundle/msi/*.msi.sig
           retention-days: 7
 
   # リリース作成
@@ -516,17 +552,26 @@ jobs:
             // 成果物ファイルの検索（より柔軟な検索）
             const macosFiles = fs.readdirSync(macosArtifactsDir);
             const windowsFiles = fs.readdirSync(windowsArtifactsDir);
-            
+
+            // ユーザー配布用ファイル
             const dmgFiles = macosFiles.filter(f => f.endsWith('.dmg') && !f.endsWith('.dmg.sig'));
-            const msiFiles = windowsFiles.filter(f => f.endsWith('.msi') && !f.endsWith('.msi.sig'));
-            const dmgSigFiles = macosFiles.filter(f => f.endsWith('.dmg.sig'));
-            const msiSigFiles = windowsFiles.filter(f => f.endsWith('.msi.sig'));
+            const msiFiles = windowsFiles.filter(f => f.endsWith('.msi') && !f.endsWith('.msi.sig') && !f.endsWith('.msi.zip') && !f.endsWith('.msi.zip.sig'));
+
+            // アップデーター用圧縮ファイル
+            const appTarGzFiles = macosFiles.filter(f => f.endsWith('.app.tar.gz') && !f.endsWith('.app.tar.gz.sig'));
+            const msiZipFiles = windowsFiles.filter(f => f.endsWith('.msi.zip') && !f.endsWith('.msi.zip.sig'));
+
+            // 署名ファイル
+            const appTarGzSigFiles = macosFiles.filter(f => f.endsWith('.app.tar.gz.sig'));
+            const msiZipSigFiles = windowsFiles.filter(f => f.endsWith('.msi.zip.sig'));
 
             console.log('📦 検出された成果物:');
             console.log('   MacOS DMG: ' + dmgFiles.length + '個 (' + dmgFiles.join(', ') + ')');
-            console.log('   MacOS署名: ' + dmgSigFiles.length + '個 (' + dmgSigFiles.join(', ') + ')');
+            console.log('   MacOS アップデーター用: ' + appTarGzFiles.length + '個 (' + appTarGzFiles.join(', ') + ')');
+            console.log('   MacOS 圧縮ファイル署名: ' + appTarGzSigFiles.length + '個 (' + appTarGzSigFiles.join(', ') + ')');
             console.log('   Windows MSI: ' + msiFiles.length + '個 (' + msiFiles.join(', ') + ')');
-            console.log('   Windows署名: ' + msiSigFiles.length + '個 (' + msiSigFiles.join(', ') + ')');
+            console.log('   Windows アップデーター用: ' + msiZipFiles.length + '個 (' + msiZipFiles.join(', ') + ')');
+            console.log('   Windows 圧縮ファイル署名: ' + msiZipSigFiles.length + '個 (' + msiZipSigFiles.join(', ') + ')');
 
             if (dmgFiles.length === 0) {
               console.error('❌ DMGファイルが見つかりません');
@@ -534,10 +579,22 @@ jobs:
               throw new Error('DMGファイルが見つかりません');
             }
 
+            if (appTarGzFiles.length === 0) {
+              console.error('❌ .app.tar.gzファイルが見つかりません');
+              console.log('   MacOSディレクトリ内容: ' + macosFiles.join(', '));
+              throw new Error('.app.tar.gzファイルが見つかりません');
+            }
+
             if (msiFiles.length === 0) {
               console.error('❌ MSIファイルが見つかりません');
               console.log('   Windowsディレクトリ内容: ' + windowsFiles.join(', '));
               throw new Error('MSIファイルが見つかりません');
+            }
+
+            if (msiZipFiles.length === 0) {
+              console.error('❌ .msi.zipファイルが見つかりません');
+              console.log('   Windowsディレクトリ内容: ' + windowsFiles.join(', '));
+              throw new Error('.msi.zipファイルが見つかりません');
             }
 
             // ファイルパスとサイズの取得
@@ -550,8 +607,8 @@ jobs:
             const msiSizeMB = (msiStats.size / 1024 / 1024).toFixed(2);
 
             console.log('📊 ファイルサイズ:');
-            console.log('   - MacOS: ' + dmgFiles[0] + ' (' + dmgSizeMB + ' MB)');
-            console.log('   - Windows: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
+            console.log('   - MacOS DMG: ' + dmgFiles[0] + ' (' + dmgSizeMB + ' MB)');
+            console.log('   - Windows MSI: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
 
             // リリースノートの生成
             const releaseNotes = [
@@ -624,26 +681,42 @@ jobs:
               }
             }
 
-            // DMGファイルのアップロード
+            // MacOS DMGファイルのアップロード（ユーザー配布用）
             await uploadFile(dmgPath, dmgFiles[0], 'MacOS DMGファイル');
 
-            // DMG署名ファイルのアップロード
-            if (dmgSigFiles.length > 0) {
-              const dmgSigPath = path.join(macosArtifactsDir, dmgSigFiles[0]);
-              await uploadFile(dmgSigPath, dmgSigFiles[0], 'MacOS署名ファイル');
+            // MacOS アップデーター用圧縮ファイルのアップロード
+            if (appTarGzFiles.length > 0) {
+              const appTarGzPath = path.join(macosArtifactsDir, appTarGzFiles[0]);
+              await uploadFile(appTarGzPath, appTarGzFiles[0], 'MacOS アップデーター用ファイル (.app.tar.gz)');
             } else {
-              console.warn('⚠️  MacOS署名ファイルが見つかりません');
+              console.warn('⚠️  MacOS .app.tar.gzファイルが見つかりません');
             }
 
-            // MSIファイルのアップロード
+            // MacOS 圧縮ファイル署名のアップロード
+            if (appTarGzSigFiles.length > 0) {
+              const appTarGzSigPath = path.join(macosArtifactsDir, appTarGzSigFiles[0]);
+              await uploadFile(appTarGzSigPath, appTarGzSigFiles[0], 'MacOS 圧縮ファイル署名');
+            } else {
+              console.warn('⚠️  MacOS .app.tar.gz.sigファイルが見つかりません');
+            }
+
+            // Windows MSIファイルのアップロード（ユーザー配布用）
             await uploadFile(msiPath, msiFiles[0], 'Windows MSIファイル');
 
-            // MSI署名ファイルのアップロード
-            if (msiSigFiles.length > 0) {
-              const msiSigPath = path.join(windowsArtifactsDir, msiSigFiles[0]);
-              await uploadFile(msiSigPath, msiSigFiles[0], 'Windows署名ファイル');
+            // Windows アップデーター用圧縮ファイルのアップロード
+            if (msiZipFiles.length > 0) {
+              const msiZipPath = path.join(windowsArtifactsDir, msiZipFiles[0]);
+              await uploadFile(msiZipPath, msiZipFiles[0], 'Windows アップデーター用ファイル (.msi.zip)');
             } else {
-              console.warn('⚠️  Windows署名ファイルが見つかりません');
+              console.warn('⚠️  Windows .msi.zipファイルが見つかりません');
+            }
+
+            // Windows 圧縮ファイル署名のアップロード
+            if (msiZipSigFiles.length > 0) {
+              const msiZipSigPath = path.join(windowsArtifactsDir, msiZipSigFiles[0]);
+              await uploadFile(msiZipSigPath, msiZipSigFiles[0], 'Windows 圧縮ファイル署名');
+            } else {
+              console.warn('⚠️  Windows .msi.zip.sigファイルが見つかりません');
             }
 
             // 静的JSONファイルのアップロード
