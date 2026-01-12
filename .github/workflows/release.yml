@@ -334,19 +334,29 @@ jobs:
         run: |
           Write-Host "🔐 Windows用Tauri署名ファイルを生成中..."
 
-          # アップデーター用の.msi.zipファイルを検索
-          $msiZipFiles = Get-ChildItem -Path . -Filter "*.msi.zip" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
+          # .msiファイルを検索
+          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" -and $_.FullName -notlike "*.msi.zip" }
 
-          if ($msiZipFiles.Count -eq 0) {
-            Write-Host "❌ .msi.zipファイルが見つかりません"
+          if ($msiFiles.Count -eq 0) {
+            Write-Host "❌ .msiファイルが見つかりません"
             Write-Host "ディレクトリ構造を確認中..."
             Get-ChildItem -Path . -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" } | Select-Object FullName
             exit 1
           }
 
-          $msiZipFile = $msiZipFiles[0].FullName
-          Write-Host "📦 署名対象ファイル: $msiZipFile"
-          Write-Host "📊 ファイルサイズ: $([math]::Round((Get-Item $msiZipFile).Length/1MB, 2)) MB"
+          $msiFile = $msiFiles[0].FullName
+          Write-Host "📦 MSIファイル: $msiFile"
+          Write-Host "📊 ファイルサイズ: $([math]::Round((Get-Item $msiFile).Length/1MB, 2)) MB"
+
+          # .msi.zipファイルを作成（アップデーター用）
+          $msiZipFile = "$msiFile.zip"
+          Write-Host "📦 アップデーター用ZIPファイルを作成中: $msiZipFile"
+
+          # PowerShellの圧縮を使用
+          Compress-Archive -Path $msiFile -DestinationPath $msiZipFile -Force
+
+          Write-Host "✅ ZIPファイルが作成されました"
+          Write-Host "📊 ZIPファイルサイズ: $([math]::Round((Get-Item $msiZipFile).Length/1MB, 2)) MB"
 
           # 秘密鍵を一時ファイルに保存（改行を削除）
           $tempKeyFile = [System.IO.Path]::GetTempFileName()
@@ -354,6 +364,7 @@ jobs:
 
           try {
             # Tauri署名を生成
+            Write-Host "🔏 ZIPファイルに署名中..."
             Set-Location "packages/desktop"
 
             if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
@@ -529,7 +540,7 @@ jobs:
             const windowsArtifactsDir = path.join(artifactsDir, 'windows-artifacts');
 
             console.log('📁 成果物ディレクトリの確認:');
-            
+
             if (!fs.existsSync(artifactsDir)) {
               console.error('❌ artifactsディレクトリが見つかりません: ' + artifactsDir);
               throw new Error('artifactsディレクトリが見つかりません');
