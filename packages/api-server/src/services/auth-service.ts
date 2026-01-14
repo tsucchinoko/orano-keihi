@@ -155,7 +155,40 @@ export class AuthService {
             user,
           };
         }
+
+        // トークンがユーザーIDとして無効な場合、データベースから最初のユーザーを取得
+        try {
+          const allUsers = await this.userRepository.getAllUsers();
+          if (allUsers && allUsers.length > 0) {
+            const firstDbUser = allUsers[0];
+            const firstUser = {
+              id: firstDbUser.id,
+              googleId: firstDbUser.google_id,
+              email: firstDbUser.email,
+              name: firstDbUser.name,
+              pictureUrl: firstDbUser.picture_url || undefined,
+              createdAt: firstDbUser.created_at,
+              updatedAt: firstDbUser.updated_at,
+            };
+
+            logger.debug("開発環境用トークン検証が成功しました（DBから最初のユーザー）", {
+              userId: firstUser.id,
+              email: firstUser.email,
+            });
+
+            return {
+              isValid: true,
+              user: firstUser,
+            };
+          }
+        } catch (dbError) {
+          logger.error("データベースからのユーザー取得に失敗しました", {
+            error: dbError instanceof Error ? dbError.message : String(dbError),
+          });
+          // エラーの場合は失敗を返す
+        }
       }
+
       logger.warn("開発環境用トークン検証が失敗しました", {
         token: token.substring(0, 10) + "...",
       });
