@@ -6,7 +6,7 @@
 
 ## タスク
 
-- [ ] 1. NanoIdライブラリの統合とユーティリティ関数の作成
+- [x] 1. NanoIdライブラリの統合とユーティリティ関数の作成
   - Cargo.tomlに`nanoid = "0.4.0"`を追加
   - `packages/desktop/src-tauri/src/shared/utils/nanoid.rs`を作成
   - `generate_user_id()`関数を実装（21文字のnanoIdを生成）
