@@ -109,7 +109,7 @@
   - 既存のテストがすべて成功することを確認
   - _要件: 7.1, 7.3_
 
-- [ ] 7. UserPathManagerの更新
+- [x] 7. UserPathManagerの更新
   - `generate_user_receipt_path(user_id: &str, expense_id: i64, filename: &str)`に変更
   - `convert_legacy_to_user_path(legacy_path: &str, user_id: &str)`に変更
   - `extract_user_id_from_path(path: &str) -> AppResult<String>`に変更（戻り値をStringに）
