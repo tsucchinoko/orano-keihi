@@ -1996,6 +1996,9 @@ pub fn migrate_user_id_to_nanoid(conn: &Connection) -> Result<MigrationResult, A
 fn execute_user_id_nanoid_migration(tx: &Transaction) -> Result<(), rusqlite::Error> {
     log::info!("ユーザーIDマイグレーション処理を開始");
 
+    // 外部キー制約を一時的に無効化
+    tx.execute("PRAGMA foreign_keys = OFF", [])?;
+
     // 1. IDマッピングテーブルを作成
     log::info!("IDマッピングテーブルを作成");
     tx.execute(
@@ -2078,6 +2081,9 @@ fn execute_user_id_nanoid_migration(tx: &Transaction) -> Result<(), rusqlite::Er
     // 8. マッピングテーブルを削除
     log::info!("一時的なマッピングテーブルを削除");
     tx.execute("DROP TABLE user_id_mapping", [])?;
+
+    // 外部キー制約を再度有効化
+    tx.execute("PRAGMA foreign_keys = ON", [])?;
 
     log::info!("ユーザーIDマイグレーション処理が完了");
     Ok(())
@@ -2217,9 +2223,12 @@ fn migrate_expenses_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error
         return Ok(());
     }
 
+    // receipt_urlカラムが存在するかチェック
+    let has_receipt_url = check_column_exists_in_tx(tx, "expenses", "receipt_url");
+
     // 1. 新しいテーブルを作成
     log::info!("expenses_newテーブルを作成");
-    tx.execute(
+    let create_table_sql = if has_receipt_url {
         "CREATE TABLE expenses_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             date TEXT NOT NULL,
@@ -2229,21 +2238,36 @@ fn migrate_expenses_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error
             receipt_url TEXT CHECK(receipt_url IS NULL OR receipt_url LIKE 'https://%'),
             user_id TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )",
-        [],
-    )?;
+            updated_at TEXT NOT NULL
+        )"
+    } else {
+        "CREATE TABLE expenses_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL,
+            category TEXT NOT NULL,
+            description TEXT,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )"
+    };
+    tx.execute(create_table_sql, [])?;
 
     // 2. データを移行（マッピングテーブルを使用）
     log::info!("expensesテーブルのデータを移行");
-    tx.execute(
+    let insert_sql = if has_receipt_url {
         "INSERT INTO expenses_new (id, date, amount, category, description, receipt_url, user_id, created_at, updated_at)
          SELECT e.id, e.date, e.amount, e.category, e.description, e.receipt_url, m.new_id, e.created_at, e.updated_at
          FROM expenses e
-         INNER JOIN user_id_mapping m ON e.user_id = m.old_id",
-        [],
-    )?;
+         INNER JOIN user_id_mapping m ON e.user_id = m.old_id"
+    } else {
+        "INSERT INTO expenses_new (id, date, amount, category, description, user_id, created_at, updated_at)
+         SELECT e.id, e.date, e.amount, e.category, e.description, m.new_id, e.created_at, e.updated_at
+         FROM expenses e
+         INNER JOIN user_id_mapping m ON e.user_id = m.old_id"
+    };
+    tx.execute(insert_sql, [])?;
 
     // 3. 旧テーブルを削除して新テーブルをリネーム
     log::info!("旧expensesテーブルを削除して新テーブルをリネーム");
@@ -2264,10 +2288,12 @@ fn migrate_expenses_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error
         "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
         [],
     )?;
-    tx.execute(
-        "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
-        [],
-    )?;
+    if has_receipt_url {
+        tx.execute(
+            "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
+            [],
+        )?;
+    }
 
     log::info!("expensesテーブルのマイグレーションが完了");
     Ok(())
@@ -2289,9 +2315,12 @@ fn migrate_subscriptions_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::
         return Ok(());
     }
 
+    // receipt_pathカラムが存在するかチェック
+    let has_receipt_path = check_column_exists_in_tx(tx, "subscriptions", "receipt_path");
+
     // 1. 新しいテーブルを作成
     log::info!("subscriptions_newテーブルを作成");
-    tx.execute(
+    let create_table_sql = if has_receipt_path {
         "CREATE TABLE subscriptions_new (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -2303,21 +2332,38 @@ fn migrate_subscriptions_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::
             receipt_path TEXT,
             user_id TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )",
-        [],
-    )?;
+            updated_at TEXT NOT NULL
+        )"
+    } else {
+        "CREATE TABLE subscriptions_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            billing_cycle TEXT NOT NULL CHECK(billing_cycle IN ('monthly', 'annual')),
+            start_date TEXT NOT NULL,
+            category TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )"
+    };
+    tx.execute(create_table_sql, [])?;
 
     // 2. データを移行（マッピングテーブルを使用）
     log::info!("subscriptionsテーブルのデータを移行");
-    tx.execute(
+    let insert_sql = if has_receipt_path {
         "INSERT INTO subscriptions_new (id, name, amount, billing_cycle, start_date, category, is_active, receipt_path, user_id, created_at, updated_at)
          SELECT s.id, s.name, s.amount, s.billing_cycle, s.start_date, s.category, s.is_active, s.receipt_path, m.new_id, s.created_at, s.updated_at
          FROM subscriptions s
-         INNER JOIN user_id_mapping m ON s.user_id = m.old_id",
-        [],
-    )?;
+         INNER JOIN user_id_mapping m ON s.user_id = m.old_id"
+    } else {
+        "INSERT INTO subscriptions_new (id, name, amount, billing_cycle, start_date, category, is_active, user_id, created_at, updated_at)
+         SELECT s.id, s.name, s.amount, s.billing_cycle, s.start_date, s.category, s.is_active, m.new_id, s.created_at, s.updated_at
+         FROM subscriptions s
+         INNER JOIN user_id_mapping m ON s.user_id = m.old_id"
+    };
+    tx.execute(insert_sql, [])?;
 
     // 3. 旧テーブルを削除して新テーブルをリネーム
     log::info!("旧subscriptionsテーブルを削除して新テーブルをリネーム");
@@ -2362,8 +2408,7 @@ fn migrate_sessions_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
             expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            created_at TEXT NOT NULL
         )",
         [],
     )?;
@@ -2428,8 +2473,7 @@ fn migrate_receipt_cache_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::
             local_path TEXT NOT NULL,
             file_size INTEGER NOT NULL,
             last_accessed TEXT NOT NULL,
-            user_id TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            user_id TEXT NOT NULL
         )",
         [],
     )?;
@@ -2495,8 +2539,7 @@ fn migrate_migration_logs_table_nanoid(tx: &Transaction) -> Result<(), rusqlite:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             migration_name TEXT NOT NULL,
             executed_at TEXT NOT NULL,
-            user_id TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            user_id TEXT
         )",
         [],
     )?;
@@ -2564,8 +2607,7 @@ fn migrate_security_audit_logs_table_nanoid(tx: &Transaction) -> Result<(), rusq
             event_type TEXT NOT NULL,
             event_data TEXT,
             created_at TEXT NOT NULL,
-            user_id TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            user_id TEXT
         )",
         [],
     )?;
