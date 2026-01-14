@@ -3,6 +3,16 @@
  */
 
 /**
+ * Google OAuth ユーザー情報
+ */
+export interface GoogleUser {
+  google_id: string; // Google OAuth ID
+  email: string; // メールアドレス
+  name: string; // ユーザー名
+  picture_url?: string; // プロフィール画像URL（オプション）
+}
+
+/**
  * 経費作成DTO
  */
 export interface CreateExpenseDto {

@@ -7,6 +7,7 @@ export type { User, Expense, Subscription } from "./d1-models.js";
 
 // DTO型
 export type {
+  GoogleUser,
   CreateExpenseDto,
   UpdateExpenseDto,
   CreateSubscriptionDto,

@@ -19,8 +19,8 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
   - エラーコードとエラーレスポンス型を定義
   - _要件: 2.1, 3.1, 4.1_
 
-- [ ] 3. UserRepositoryの実装
-  - [ ] 3.1 UserRepositoryクラスを作成
+- [x] 3. UserRepositoryの実装
+  - [x] 3.1 UserRepositoryクラスを作成
     - D1Databaseをコンストラクタで受け取る
     - findOrCreateUserメソッドを実装
     - getUserByIdメソッドを実装
