@@ -28,3 +28,6 @@ Thumbs.db
 # 一時ファイル
 *.tmp
 *.temp
+
+
+.wrangler

@@ -12,6 +12,9 @@ export interface Env {
   // 基本環境変数
   NODE_ENV: string;
 
+  // D1データベース（バインディング）
+  DB: D1Database;
+
   // R2バケット（バインディング）
   R2_BUCKET: R2Bucket;
 
