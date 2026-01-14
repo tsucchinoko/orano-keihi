@@ -68,7 +68,7 @@
   - 既存のテストがすべて成功することを確認
   - _要件: 7.1, 7.2, 7.3_
 
-- [ ] 4. SessionManagerの更新
+- [x] 4. SessionManagerの更新
   - `create_session(&self, user_id: &str)`のシグネチャを変更
   - `invalidate_user_sessions(&self, user_id: &str)`のシグネチャを変更
   - `get_session_internal`でuser_idの型変換を更新
