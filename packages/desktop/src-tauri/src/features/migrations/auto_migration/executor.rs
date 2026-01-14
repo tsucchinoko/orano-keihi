@@ -302,6 +302,55 @@ fn check_column_exists(conn: &Connection, table_name: &str, column_name: &str) -
     }
 }
 
+/// ユーザーIDのnanoIdマイグレーション実行器
+///
+/// 既存の整数型ユーザーIDを文字列型のnanoIdに変換します。
+pub struct UserIdNanoidMigrationExecutor;
+
+impl MigrationExecutorTrait for UserIdNanoidMigrationExecutor {
+    fn execute(&self, conn: &Connection) -> Result<(), String> {
+        log::info!("ユーザーIDのnanoIdマイグレーションを実行");
+
+        // 注意: この関数は既にトランザクション内で呼ばれているため、
+        // 内部でトランザクションを開始しない
+        match execute_user_id_nanoid_migration_direct(conn) {
+            Ok(_) => {
+                log::info!("マイグレーション成功");
+                Ok(())
+            }
+            Err(e) => {
+                log::error!("マイグレーション失敗: {e}");
+                Err(format!("マイグレーション失敗: {e}"))
+            }
+        }
+    }
+
+    fn name(&self) -> &str {
+        "004_migrate_user_id_to_nanoid"
+    }
+}
+
+/// ユーザーIDのnanoIdマイグレーションを直接実行する（トランザクションなし）
+///
+/// # 引数
+/// * `conn` - データベース接続（既にトランザクション内）
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_user_id_nanoid_migration_direct(conn: &Connection) -> Result<(), rusqlite::Error> {
+    use crate::features::migrations::service::execute_user_id_nanoid_migration_in_transaction;
+
+    log::info!("ユーザーIDマイグレーション処理を開始（トランザクション内）");
+
+    // トランザクションとして接続を扱う
+    // 注意: この関数は既にトランザクション内で呼ばれているため、
+    // unchecked_transaction()を使用しない
+    execute_user_id_nanoid_migration_in_transaction(conn)?;
+
+    log::info!("ユーザーIDマイグレーション処理が完了");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,53 +583,4 @@ mod tests {
         let receipt_url_executor = ReceiptUrlMigrationExecutor;
         assert_eq!(receipt_url_executor.name(), "003_migrate_receipt_url");
     }
-}
-
-/// ユーザーIDのnanoIdマイグレーション実行器
-///
-/// 既存の整数型ユーザーIDを文字列型のnanoIdに変換します。
-pub struct UserIdNanoidMigrationExecutor;
-
-impl MigrationExecutorTrait for UserIdNanoidMigrationExecutor {
-    fn execute(&self, conn: &Connection) -> Result<(), String> {
-        log::info!("ユーザーIDのnanoIdマイグレーションを実行");
-
-        // 注意: この関数は既にトランザクション内で呼ばれているため、
-        // 内部でトランザクションを開始しない
-        match execute_user_id_nanoid_migration_direct(conn) {
-            Ok(_) => {
-                log::info!("マイグレーション成功");
-                Ok(())
-            }
-            Err(e) => {
-                log::error!("マイグレーション失敗: {e}");
-                Err(format!("マイグレーション失敗: {e}"))
-            }
-        }
-    }
-
-    fn name(&self) -> &str {
-        "004_migrate_user_id_to_nanoid"
-    }
-}
-
-/// ユーザーIDのnanoIdマイグレーションを直接実行する（トランザクションなし）
-///
-/// # 引数
-/// * `conn` - データベース接続（既にトランザクション内）
-///
-/// # 戻り値
-/// 成功時はOk(())、失敗時はエラー
-fn execute_user_id_nanoid_migration_direct(conn: &Connection) -> Result<(), rusqlite::Error> {
-    use crate::features::migrations::service::execute_user_id_nanoid_migration_in_transaction;
-
-    log::info!("ユーザーIDマイグレーション処理を開始（トランザクション内）");
-
-    // トランザクションとして接続を扱う
-    // 注意: この関数は既にトランザクション内で呼ばれているため、
-    // unchecked_transaction()を使用しない
-    execute_user_id_nanoid_migration_in_transaction(conn)?;
-
-    log::info!("ユーザーIDマイグレーション処理が完了");
-    Ok(())
 }

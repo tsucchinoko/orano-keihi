@@ -1371,548 +1371,6 @@ pub fn is_user_authentication_migration_complete(conn: &Connection) -> Result<bo
     Ok(true)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rusqlite::Connection as SqliteConnection;
-    use tempfile::NamedTempFile;
-
-    /// テスト用のデータベースを作成する
-    fn create_test_db() -> SqliteConnection {
-        let conn = SqliteConnection::open_in_memory().unwrap();
-
-        // 古いスキーマ（receipt_path）でテーブルを作成
-        conn.execute(
-            "CREATE TABLE expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT NOT NULL,
-                description TEXT,
-                receipt_path TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        // テストデータを挿入
-        conn.execute(
-            "INSERT INTO expenses (date, amount, category, description, receipt_path, created_at, updated_at)
-             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '/path/to/receipt.jpg', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
-            [],
-        ).unwrap();
-
-        conn
-    }
-
-    #[test]
-    fn test_is_receipt_url_migration_complete_false() {
-        let conn = create_test_db();
-
-        // 古いスキーマではマイグレーション未完了
-        let result = is_receipt_url_migration_complete(&conn).unwrap();
-        assert!(!result);
-    }
-
-    #[test]
-    fn test_migrate_receipt_path_to_url() {
-        let conn = create_test_db();
-
-        // マイグレーションを実行
-        let result = migrate_receipt_path_to_url(&conn).unwrap();
-
-        // マイグレーション成功を確認
-        assert!(result.success);
-        assert!(result.backup_path.is_some());
-
-        // マイグレーション完了を確認
-        let is_complete = is_receipt_url_migration_complete(&conn).unwrap();
-        assert!(is_complete);
-
-        // 新しいスキーマでデータが保持されていることを確認
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(count, 1);
-
-        // receipt_urlカラムが存在することを確認
-        let table_info: Vec<String> = conn
-            .prepare("PRAGMA table_info(expenses)")
-            .unwrap()
-            .query_map([], |row| row.get::<_, String>(1))
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-
-        assert!(table_info.contains(&"receipt_url".to_string()));
-        assert!(!table_info.contains(&"receipt_path".to_string()));
-
-        // キャッシュテーブルが作成されていることを確認
-        let cache_table_exists: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='receipt_cache'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(cache_table_exists, 1);
-    }
-
-    #[test]
-    fn test_validate_migration() {
-        let conn = create_test_db();
-        let tx = conn.unchecked_transaction().unwrap();
-
-        // 正しいスキーマを作成
-        execute_receipt_url_migration(&tx).unwrap();
-
-        // 検証が成功することを確認
-        let result = validate_migration(&tx);
-        assert!(result.is_ok());
-
-        tx.commit().unwrap();
-    }
-
-    #[test]
-    fn test_backup_and_restore() {
-        let mut conn = SqliteConnection::open_in_memory().unwrap();
-        let temp_file = NamedTempFile::new().unwrap();
-        let backup_path = temp_file.path().to_str().unwrap();
-
-        // テストデータを作成
-        conn.execute(
-            "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
-            [],
-        )
-        .unwrap();
-        conn.execute("INSERT INTO test_table (name) VALUES ('test')", [])
-            .unwrap();
-
-        // バックアップを作成
-        create_backup(&conn, backup_path).unwrap();
-
-        // データを変更
-        conn.execute("DELETE FROM test_table", []).unwrap();
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(count, 0);
-
-        // バックアップから復元
-        let result = restore_from_backup(&mut conn, backup_path).unwrap();
-        assert!(result.success);
-
-        // データが復元されていることを確認
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(count, 1);
-    }
-
-    #[test]
-    fn test_drop_receipt_path_column() {
-        let conn = create_test_db();
-
-        // receipt_pathカラムが存在することを確認
-        assert!(check_column_exists(&conn, "expenses", "receipt_path"));
-
-        // receipt_pathカラムを削除
-        let result = drop_receipt_path_column(&conn).unwrap();
-
-        // エラーメッセージを出力
-        if !result.success {
-            println!("マイグレーション失敗: {}", result.message);
-        }
-        assert!(result.success, "マイグレーション失敗: {}", result.message);
-
-        // receipt_pathカラムが削除されたことを確認
-        assert!(!check_column_exists(&conn, "expenses", "receipt_path"));
-
-        // データが保持されていることを確認
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(count, 1);
-
-        // 既に削除されている場合のテスト
-        let result2 = drop_receipt_path_column(&conn).unwrap();
-        assert!(result2.success);
-        assert!(result2.message.contains("既に存在しません"));
-    }
-
-    #[test]
-    fn test_check_column_exists() {
-        let conn = create_test_db();
-
-        // 存在するカラムのテスト
-        assert!(check_column_exists(&conn, "expenses", "id"));
-        assert!(check_column_exists(&conn, "expenses", "receipt_path"));
-
-        // 存在しないカラムのテスト
-        assert!(!check_column_exists(
-            &conn,
-            "expenses",
-            "nonexistent_column"
-        ));
-
-        // 存在しないテーブルのテスト
-        assert!(!check_column_exists(&conn, "nonexistent_table", "id"));
-    }
-
-    #[test]
-    fn test_user_authentication_migration() {
-        let conn = SqliteConnection::open_in_memory().unwrap();
-
-        // 基本的なテーブル構造を作成
-        conn.execute(
-            "CREATE TABLE expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT NOT NULL,
-                description TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE subscriptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                amount REAL NOT NULL,
-                billing_cycle TEXT NOT NULL,
-                start_date TEXT NOT NULL,
-                category TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE receipt_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                receipt_url TEXT NOT NULL UNIQUE,
-                local_path TEXT NOT NULL,
-                cached_at TEXT NOT NULL,
-                file_size INTEGER NOT NULL,
-                last_accessed TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        // テストデータを挿入
-        conn.execute(
-            "INSERT INTO expenses (date, amount, category, description, created_at, updated_at)
-             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
-            [],
-        ).unwrap();
-
-        // マイグレーション前の状態確認
-        let is_complete_before = is_user_authentication_migration_complete(&conn).unwrap();
-        assert!(!is_complete_before);
-
-        // マイグレーションを実行
-        let result = migrate_user_authentication(&conn).unwrap();
-        assert!(result.success, "マイグレーション失敗: {}", result.message);
-
-        // マイグレーション後の状態確認
-        let is_complete_after = is_user_authentication_migration_complete(&conn).unwrap();
-        assert!(is_complete_after);
-
-        // usersテーブルが作成されていることを確認
-        let users_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(users_count, 1); // デフォルトユーザーが作成されている
-
-        // sessionsテーブルが作成されていることを確認
-        let sessions_table_exists: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(sessions_table_exists, 1);
-
-        // 既存テーブルにuser_idカラムが追加されていることを確認
-        assert!(check_column_exists(&conn, "expenses", "user_id"));
-        assert!(check_column_exists(&conn, "subscriptions", "user_id"));
-        assert!(check_column_exists(&conn, "receipt_cache", "user_id"));
-
-        // 既存データにデフォルトユーザーIDが設定されていることを確認
-        let expense_user_id: i64 = conn
-            .query_row("SELECT user_id FROM expenses WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(expense_user_id, 1);
-    }
-
-    #[test]
-    fn test_user_authentication_migration_idempotent() {
-        let conn = SqliteConnection::open_in_memory().unwrap();
-
-        // 基本的なテーブル構造を作成
-        conn.execute(
-            "CREATE TABLE expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT NOT NULL,
-                description TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE subscriptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                amount REAL NOT NULL,
-                billing_cycle TEXT NOT NULL,
-                start_date TEXT NOT NULL,
-                category TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE receipt_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                receipt_url TEXT NOT NULL UNIQUE,
-                local_path TEXT NOT NULL,
-                cached_at TEXT NOT NULL,
-                file_size INTEGER NOT NULL,
-                last_accessed TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        // 最初のマイグレーション
-        let result1 = migrate_user_authentication(&conn).unwrap();
-        if !result1.success {
-            println!("最初のマイグレーション失敗: {}", result1.message);
-        }
-        assert!(
-            result1.success,
-            "最初のマイグレーション失敗: {}",
-            result1.message
-        );
-
-        // 2回目のマイグレーション（冪等性のテスト）
-        let result2 = migrate_user_authentication(&conn).unwrap();
-        if !result2.success {
-            println!("2回目のマイグレーション失敗: {}", result2.message);
-        }
-        assert!(
-            result2.success,
-            "2回目のマイグレーション失敗: {}",
-            result2.message
-        );
-
-        // デフォルトユーザーが重複していないことを確認
-        let users_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM users WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(users_count, 1);
-    }
-
-    #[test]
-    fn test_comprehensive_data_migration() {
-        let conn = SqliteConnection::open_in_memory().unwrap();
-
-        // 基本的なテーブル構造を作成（ユーザー認証なし）
-        conn.execute(
-            "CREATE TABLE expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT NOT NULL,
-                description TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE subscriptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                amount REAL NOT NULL,
-                billing_cycle TEXT NOT NULL,
-                start_date TEXT NOT NULL,
-                category TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        // receipt_cacheテーブルを作成
-        conn.execute(
-            "CREATE TABLE receipt_cache (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                receipt_url TEXT NOT NULL UNIQUE,
-                local_path TEXT NOT NULL,
-                cached_at TEXT NOT NULL,
-                file_size INTEGER NOT NULL,
-                last_accessed TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        // テストデータを挿入
-        conn.execute(
-            "INSERT INTO expenses (date, amount, category, description, created_at, updated_at)
-             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
-            [],
-        ).unwrap();
-
-        conn.execute(
-            "INSERT INTO subscriptions (name, amount, billing_cycle, start_date, category, created_at, updated_at)
-             VALUES ('テストサブスク', 500.0, 'monthly', '2024-01-01', 'テスト', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
-            [],
-        ).unwrap();
-
-        // 包括的データ移行を実行
-        let result = execute_comprehensive_data_migration(&conn).unwrap();
-        assert!(result.success, "包括的データ移行失敗: {}", result.message);
-        assert!(result.data_integrity_verified);
-        assert!(result.backup_path.is_some());
-        assert!(!result.migrated_tables.is_empty());
-
-        // 移行後の状態確認
-        let is_complete = is_user_authentication_migration_complete(&conn).unwrap();
-        assert!(is_complete);
-
-        // データが保持されていることを確認
-        let expenses_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(expenses_count, 1);
-
-        let subscriptions_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM subscriptions", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(subscriptions_count, 1);
-
-        // user_idが設定されていることを確認
-        let expense_user_id: i64 = conn
-            .query_row("SELECT user_id FROM expenses WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(expense_user_id, 1);
-
-        let subscription_user_id: i64 = conn
-            .query_row(
-                "SELECT user_id FROM subscriptions WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(subscription_user_id, 1);
-    }
-
-    #[test]
-    fn test_data_migration_with_existing_user_auth() {
-        let conn = SqliteConnection::open_in_memory().unwrap();
-
-        // 手動でusersテーブルを作成（既にユーザー認証が設定されているデータベースをシミュレート）
-        conn.execute(
-            "CREATE TABLE users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                google_id TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL,
-                name TEXT NOT NULL,
-                picture_url TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE sessions (
-                id TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                encrypted_data TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        // テストユーザーを挿入
-        conn.execute(
-            "INSERT INTO users (id, google_id, email, name, created_at, updated_at)
-             VALUES (1, 'test_google_id', 'test@example.com', 'テストユーザー', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
-            [],
-        )
-        .unwrap();
-
-        conn.execute(
-            "CREATE TABLE expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                amount REAL NOT NULL,
-                category TEXT NOT NULL,
-                description TEXT,
-                user_id INTEGER REFERENCES users(id),
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )
-        .unwrap();
-
-        // テストデータを挿入
-        conn.execute(
-            "INSERT INTO expenses (date, amount, category, description, user_id, created_at, updated_at)
-             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', 1, '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
-            [],
-        ).unwrap();
-
-        // 包括的データ移行を実行（既に移行済みの場合）
-        let result = execute_comprehensive_data_migration(&conn).unwrap();
-        assert!(result.success, "包括的データ移行失敗: {}", result.message);
-        assert!(result.data_integrity_verified);
-
-        // データが保持されていることを確認
-        let expenses_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(expenses_count, 1);
-    }
-}
-
 /// ユーザーIDをnanoIdに移行する
 ///
 /// この関数は既存の整数型ユーザーIDを文字列型のnanoIdに変換します。
@@ -2857,4 +2315,545 @@ fn migrate_security_audit_logs_table_nanoid(tx: &Transaction) -> Result<(), rusq
 
     log::info!("security_audit_logsテーブルのマイグレーションが完了");
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection as SqliteConnection;
+    use tempfile::NamedTempFile;
+
+    /// テスト用のデータベースを作成する
+    fn create_test_db() -> SqliteConnection {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 古いスキーマ（receipt_path）でテーブルを作成
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                receipt_path TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストデータを挿入
+        conn.execute(
+            "INSERT INTO expenses (date, amount, category, description, receipt_path, created_at, updated_at)
+             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '/path/to/receipt.jpg', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        conn
+    }
+
+    #[test]
+    fn test_is_receipt_url_migration_complete_false() {
+        let conn = create_test_db();
+
+        // 古いスキーマではマイグレーション未完了
+        let result = is_receipt_url_migration_complete(&conn).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_migrate_receipt_path_to_url() {
+        let conn = create_test_db();
+
+        // マイグレーションを実行
+        let result = migrate_receipt_path_to_url(&conn).unwrap();
+
+        // マイグレーション成功を確認
+        assert!(result.success);
+        assert!(result.backup_path.is_some());
+
+        // マイグレーション完了を確認
+        let is_complete = is_receipt_url_migration_complete(&conn).unwrap();
+        assert!(is_complete);
+
+        // 新しいスキーマでデータが保持されていることを確認
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // receipt_urlカラムが存在することを確認
+        let table_info: Vec<String> = conn
+            .prepare("PRAGMA table_info(expenses)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(table_info.contains(&"receipt_url".to_string()));
+        assert!(!table_info.contains(&"receipt_path".to_string()));
+
+        // キャッシュテーブルが作成されていることを確認
+        let cache_table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='receipt_cache'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cache_table_exists, 1);
+    }
+
+    #[test]
+    fn test_validate_migration() {
+        let conn = create_test_db();
+        let tx = conn.unchecked_transaction().unwrap();
+
+        // 正しいスキーマを作成
+        execute_receipt_url_migration(&tx).unwrap();
+
+        // 検証が成功することを確認
+        let result = validate_migration(&tx);
+        assert!(result.is_ok());
+
+        tx.commit().unwrap();
+    }
+
+    #[test]
+    fn test_backup_and_restore() {
+        let mut conn = SqliteConnection::open_in_memory().unwrap();
+        let temp_file = NamedTempFile::new().unwrap();
+        let backup_path = temp_file.path().to_str().unwrap();
+
+        // テストデータを作成
+        conn.execute(
+            "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO test_table (name) VALUES ('test')", [])
+            .unwrap();
+
+        // バックアップを作成
+        create_backup(&conn, backup_path).unwrap();
+
+        // データを変更
+        conn.execute("DELETE FROM test_table", []).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        // バックアップから復元
+        let result = restore_from_backup(&mut conn, backup_path).unwrap();
+        assert!(result.success);
+
+        // データが復元されていることを確認
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM test_table", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_drop_receipt_path_column() {
+        let conn = create_test_db();
+
+        // receipt_pathカラムが存在することを確認
+        assert!(check_column_exists(&conn, "expenses", "receipt_path"));
+
+        // receipt_pathカラムを削除
+        let result = drop_receipt_path_column(&conn).unwrap();
+
+        // エラーメッセージを出力
+        if !result.success {
+            println!("マイグレーション失敗: {}", result.message);
+        }
+        assert!(result.success, "マイグレーション失敗: {}", result.message);
+
+        // receipt_pathカラムが削除されたことを確認
+        assert!(!check_column_exists(&conn, "expenses", "receipt_path"));
+
+        // データが保持されていることを確認
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // 既に削除されている場合のテスト
+        let result2 = drop_receipt_path_column(&conn).unwrap();
+        assert!(result2.success);
+        assert!(result2.message.contains("既に存在しません"));
+    }
+
+    #[test]
+    fn test_check_column_exists() {
+        let conn = create_test_db();
+
+        // 存在するカラムのテスト
+        assert!(check_column_exists(&conn, "expenses", "id"));
+        assert!(check_column_exists(&conn, "expenses", "receipt_path"));
+
+        // 存在しないカラムのテスト
+        assert!(!check_column_exists(
+            &conn,
+            "expenses",
+            "nonexistent_column"
+        ));
+
+        // 存在しないテーブルのテスト
+        assert!(!check_column_exists(&conn, "nonexistent_table", "id"));
+    }
+
+    #[test]
+    fn test_user_authentication_migration() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 基本的なテーブル構造を作成
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                billing_cycle TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE receipt_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_url TEXT NOT NULL UNIQUE,
+                local_path TEXT NOT NULL,
+                cached_at TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_accessed TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストデータを挿入
+        conn.execute(
+            "INSERT INTO expenses (date, amount, category, description, created_at, updated_at)
+             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        // マイグレーション前の状態確認
+        let is_complete_before = is_user_authentication_migration_complete(&conn).unwrap();
+        assert!(!is_complete_before);
+
+        // マイグレーションを実行
+        let result = migrate_user_authentication(&conn).unwrap();
+        assert!(result.success, "マイグレーション失敗: {}", result.message);
+
+        // マイグレーション後の状態確認
+        let is_complete_after = is_user_authentication_migration_complete(&conn).unwrap();
+        assert!(is_complete_after);
+
+        // usersテーブルが作成されていることを確認
+        let users_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(users_count, 1); // デフォルトユーザーが作成されている
+
+        // sessionsテーブルが作成されていることを確認
+        let sessions_table_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(sessions_table_exists, 1);
+
+        // 既存テーブルにuser_idカラムが追加されていることを確認
+        assert!(check_column_exists(&conn, "expenses", "user_id"));
+        assert!(check_column_exists(&conn, "subscriptions", "user_id"));
+        assert!(check_column_exists(&conn, "receipt_cache", "user_id"));
+
+        // 既存データにデフォルトユーザーIDが設定されていることを確認
+        let expense_user_id: i64 = conn
+            .query_row("SELECT user_id FROM expenses WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(expense_user_id, 1);
+    }
+
+    #[test]
+    fn test_user_authentication_migration_idempotent() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 基本的なテーブル構造を作成
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                billing_cycle TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE receipt_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_url TEXT NOT NULL UNIQUE,
+                local_path TEXT NOT NULL,
+                cached_at TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_accessed TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // 最初のマイグレーション
+        let result1 = migrate_user_authentication(&conn).unwrap();
+        if !result1.success {
+            println!("最初のマイグレーション失敗: {}", result1.message);
+        }
+        assert!(
+            result1.success,
+            "最初のマイグレーション失敗: {}",
+            result1.message
+        );
+
+        // 2回目のマイグレーション（冪等性のテスト）
+        let result2 = migrate_user_authentication(&conn).unwrap();
+        if !result2.success {
+            println!("2回目のマイグレーション失敗: {}", result2.message);
+        }
+        assert!(
+            result2.success,
+            "2回目のマイグレーション失敗: {}",
+            result2.message
+        );
+
+        // デフォルトユーザーが重複していないことを確認
+        let users_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(users_count, 1);
+    }
+
+    #[test]
+    fn test_comprehensive_data_migration() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 基本的なテーブル構造を作成（ユーザー認証なし）
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                billing_cycle TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                category TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // receipt_cacheテーブルを作成
+        conn.execute(
+            "CREATE TABLE receipt_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_url TEXT NOT NULL UNIQUE,
+                local_path TEXT NOT NULL,
+                cached_at TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_accessed TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストデータを挿入
+        conn.execute(
+            "INSERT INTO expenses (date, amount, category, description, created_at, updated_at)
+             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO subscriptions (name, amount, billing_cycle, start_date, category, created_at, updated_at)
+             VALUES ('テストサブスク', 500.0, 'monthly', '2024-01-01', 'テスト', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        // 包括的データ移行を実行
+        let result = execute_comprehensive_data_migration(&conn).unwrap();
+        assert!(result.success, "包括的データ移行失敗: {}", result.message);
+        assert!(result.data_integrity_verified);
+        assert!(result.backup_path.is_some());
+        assert!(!result.migrated_tables.is_empty());
+
+        // 移行後の状態確認
+        let is_complete = is_user_authentication_migration_complete(&conn).unwrap();
+        assert!(is_complete);
+
+        // データが保持されていることを確認
+        let expenses_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(expenses_count, 1);
+
+        let subscriptions_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM subscriptions", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(subscriptions_count, 1);
+
+        // user_idが設定されていることを確認
+        let expense_user_id: i64 = conn
+            .query_row("SELECT user_id FROM expenses WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(expense_user_id, 1);
+
+        let subscription_user_id: i64 = conn
+            .query_row(
+                "SELECT user_id FROM subscriptions WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(subscription_user_id, 1);
+    }
+
+    #[test]
+    fn test_data_migration_with_existing_user_auth() {
+        let conn = SqliteConnection::open_in_memory().unwrap();
+
+        // 手動でusersテーブルを作成（既にユーザー認証が設定されているデータベースをシミュレート）
+        conn.execute(
+            "CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                google_id TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                picture_url TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                encrypted_data TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストユーザーを挿入
+        conn.execute(
+            "INSERT INTO users (id, google_id, email, name, created_at, updated_at)
+             VALUES (1, 'test_google_id', 'test@example.com', 'テストユーザー', '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                amount REAL NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                user_id INTEGER REFERENCES users(id),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .unwrap();
+
+        // テストデータを挿入
+        conn.execute(
+            "INSERT INTO expenses (date, amount, category, description, user_id, created_at, updated_at)
+             VALUES ('2024-01-01', 1000.0, 'テスト', 'テスト経費', 1, '2024-01-01T00:00:00+09:00', '2024-01-01T00:00:00+09:00')",
+            [],
+        ).unwrap();
+
+        // 包括的データ移行を実行（既に移行済みの場合）
+        let result = execute_comprehensive_data_migration(&conn).unwrap();
+        assert!(result.success, "包括的データ移行失敗: {}", result.message);
+        assert!(result.data_integrity_verified);
+
+        // データが保持されていることを確認
+        let expenses_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM expenses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(expenses_count, 1);
+    }
 }

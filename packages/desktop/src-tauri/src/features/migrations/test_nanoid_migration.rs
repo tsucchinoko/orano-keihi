@@ -2,7 +2,6 @@
 ///
 /// このテストは、実際のデータベースでnanoIdマイグレーションを実行し、
 /// すべてのテーブルが正しく移行されることを確認します。
-
 #[cfg(test)]
 mod nanoid_migration_tests {
     use crate::features::migrations::service::{
