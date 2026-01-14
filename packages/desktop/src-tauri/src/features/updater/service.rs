@@ -400,10 +400,16 @@ impl UpdaterService {
                                 // ログ: インストール開始
                                 self.logger.log_install_start(&version);
 
-                                // ログ: インストール完了
+                                info!("アップデートのダウンロードが完了しました");
+                                info!("アプリケーションを再起動してインストールを完了してください");
+                                // ログ: インストール完了（再起動後に完了）
                                 self.logger.log_install_complete(&version);
 
-                                info!("アップデートのインストールが完了しました");
+                                // フロントエンドに再起動が必要であることを通知
+                                if let Err(e) = self.app_handle.emit("restart-required", ()) {
+                                    warn!("再起動通知の送信に失敗: {e}");
+                                }
+
                                 Ok(())
                             }
                             Err(e) => {

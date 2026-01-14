@@ -143,6 +143,25 @@ export class UpdaterService {
   }
 
   /**
+   * 再起動必要通知イベントをリッスン
+   * @param callback 再起動が必要になったときのコールバック
+   */
+  static async listenForRestartRequired(
+    callback: () => void
+  ): Promise<() => void> {
+    try {
+      const unlisten = await listen('restart-required', () => {
+        console.info('アプリケーションの再起動が必要です');
+        callback();
+      });
+      return unlisten;
+    } catch (error) {
+      console.error('再起動通知リスナー設定エラー:', error);
+      throw new Error(`再起動通知の設定に失敗しました: ${String(error)}`);
+    }
+  }
+
+  /**
    * アップデート不要通知イベントをリッスン
    * @param callback アップデートが不要なときのコールバック
    */

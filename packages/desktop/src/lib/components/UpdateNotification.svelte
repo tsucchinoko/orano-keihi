@@ -104,12 +104,23 @@
 
 	// コンポーネントマウント時の処理
 	onMount(() => {
-		let unlisten: (() => void) | undefined;
+		let unlistenUpdate: (() => void) | undefined;
+		let unlistenRestart: (() => void) | undefined;
 
 		const initializeUpdater = async () => {
 			try {
 				// アップデート通知イベントをリッスン
-				unlisten = await UpdaterService.listenForUpdates(showUpdateNotification);
+				unlistenUpdate = await UpdaterService.listenForUpdates(showUpdateNotification);
+
+				// 再起動通知イベントをリッスン
+				unlistenRestart = await UpdaterService.listenForRestartRequired(() => {
+					// ダウンロード完了、再起動が必要
+					updateState = {
+						...updateState,
+						downloading: false,
+						progress: 100
+					};
+				});
 
 				// 自動アップデートチェックを開始
 				await UpdaterService.startAutoUpdateCheck();
@@ -128,8 +139,11 @@
 
 		// クリーンアップ関数を返す
 		return () => {
-			if (unlisten) {
-				unlisten();
+			if (unlistenUpdate) {
+				unlistenUpdate();
+			}
+			if (unlistenRestart) {
+				unlistenRestart();
 			}
 		};
 	});
@@ -207,7 +221,13 @@
 			{#if updateState.downloading}
 				<div class="mb-4">
 					<div class="flex justify-between text-sm mb-2">
-						<span class="text-gray-600">ダウンロード中...</span>
+						<span class="text-gray-600">
+							{#if updateState.progress >= 100}
+								インストール準備中...
+							{:else}
+								ダウンロード中...
+							{/if}
+						</span>
 						<span class="font-medium">{updateState.progress.toFixed(1)}%</span>
 					</div>
 					<div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
@@ -217,7 +237,11 @@
 						></div>
 					</div>
 					<p class="text-xs text-gray-500 mt-1.5">
-						ダウンロード完了後、アプリケーションが自動的に再起動されます
+						{#if updateState.progress >= 100}
+							アプリケーションを再起動してインストールを完了してください
+						{:else}
+							ダウンロード完了後、アプリケーションを再起動してインストールを完了します
+						{/if}
 					</p>
 				</div>
 			{/if}
