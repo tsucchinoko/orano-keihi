@@ -5,7 +5,7 @@ use chrono_tz::Asia::Tokyo;
 use rusqlite::{params, Connection};
 
 /// デフォルトユーザーID（既存データ用）
-const DEFAULT_USER_ID: i64 = 1;
+const DEFAULT_USER_ID: &str = "1";
 
 /// サブスクリプションを作成する
 ///
@@ -19,7 +19,7 @@ const DEFAULT_USER_ID: i64 = 1;
 pub fn create(
     conn: &Connection,
     dto: CreateSubscriptionDto,
-    user_id: i64,
+    user_id: &str,
 ) -> Result<Subscription, AppError> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
@@ -43,7 +43,7 @@ pub fn create(
 ///
 /// # 戻り値
 /// サブスクリプション、または失敗時はエラー
-pub fn find_by_id(conn: &Connection, id: i64, user_id: i64) -> Result<Subscription, AppError> {
+pub fn find_by_id(conn: &Connection, id: i64, user_id: &str) -> Result<Subscription, AppError> {
     conn.query_row(
         "SELECT id, name, amount, billing_cycle, start_date, category, is_active, receipt_path, created_at, updated_at
          FROM subscriptions WHERE id = ?1 AND user_id = ?2",
@@ -82,7 +82,7 @@ pub fn find_by_id(conn: &Connection, id: i64, user_id: i64) -> Result<Subscripti
 /// サブスクリプションのリスト、または失敗時はエラー
 pub fn find_all(
     conn: &Connection,
-    user_id: i64,
+    user_id: &str,
     active_only: bool,
 ) -> Result<Vec<Subscription>, AppError> {
     let query = if active_only {
@@ -128,7 +128,7 @@ pub fn update(
     conn: &Connection,
     id: i64,
     dto: UpdateSubscriptionDto,
-    user_id: i64,
+    user_id: &str,
 ) -> Result<Subscription, AppError> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
@@ -162,7 +162,7 @@ pub fn update(
 ///
 /// # 戻り値
 /// 更新されたサブスクリプション、または失敗時はエラー
-pub fn toggle_status(conn: &Connection, id: i64, user_id: i64) -> Result<Subscription, AppError> {
+pub fn toggle_status(conn: &Connection, id: i64, user_id: &str) -> Result<Subscription, AppError> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
@@ -183,7 +183,7 @@ pub fn toggle_status(conn: &Connection, id: i64, user_id: i64) -> Result<Subscri
 ///
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラー
-pub fn delete(conn: &Connection, id: i64, user_id: i64) -> Result<(), AppError> {
+pub fn delete(conn: &Connection, id: i64, user_id: &str) -> Result<(), AppError> {
     let rows_affected = conn.execute(
         "DELETE FROM subscriptions WHERE id = ?1 AND user_id = ?2",
         params![id, user_id],
@@ -206,7 +206,7 @@ pub fn delete(conn: &Connection, id: i64, user_id: i64) -> Result<(), AppError> 
 ///
 /// # 戻り値
 /// 月額合計金額、または失敗時はエラー
-pub fn calculate_monthly_total(conn: &Connection, user_id: i64) -> Result<f64, AppError> {
+pub fn calculate_monthly_total(conn: &Connection, user_id: &str) -> Result<f64, AppError> {
     let subscriptions = find_all(conn, user_id, true)?;
 
     let total = subscriptions.iter().fold(0.0, |acc, sub| {
@@ -235,7 +235,7 @@ pub fn set_receipt_path(
     conn: &Connection,
     id: i64,
     receipt_path: String,
-    user_id: i64,
+    user_id: &str,
 ) -> Result<(), AppError> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
@@ -273,7 +273,7 @@ pub fn set_receipt_path(
 pub fn get_receipt_path(
     conn: &Connection,
     id: i64,
-    user_id: i64,
+    user_id: &str,
 ) -> Result<Option<String>, AppError> {
     conn.query_row(
         "SELECT receipt_path FROM subscriptions WHERE id = ?1 AND user_id = ?2",
