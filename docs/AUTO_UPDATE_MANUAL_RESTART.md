@@ -10,10 +10,11 @@
 
 #### `packages/desktop/src-tauri/src/features/updater/service.rs`
 
-- `download_and_install`メソッドを変更
-  - `update.download_and_install()`から`update.download()`に変更
-  - ダウンロード完了後、自動的にインストールせず、`download-complete`イベントを発行
+- `download_and_install`メソッドを修正
+  - `update.download_and_install()`を使用してダウンロードとインストール準備を実行
+  - ダウンロード完了後、`download-complete`イベントを発行
   - ユーザーに手動での再起動を促すメッセージをログに記録
+  - 重要: `download_and_install()`はダウンロードとインストール準備を行うが、自動的に再起動はしない
 
 #### `packages/desktop/src-tauri/src/features/updater/commands.rs`
 
@@ -82,10 +83,23 @@
 ```
 1. check_for_updates() → update-available イベント
 2. download_and_install() → download-progress イベント（複数回）
-3. ダウンロード完了 → download-complete イベント
+3. ダウンロード＆インストール準備完了 → download-complete イベント
 4. restart_application() → アプリケーション再起動
-5. 再起動後 → アップデート自動インストール
+5. 再起動後 → アップデート自動適用
 ```
+
+### 重要な技術的詳細
+
+- `download_and_install()`は以下を実行します：
+  1. アップデートファイルをダウンロード
+  2. 署名を検証
+  3. インストール準備（ファイルを適切な場所に配置）
+  4. **自動的に再起動はしない**（これが重要）
+  
+- ユーザーが`restart_application()`を呼び出すと：
+  1. アプリケーションが再起動
+  2. 再起動時に準備されたアップデートが自動的に適用される
+  3. 新しいバージョンで起動
 
 ### セキュリティ
 
@@ -106,6 +120,8 @@
 
 ## 注意事項
 
-- ダウンロード完了後、ユーザーが再起動するまでアップデートはインストールされません
-- 「後で再起動」を選択した場合、次回アプリケーション起動時にアップデートがインストールされます
+- `download_and_install()`はダウンロードとインストール準備を行いますが、自動的に再起動はしません
+- ユーザーが再起動するまでアップデートは適用されません
+- 「後で再起動」を選択した場合、次回アプリケーション起動時にアップデートが自動的に適用されます
 - ダウンロード中にアプリケーションを終了すると、ダウンロードは中断されます
+- 再起動後、準備されたアップデートが自動的に適用され、新しいバージョンで起動します
