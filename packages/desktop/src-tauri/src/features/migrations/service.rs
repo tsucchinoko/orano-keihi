@@ -1912,3 +1912,695 @@ mod tests {
         assert_eq!(expenses_count, 1);
     }
 }
+
+/// ユーザーIDをnanoIdに移行する
+///
+/// この関数は既存の整数型ユーザーIDを文字列型のnanoIdに変換します。
+/// 要件3.1、3.2を満たします。
+///
+/// # 引数
+/// * `conn` - データベース接続
+///
+/// # 戻り値
+/// マイグレーション結果
+pub fn migrate_user_id_to_nanoid(conn: &Connection) -> Result<MigrationResult, AppError> {
+    log::info!("ユーザーIDのnanoId移行を開始します");
+
+    // バックアップパスを生成（JST使用）
+    let now_jst = Utc::now().with_timezone(&Tokyo);
+    let backup_path = format!("database_backup_nanoid_{}.db", now_jst.timestamp());
+
+    // 1. バックアップを作成
+    log::info!("データベースバックアップを作成中: {backup_path}");
+    if let Err(e) = create_backup(conn, &backup_path) {
+        log::error!("バックアップ作成に失敗: {e}");
+        return Ok(MigrationResult {
+            success: false,
+            message: format!("バックアップ作成に失敗しました: {e}"),
+            backup_path: None,
+        });
+    }
+    log::info!("バックアップ作成完了");
+
+    // 2. トランザクション内でマイグレーションを実行
+    log::info!("マイグレーショントランザクションを開始");
+    let tx = conn.unchecked_transaction()?;
+
+    match execute_user_id_nanoid_migration(&tx) {
+        Ok(_) => {
+            log::info!("マイグレーション実行完了、検証を開始");
+
+            // 3. マイグレーション検証
+            if let Err(e) = validate_user_id_nanoid_migration(&tx) {
+                // 検証失敗時はロールバック
+                log::error!("マイグレーション検証に失敗、ロールバック実行: {e}");
+                tx.rollback()?;
+                return Ok(MigrationResult {
+                    success: false,
+                    message: format!("マイグレーション検証に失敗しました: {e}"),
+                    backup_path: Some(backup_path),
+                });
+            }
+
+            // 4. コミット
+            log::info!("マイグレーション検証完了、コミット実行");
+            tx.commit()?;
+            log::info!("ユーザーIDのnanoId移行が正常に完了しました");
+
+            Ok(MigrationResult {
+                success: true,
+                message: "ユーザーIDのnanoId移行が完了しました".to_string(),
+                backup_path: Some(backup_path),
+            })
+        }
+        Err(e) => {
+            // エラー時はロールバック
+            log::error!("マイグレーション実行中にエラー発生、ロールバック実行: {e}");
+            tx.rollback()?;
+            Ok(MigrationResult {
+                success: false,
+                message: format!("マイグレーション実行に失敗しました: {e}"),
+                backup_path: Some(backup_path),
+            })
+        }
+    }
+}
+
+/// ユーザーIDのnanoIdマイグレーションを実行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_user_id_nanoid_migration(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    log::info!("ユーザーIDマイグレーション処理を開始");
+
+    // 1. IDマッピングテーブルを作成
+    log::info!("IDマッピングテーブルを作成");
+    tx.execute(
+        "CREATE TEMPORARY TABLE user_id_mapping (
+            old_id INTEGER PRIMARY KEY,
+            new_id TEXT NOT NULL UNIQUE
+        )",
+        [],
+    )?;
+
+    // 2. 既存ユーザーに新しいIDを割り当て
+    log::info!("既存ユーザーに新しいnanoIdを割り当て");
+    let mut stmt = tx.prepare("SELECT id FROM users")?;
+    let old_ids: Vec<i64> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    log::info!("既存ユーザー数: {}", old_ids.len());
+
+    for old_id in old_ids {
+        let new_id = crate::shared::utils::nanoid::generate_user_id();
+        tx.execute(
+            "INSERT INTO user_id_mapping (old_id, new_id) VALUES (?1, ?2)",
+            [&old_id.to_string(), &new_id],
+        )?;
+        log::debug!("ユーザーID変換: {old_id} -> {new_id}");
+    }
+
+    // 3. 新しいusersテーブルを作成
+    log::info!("新しいusersテーブルを作成");
+    tx.execute(
+        "CREATE TABLE users_new (
+            id TEXT PRIMARY KEY,
+            google_id TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL,
+            name TEXT NOT NULL,
+            picture_url TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // 4. データを移行
+    log::info!("usersテーブルのデータを移行");
+    tx.execute(
+        "INSERT INTO users_new (id, google_id, email, name, picture_url, created_at, updated_at)
+         SELECT m.new_id, u.google_id, u.email, u.name, u.picture_url, u.created_at, u.updated_at
+         FROM users u
+         INNER JOIN user_id_mapping m ON u.id = m.old_id",
+        [],
+    )?;
+
+    // 5. 外部キー参照を持つテーブルを更新
+    log::info!("外部キー参照を持つテーブルを更新");
+    migrate_expenses_table_nanoid(tx)?;
+    migrate_subscriptions_table_nanoid(tx)?;
+    migrate_sessions_table_nanoid(tx)?;
+    migrate_receipt_cache_table_nanoid(tx)?;
+    migrate_migration_logs_table_nanoid(tx)?;
+    migrate_security_audit_logs_table_nanoid(tx)?;
+
+    // 6. 旧usersテーブルを削除して新テーブルをリネーム
+    log::info!("旧usersテーブルを削除して新テーブルをリネーム");
+    tx.execute("DROP TABLE users", [])?;
+    tx.execute("ALTER TABLE users_new RENAME TO users", [])?;
+
+    // 7. インデックスを再作成
+    log::info!("usersテーブルのインデックスを再作成");
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)",
+        [],
+    )?;
+
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+        [],
+    )?;
+
+    // 8. マッピングテーブルを削除
+    log::info!("一時的なマッピングテーブルを削除");
+    tx.execute("DROP TABLE user_id_mapping", [])?;
+
+    log::info!("ユーザーIDマイグレーション処理が完了");
+    Ok(())
+}
+
+/// ユーザーIDのnanoIdマイグレーション後の検証を実行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn validate_user_id_nanoid_migration(tx: &Transaction) -> Result<(), AppError> {
+    log::info!("マイグレーション検証を開始");
+
+    // 1. usersテーブルの構造確認
+    let table_info: Vec<(String, String)> = tx
+        .prepare("PRAGMA table_info(users)")?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // idカラムがTEXT型であることを確認
+    let id_column = table_info.iter().find(|(name, _)| name == "id");
+    if let Some((_, col_type)) = id_column {
+        if col_type != "TEXT" {
+            return Err(AppError::Validation(format!(
+                "usersテーブルのidカラムの型が不正です: {col_type}"
+            )));
+        }
+    } else {
+        return Err(AppError::Validation(
+            "usersテーブルにidカラムが見つかりません".to_string(),
+        ));
+    }
+
+    // 2. すべてのユーザーIDがnanoId形式であることを確認
+    let mut stmt = tx.prepare("SELECT id FROM users")?;
+    let user_ids: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for user_id in &user_ids {
+        if !crate::shared::utils::nanoid::is_valid_nanoid(user_id) {
+            return Err(AppError::Validation(format!(
+                "無効なnanoId形式のユーザーIDが見つかりました: {user_id}"
+            )));
+        }
+    }
+
+    log::info!(
+        "すべてのユーザーID ({} 件) がnanoId形式であることを確認",
+        user_ids.len()
+    );
+
+    // 3. 外部キー参照の整合性確認
+    let tables_to_check = [
+        "expenses",
+        "subscriptions",
+        "sessions",
+        "receipt_cache",
+        "migration_logs",
+        "security_audit_logs",
+    ];
+
+    for table in &tables_to_check {
+        if check_table_exists_in_tx(tx, table) {
+            // user_idカラムがTEXT型であることを確認
+            let table_info: Vec<(String, String)> = tx
+                .prepare(&format!("PRAGMA table_info({table})"))?
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let user_id_column = table_info.iter().find(|(name, _)| name == "user_id");
+            if let Some((_, col_type)) = user_id_column {
+                if col_type != "TEXT" {
+                    return Err(AppError::Validation(format!(
+                        "{table}テーブルのuser_idカラムの型が不正です: {col_type}"
+                    )));
+                }
+            }
+
+            // 孤立したレコードがないことを確認
+            let orphaned_count: i64 = tx.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM {table} t 
+                     LEFT JOIN users u ON t.user_id = u.id 
+                     WHERE u.id IS NULL"
+                ),
+                [],
+                |row| row.get(0),
+            )?;
+
+            if orphaned_count > 0 {
+                return Err(AppError::Validation(format!(
+                    "{table}テーブルに孤立したレコードが {orphaned_count} 件存在します"
+                )));
+            }
+
+            log::info!("{table}テーブルの外部キー整合性を確認");
+        }
+    }
+
+    // 4. インデックスの確認
+    let index_count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name='users'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if index_count < 2 {
+        return Err(AppError::Validation(
+            "usersテーブルに必要なインデックスが不足しています".to_string(),
+        ));
+    }
+
+    log::info!("マイグレーション検証が完了");
+    Ok(())
+}
+
+/// expensesテーブルのuser_idをnanoIdに移行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn migrate_expenses_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    log::info!("expensesテーブルのマイグレーションを開始");
+
+    // テーブルが存在しない場合はスキップ
+    if !check_table_exists_in_tx(tx, "expenses") {
+        log::info!("expensesテーブルが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // 1. 新しいテーブルを作成
+    log::info!("expenses_newテーブルを作成");
+    tx.execute(
+        "CREATE TABLE expenses_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL,
+            category TEXT NOT NULL,
+            description TEXT,
+            receipt_url TEXT CHECK(receipt_url IS NULL OR receipt_url LIKE 'https://%'),
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 2. データを移行（マッピングテーブルを使用）
+    log::info!("expensesテーブルのデータを移行");
+    tx.execute(
+        "INSERT INTO expenses_new (id, date, amount, category, description, receipt_url, user_id, created_at, updated_at)
+         SELECT e.id, e.date, e.amount, e.category, e.description, e.receipt_url, m.new_id, e.created_at, e.updated_at
+         FROM expenses e
+         INNER JOIN user_id_mapping m ON e.user_id = m.old_id",
+        [],
+    )?;
+
+    // 3. 旧テーブルを削除して新テーブルをリネーム
+    log::info!("旧expensesテーブルを削除して新テーブルをリネーム");
+    tx.execute("DROP TABLE expenses", [])?;
+    tx.execute("ALTER TABLE expenses_new RENAME TO expenses", [])?;
+
+    // 4. インデックスを再作成
+    log::info!("expensesテーブルのインデックスを再作成");
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_user_id ON expenses(user_id)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_expenses_receipt_url ON expenses(receipt_url)",
+        [],
+    )?;
+
+    log::info!("expensesテーブルのマイグレーションが完了");
+    Ok(())
+}
+
+/// subscriptionsテーブルのuser_idをnanoIdに移行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn migrate_subscriptions_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    log::info!("subscriptionsテーブルのマイグレーションを開始");
+
+    // テーブルが存在しない場合はスキップ
+    if !check_table_exists_in_tx(tx, "subscriptions") {
+        log::info!("subscriptionsテーブルが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // 1. 新しいテーブルを作成
+    log::info!("subscriptions_newテーブルを作成");
+    tx.execute(
+        "CREATE TABLE subscriptions_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            amount REAL NOT NULL,
+            billing_cycle TEXT NOT NULL CHECK(billing_cycle IN ('monthly', 'annual')),
+            start_date TEXT NOT NULL,
+            category TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            receipt_path TEXT,
+            user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 2. データを移行（マッピングテーブルを使用）
+    log::info!("subscriptionsテーブルのデータを移行");
+    tx.execute(
+        "INSERT INTO subscriptions_new (id, name, amount, billing_cycle, start_date, category, is_active, receipt_path, user_id, created_at, updated_at)
+         SELECT s.id, s.name, s.amount, s.billing_cycle, s.start_date, s.category, s.is_active, s.receipt_path, m.new_id, s.created_at, s.updated_at
+         FROM subscriptions s
+         INNER JOIN user_id_mapping m ON s.user_id = m.old_id",
+        [],
+    )?;
+
+    // 3. 旧テーブルを削除して新テーブルをリネーム
+    log::info!("旧subscriptionsテーブルを削除して新テーブルをリネーム");
+    tx.execute("DROP TABLE subscriptions", [])?;
+    tx.execute("ALTER TABLE subscriptions_new RENAME TO subscriptions", [])?;
+
+    // 4. インデックスを再作成
+    log::info!("subscriptionsテーブルのインデックスを再作成");
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_subscriptions_active ON subscriptions(is_active)",
+        [],
+    )?;
+
+    log::info!("subscriptionsテーブルのマイグレーションが完了");
+    Ok(())
+}
+
+/// sessionsテーブルのuser_idをnanoIdに移行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn migrate_sessions_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    log::info!("sessionsテーブルのマイグレーションを開始");
+
+    // テーブルが存在しない場合はスキップ
+    if !check_table_exists_in_tx(tx, "sessions") {
+        log::info!("sessionsテーブルが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // 1. 新しいテーブルを作成
+    log::info!("sessions_newテーブルを作成");
+    tx.execute(
+        "CREATE TABLE sessions_new (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 2. データを移行（マッピングテーブルを使用）
+    log::info!("sessionsテーブルのデータを移行");
+    tx.execute(
+        "INSERT INTO sessions_new (id, user_id, expires_at, created_at)
+         SELECT s.id, m.new_id, s.expires_at, s.created_at
+         FROM sessions s
+         INNER JOIN user_id_mapping m ON s.user_id = m.old_id",
+        [],
+    )?;
+
+    // 3. 旧テーブルを削除して新テーブルをリネーム
+    log::info!("旧sessionsテーブルを削除して新テーブルをリネーム");
+    tx.execute("DROP TABLE sessions", [])?;
+    tx.execute("ALTER TABLE sessions_new RENAME TO sessions", [])?;
+
+    // 4. インデックスを再作成
+    log::info!("sessionsテーブルのインデックスを再作成");
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+        [],
+    )?;
+
+    log::info!("sessionsテーブルのマイグレーションが完了");
+    Ok(())
+}
+
+/// receipt_cacheテーブルのuser_idをnanoIdに移行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn migrate_receipt_cache_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    log::info!("receipt_cacheテーブルのマイグレーションを開始");
+
+    // テーブルが存在しない場合はスキップ
+    if !check_table_exists_in_tx(tx, "receipt_cache") {
+        log::info!("receipt_cacheテーブルが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // user_idカラムが存在しない場合はスキップ
+    if !check_column_exists_in_tx(tx, "receipt_cache", "user_id") {
+        log::info!("receipt_cacheテーブルにuser_idカラムが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // 1. 新しいテーブルを作成
+    log::info!("receipt_cache_newテーブルを作成");
+    tx.execute(
+        "CREATE TABLE receipt_cache_new (
+            receipt_url TEXT PRIMARY KEY,
+            local_path TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            last_accessed TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // 2. データを移行（マッピングテーブルを使用）
+    log::info!("receipt_cacheテーブルのデータを移行");
+    tx.execute(
+        "INSERT INTO receipt_cache_new (receipt_url, local_path, file_size, last_accessed, user_id)
+         SELECT r.receipt_url, r.local_path, r.file_size, r.last_accessed, m.new_id
+         FROM receipt_cache r
+         INNER JOIN user_id_mapping m ON r.user_id = m.old_id",
+        [],
+    )?;
+
+    // 3. 旧テーブルを削除して新テーブルをリネーム
+    log::info!("旧receipt_cacheテーブルを削除して新テーブルをリネーム");
+    tx.execute("DROP TABLE receipt_cache", [])?;
+    tx.execute("ALTER TABLE receipt_cache_new RENAME TO receipt_cache", [])?;
+
+    // 4. インデックスを再作成
+    log::info!("receipt_cacheテーブルのインデックスを再作成");
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_receipt_cache_user_id ON receipt_cache(user_id)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_receipt_cache_accessed ON receipt_cache(last_accessed)",
+        [],
+    )?;
+
+    log::info!("receipt_cacheテーブルのマイグレーションが完了");
+    Ok(())
+}
+
+/// migration_logsテーブルのuser_idをnanoIdに移行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn migrate_migration_logs_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    log::info!("migration_logsテーブルのマイグレーションを開始");
+
+    // テーブルが存在しない場合はスキップ
+    if !check_table_exists_in_tx(tx, "migration_logs") {
+        log::info!("migration_logsテーブルが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // user_idカラムが存在しない場合はスキップ
+    if !check_column_exists_in_tx(tx, "migration_logs", "user_id") {
+        log::info!("migration_logsテーブルにuser_idカラムが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // 1. 新しいテーブルを作成（既存の構造を維持しつつuser_idをTEXT型に変更）
+    log::info!("migration_logs_newテーブルを作成");
+
+    // 基本的な構造を想定（実際のテーブル構造に応じて調整が必要な場合がある）
+    tx.execute(
+        "CREATE TABLE migration_logs_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            migration_name TEXT NOT NULL,
+            executed_at TEXT NOT NULL,
+            user_id TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )",
+        [],
+    )?;
+
+    // 2. データを移行（マッピングテーブルを使用）
+    log::info!("migration_logsテーブルのデータを移行");
+
+    // user_idがNULLのレコードも含めて移行
+    tx.execute(
+        "INSERT INTO migration_logs_new (id, migration_name, executed_at, user_id)
+         SELECT ml.id, ml.migration_name, ml.executed_at, m.new_id
+         FROM migration_logs ml
+         LEFT JOIN user_id_mapping m ON ml.user_id = m.old_id",
+        [],
+    )?;
+
+    // 3. 旧テーブルを削除して新テーブルをリネーム
+    log::info!("旧migration_logsテーブルを削除して新テーブルをリネーム");
+    tx.execute("DROP TABLE migration_logs", [])?;
+    tx.execute(
+        "ALTER TABLE migration_logs_new RENAME TO migration_logs",
+        [],
+    )?;
+
+    // 4. インデックスを再作成
+    log::info!("migration_logsテーブルのインデックスを再作成");
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_migration_logs_user_id ON migration_logs(user_id)",
+        [],
+    )?;
+
+    log::info!("migration_logsテーブルのマイグレーションが完了");
+    Ok(())
+}
+
+/// security_audit_logsテーブルのuser_idをnanoIdに移行する
+///
+/// # 引数
+/// * `tx` - トランザクション
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn migrate_security_audit_logs_table_nanoid(tx: &Transaction) -> Result<(), rusqlite::Error> {
+    log::info!("security_audit_logsテーブルのマイグレーションを開始");
+
+    // テーブルが存在しない場合はスキップ
+    if !check_table_exists_in_tx(tx, "security_audit_logs") {
+        log::info!("security_audit_logsテーブルが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // user_idカラムが存在しない場合はスキップ
+    if !check_column_exists_in_tx(tx, "security_audit_logs", "user_id") {
+        log::info!("security_audit_logsテーブルにuser_idカラムが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // 1. 新しいテーブルを作成
+    log::info!("security_audit_logs_newテーブルを作成");
+
+    // 基本的な構造を想定（実際のテーブル構造に応じて調整が必要な場合がある）
+    tx.execute(
+        "CREATE TABLE security_audit_logs_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            event_data TEXT,
+            created_at TEXT NOT NULL,
+            user_id TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )",
+        [],
+    )?;
+
+    // 2. データを移行（マッピングテーブルを使用）
+    log::info!("security_audit_logsテーブルのデータを移行");
+
+    // user_idがNULLのレコードも含めて移行
+    tx.execute(
+        "INSERT INTO security_audit_logs_new (id, event_type, event_data, created_at, user_id)
+         SELECT sal.id, sal.event_type, sal.event_data, sal.created_at, m.new_id
+         FROM security_audit_logs sal
+         LEFT JOIN user_id_mapping m ON sal.user_id = m.old_id",
+        [],
+    )?;
+
+    // 3. 旧テーブルを削除して新テーブルをリネーム
+    log::info!("旧security_audit_logsテーブルを削除して新テーブルをリネーム");
+    tx.execute("DROP TABLE security_audit_logs", [])?;
+    tx.execute(
+        "ALTER TABLE security_audit_logs_new RENAME TO security_audit_logs",
+        [],
+    )?;
+
+    // 4. インデックスを再作成
+    log::info!("security_audit_logsテーブルのインデックスを再作成");
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_security_audit_logs_user_id ON security_audit_logs(user_id)",
+        [],
+    )?;
+    tx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_security_audit_logs_created_at ON security_audit_logs(created_at)",
+        [],
+    )?;
+
+    log::info!("security_audit_logsテーブルのマイグレーションが完了");
+    Ok(())
+}

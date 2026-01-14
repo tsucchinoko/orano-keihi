@@ -535,3 +535,36 @@ mod tests {
         assert_eq!(receipt_url_executor.name(), "003_migrate_receipt_url");
     }
 }
+
+/// ユーザーIDのnanoIdマイグレーション実行器
+///
+/// 既存の整数型ユーザーIDを文字列型のnanoIdに変換します。
+pub struct UserIdNanoidMigrationExecutor;
+
+impl MigrationExecutorTrait for UserIdNanoidMigrationExecutor {
+    fn execute(&self, conn: &Connection) -> Result<(), String> {
+        use crate::features::migrations::service::migrate_user_id_to_nanoid;
+
+        log::info!("ユーザーIDのnanoIdマイグレーションを実行");
+
+        match migrate_user_id_to_nanoid(conn) {
+            Ok(result) => {
+                if result.success {
+                    log::info!("マイグレーション成功: {}", result.message);
+                    Ok(())
+                } else {
+                    log::error!("マイグレーション失敗: {}", result.message);
+                    Err(result.message)
+                }
+            }
+            Err(e) => {
+                log::error!("マイグレーション実行エラー: {e}");
+                Err(format!("マイグレーション実行エラー: {e}"))
+            }
+        }
+    }
+
+    fn name(&self) -> &str {
+        "004_migrate_user_id_to_nanoid"
+    }
+}

@@ -5,6 +5,7 @@
 use super::errors::MigrationError;
 use super::executor::{
     BasicSchemaMigrationExecutor, ReceiptUrlMigrationExecutor, UserAuthMigrationExecutor,
+    UserIdNanoidMigrationExecutor,
 };
 use super::models::{ExecutableMigrationDefinition, MigrationDefinition};
 use crate::features::migrations::r2_user_directory_migration::get_r2_migration_schema_definition;
@@ -214,6 +215,19 @@ impl MigrationRegistry {
         let r2_migration_schema = get_r2_migration_schema_definition();
         registry.register_executable(r2_migration_schema)?;
 
+        // ユーザーIDのnanoIdマイグレーション（要件3.1, 3.2）
+        let user_id_nanoid_definition = MigrationDefinition::new(
+            "004_migrate_user_id_to_nanoid".to_string(),
+            "3.0.0".to_string(),
+            "ユーザーIDをnanoIdに移行".to_string(),
+            Self::calculate_checksum("migrate_user_id_to_nanoid"),
+        );
+        let user_id_nanoid_executable = ExecutableMigrationDefinition::new(
+            user_id_nanoid_definition,
+            Box::new(UserIdNanoidMigrationExecutor),
+        );
+        registry.register_executable(user_id_nanoid_executable)?;
+
         Ok(registry)
     }
 }
@@ -336,7 +350,7 @@ mod tests {
     fn test_register_default_migrations() {
         let registry = MigrationRegistry::register_default_migrations().unwrap();
 
-        assert_eq!(registry.count(), 4);
+        assert_eq!(registry.count(), 5);
         assert!(registry
             .find_executable_migration("001_create_basic_schema")
             .is_some());
@@ -348,6 +362,9 @@ mod tests {
             .is_some());
         assert!(registry
             .find_executable_migration("r2_migration_schema")
+            .is_some());
+        assert!(registry
+            .find_executable_migration("004_migrate_user_id_to_nanoid")
             .is_some());
 
         // 各マイグレーションのチェックサムが正しく計算されていることを確認
@@ -375,9 +392,21 @@ mod tests {
             MigrationRegistry::calculate_checksum("migrate_receipt_path_to_url")
         );
 
+        let user_id_nanoid = registry
+            .find_executable_migration("004_migrate_user_id_to_nanoid")
+            .unwrap();
+        assert_eq!(
+            user_id_nanoid.definition.checksum,
+            MigrationRegistry::calculate_checksum("migrate_user_id_to_nanoid")
+        );
+
         // 実行器の名前が正しいことを確認
         assert_eq!(basic_schema.executor.name(), "001_create_basic_schema");
         assert_eq!(user_auth.executor.name(), "002_add_user_authentication");
         assert_eq!(receipt_url.executor.name(), "003_migrate_receipt_url");
+        assert_eq!(
+            user_id_nanoid.executor.name(),
+            "004_migrate_user_id_to_nanoid"
+        );
     }
 }

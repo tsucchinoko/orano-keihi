@@ -141,13 +141,13 @@
     - すべてのコマンドハンドラでuser_idの型をStringに変更
     - _要件: 4.4_
 
-- [ ] 9. チェックポイント - コンパイルエラーの確認
+- [x] 9. チェックポイント - コンパイルエラーの確認
   - `cargo check`を実行してコンパイルエラーがないことを確認
   - 残っている型エラーがあれば修正
   - ユーザーに質問があれば確認
 
-- [ ] 10. マイグレーション関数の実装
-  - [ ] 10.1 メインマイグレーション関数を作成
+- [x] 10. マイグレーション関数の実装
+  - [x] 10.1 メインマイグレーション関数を作成
     - `packages/desktop/src-tauri/src/features/migrations/service.rs`に`execute_user_id_nanoid_migration`関数を追加
     - 一時的なマッピングテーブル（user_id_mapping）を作成
     - 既存ユーザーに新しいnanoIdを割り当ててマッピングテーブルに保存
@@ -155,7 +155,7 @@
     - データを移行
     - _要件: 3.1, 3.2_
 
-  - [ ] 10.2 expensesテーブルのマイグレーション関数を実装
+  - [x] 10.2 expensesテーブルのマイグレーション関数を実装
     - `migrate_expenses_table(tx: &Transaction)`関数を作成
     - 新しいスキーマでexpenses_newテーブルを作成（user_id TEXT型）
     - マッピングテーブルを使用してデータを移行
@@ -163,39 +163,39 @@
     - インデックスを再作成
     - _要件: 2.1, 3.3_
 
-  - [ ] 10.3 subscriptionsテーブルのマイグレーション関数を実装
+  - [x] 10.3 subscriptionsテーブルのマイグレーション関数を実装
     - `migrate_subscriptions_table(tx: &Transaction)`関数を作成
     - 同様の処理をsubscriptionsテーブルに適用
     - _要件: 2.2, 3.3_
 
-  - [ ] 10.4 sessionsテーブルのマイグレーション関数を実装
+  - [x] 10.4 sessionsテーブルのマイグレーション関数を実装
     - `migrate_sessions_table(tx: &Transaction)`関数を作成
     - 同様の処理をsessionsテーブルに適用
     - _要件: 2.3, 3.3, 6.1_
 
-  - [ ] 10.5 receipt_cacheテーブルのマイグレーション関数を実装
+  - [x] 10.5 receipt_cacheテーブルのマイグレーション関数を実装
     - `migrate_receipt_cache_table(tx: &Transaction)`関数を作成
     - 同様の処理をreceipt_cacheテーブルに適用
     - _要件: 2.4, 3.3_
 
-  - [ ] 10.6 migration_logsテーブルのマイグレーション関数を実装
+  - [x] 10.6 migration_logsテーブルのマイグレーション関数を実装
     - `migrate_migration_logs_table(tx: &Transaction)`関数を作成
     - 同様の処理をmigration_logsテーブルに適用
     - _要件: 2.5, 3.3_
 
-  - [ ] 10.7 security_audit_logsテーブルのマイグレーション関数を実装
+  - [x] 10.7 security_audit_logsテーブルのマイグレーション関数を実装
     - `migrate_security_audit_logs_table(tx: &Transaction)`関数を作成
     - 同様の処理をsecurity_audit_logsテーブルに適用
     - _要件: 2.6, 3.3_
 
-  - [ ] 10.8 マイグレーション関数を統合
+  - [x] 10.8 マイグレーション関数を統合
     - `execute_user_id_nanoid_migration`から各テーブルのマイグレーション関数を呼び出し
     - 旧usersテーブルを削除して新テーブルをリネーム
     - インデックスを再作成
     - マッピングテーブルを削除
     - _要件: 1.1, 2.7, 3.3_
 
-  - [ ] 10.9 マイグレーションをマイグレーションレジストリに登録
+  - [x] 10.9 マイグレーションをマイグレーションレジストリに登録
     - `get_all_migrations()`関数に新しいマイグレーションを追加
     - マイグレーション番号とバージョンを設定
     - _要件: 3.5_
