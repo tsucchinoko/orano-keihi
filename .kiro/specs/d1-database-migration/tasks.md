@@ -35,8 +35,8 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - エラーケースのテスト（存在しないユーザーなど）
     - _要件: 10.1_
 
-- [ ] 4. ExpenseRepositoryの実装
-  - [ ] 4.1 ExpenseRepositoryクラスを作成
+- [x] 4. ExpenseRepositoryの実装
+  - [x] 4.1 ExpenseRepositoryクラスを作成
     - D1Databaseをコンストラクタで受け取る
     - createメソッドを実装
     - findByIdメソッドを実装
