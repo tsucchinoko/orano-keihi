@@ -6,6 +6,7 @@ use chrono_tz::Asia::Tokyo;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
@@ -364,30 +365,38 @@ impl UpdaterService {
                         let logger = self.logger.clone();
                         let app_handle = self.app_handle.clone();
 
+                        // ダウンロード済みバイト数を追跡（クロージャ内で変更可能にするためArc<Mutex>を使用）
+                        let downloaded = Arc::new(Mutex::new(0u64));
+                        let downloaded_clone = Arc::clone(&downloaded);
+
                         match update
                             .download_and_install(
                                 move |chunk_length, content_length| {
                                     // プログレスコールバック
+                                    // 累積ダウンロードバイト数を更新
+                                    let mut downloaded_bytes = downloaded_clone.lock().unwrap();
+                                    *downloaded_bytes += chunk_length as u64;
+                                    let current_downloaded = *downloaded_bytes;
+                                    drop(downloaded_bytes); // ロックを早期に解放
+
                                     if let Some(total) = content_length {
-                                        let progress = (chunk_length as f64 / total as f64 * 100.0) as u32;
-                                        debug!("ダウンロード進捗: {progress}% ({chunk_length}/{total} bytes)");
+                                        let progress = (current_downloaded as f64 / total as f64 * 100.0) as u32;
+                                        debug!("ダウンロード進捗: {progress}% ({current_downloaded}/{total} bytes)");
 
                                         // ログ: ダウンロード進捗
-                                        logger.log_download_progress(chunk_length as u64, total);
+                                        logger.log_download_progress(current_downloaded, total);
 
                                         // フロントエンドに進捗を通知
                                         if let Err(e) = app_handle.emit("download-progress", progress) {
                                             warn!("ダウンロード進捗の通知に失敗: {e}");
                                         }
                                     } else {
-                                        debug!("ダウンロード中: {chunk_length} bytes");
+                                        debug!("ダウンロード中: {current_downloaded} bytes");
                                     }
                                 },
                                 || {
                                     // 完了コールバック
-                                    // 注: このコールバックはダウンロード完了時に呼ばれるが、
-                                    // インストール準備も完了している
-                                    info!("ダウンロードとインストール準備が完了");
+                                    info!("ダウンロード完了");
                                 },
                             )
                             .await
@@ -396,13 +405,12 @@ impl UpdaterService {
                                 // ログ: ダウンロード完了
                                 self.logger.log_download_complete(&version);
 
-                                // ログ: インストール開始（再起動後に実行される）
+                                // ログ: インストール開始
                                 self.logger.log_install_start(&version);
 
-                                info!("アップデートのダウンロードとインストール準備が完了しました");
-                                info!("アプリケーションを手動で再起動してインストールを完了してください");
+                                info!("アップデートのインストールが完了しました");
 
-                                // ログ: インストール完了（再起動後に完了）
+                                // ログ: インストール完了
                                 self.logger.log_install_complete(&version);
 
                                 // フロントエンドにダウンロード完了を通知
@@ -410,7 +418,10 @@ impl UpdaterService {
                                     warn!("ダウンロード完了通知の送信に失敗: {e}");
                                 }
 
-                                Ok(())
+                                // アプリケーションを再起動してアップデートを適用
+                                info!("アプリケーションを再起動します...");
+                                let app = self.app_handle.clone();
+                                app.restart();
                             }
                             Err(e) => {
                                 let error = UpdateError::installation(format!("アップデートのダウンロードまたはインストール準備に失敗しました: {e}"));
