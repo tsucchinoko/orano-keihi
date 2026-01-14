@@ -29,18 +29,18 @@
   - **プロパティ3: NanoId一意性** - 異なる生成で異なるIDが生成される
   - _要件: 1.2, 1.3, 1.4_
 
-- [ ] 2. データモデルの型変更
-  - [ ] 2.1 User構造体のid型をi64からStringに変更
+- [x] 2. データモデルの型変更
+  - [x] 2.1 User構造体のid型をi64からStringに変更
     - `packages/desktop/src-tauri/src/features/auth/models.rs`を更新
     - `User`構造体の`id: i64`を`id: String`に変更
     - _要件: 4.1_
 
-  - [ ] 2.2 Session構造体のuser_id型をi64からStringに変更
+  - [x] 2.2 Session構造体のuser_id型をi64からStringに変更
     - `packages/desktop/src-tauri/src/features/auth/models.rs`を更新
     - `Session`構造体の`user_id: i64`を`user_id: String`に変更
     - _要件: 4.2_
 
-  - [ ] 2.3 Expense関連のDTOのuser_id型を更新
+  - [x] 2.3 Expense関連のDTOのuser_id型を更新
     - `packages/desktop/src-tauri/src/features/expenses/models.rs`を更新
     - `CreateExpenseDto`の`user_id: Option<i64>`を`user_id: Option<String>`に変更
     - _要件: 4.3_
