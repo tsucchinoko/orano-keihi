@@ -79,7 +79,7 @@
   - 既存のテストがすべて成功することを確認
   - _要件: 7.1, 7.3_
 
-- [ ] 5. ExpenseRepositoryの更新
+- [x] 5. ExpenseRepositoryの更新
   - すべてのメソッドの`user_id: i64`パラメータを`user_id: &str`に変更
   - `create(conn: &Connection, dto: CreateExpenseDto, user_id: &str)`
   - `find_by_id(conn: &Connection, id: i64, user_id: &str)`

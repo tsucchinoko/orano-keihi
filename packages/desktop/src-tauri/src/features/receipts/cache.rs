@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// デフォルトユーザーID（既存データ用）
-const DEFAULT_USER_ID: i64 = 1;
+const DEFAULT_USER_ID: &str = "1";
 
 /// ローカルキャッシュマネージャー
 pub struct CacheManager {
@@ -61,7 +61,7 @@ impl CacheManager {
         receipt_url: &str,
         data: Vec<u8>,
         conn: &Connection,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<PathBuf> {
         // キャッシュディレクトリを確認・作成
         self.initialize_sync()?;
@@ -104,7 +104,7 @@ impl CacheManager {
         &self,
         receipt_url: &str,
         conn: &Connection,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<Option<Vec<u8>>> {
         // データベースからキャッシュ情報を取得
         let cache_info = self.get_receipt_cache(conn, receipt_url, user_id)?;
@@ -140,7 +140,7 @@ impl CacheManager {
     ///
     /// # 戻り値
     /// 削除されたファイル数、または失敗時はAppError
-    pub fn cleanup_old_cache(&self, conn: &Connection, user_id: Option<i64>) -> AppResult<usize> {
+    pub fn cleanup_old_cache(&self, conn: &Connection, user_id: Option<&str>) -> AppResult<usize> {
         let max_age_days = self.max_age.as_secs() / (24 * 3600);
 
         // データベースから古いキャッシュ情報を取得して物理ファイルも削除
@@ -172,7 +172,7 @@ impl CacheManager {
     ///
     /// # 戻り値
     /// 成功時はOk(())、失敗時はAppError
-    pub fn manage_cache_size(&self, conn: &Connection, user_id: Option<i64>) -> AppResult<()> {
+    pub fn manage_cache_size(&self, conn: &Connection, user_id: Option<&str>) -> AppResult<()> {
         // 現在のキャッシュサイズを計算
         let current_size = self.calculate_cache_size_sync()?;
 
@@ -260,7 +260,7 @@ impl CacheManager {
     ///
     /// # 戻り値
     /// 成功時はOk(())、失敗時はAppError
-    fn cleanup_lru_cache(&self, conn: &Connection, user_id: Option<i64>) -> AppResult<()> {
+    fn cleanup_lru_cache(&self, conn: &Connection, user_id: Option<&str>) -> AppResult<()> {
         // 最も古くアクセスされたファイルを取得して削除
         let lru_caches = self.get_lru_cache_entries(conn, 10, user_id)?; // 最大10個削除
 
@@ -298,7 +298,7 @@ impl CacheManager {
         &self,
         receipt_url: &str,
         conn: &Connection,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<()> {
         // データベースからキャッシュ情報を取得
         let cache_info = self.get_receipt_cache(conn, receipt_url, user_id)?;
@@ -332,7 +332,7 @@ impl CacheManager {
         &self,
         receipt_url: &str,
         conn: &Connection,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<Option<Vec<u8>>> {
         // オフライン時はアクセス時刻を更新せずにキャッシュを取得
         let cache_info = self.get_receipt_cache(conn, receipt_url, user_id)?;
@@ -362,7 +362,7 @@ impl CacheManager {
         receipt_url: &str,
         local_path: &str,
         file_size: i64,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<()> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
@@ -384,7 +384,7 @@ impl CacheManager {
         &self,
         conn: &Connection,
         receipt_url: &str,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<Option<ReceiptCache>> {
         match conn.query_row(
             "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed
@@ -412,7 +412,7 @@ impl CacheManager {
         &self,
         conn: &Connection,
         receipt_url: &str,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<()> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
@@ -433,7 +433,7 @@ impl CacheManager {
         &self,
         conn: &Connection,
         receipt_url: &str,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<()> {
         conn.execute(
             "DELETE FROM receipt_cache WHERE receipt_url = ?1 AND user_id = ?2",
@@ -449,7 +449,7 @@ impl CacheManager {
         &self,
         conn: &Connection,
         max_age_days: i64,
-        user_id: Option<i64>,
+        user_id: Option<&str>,
     ) -> AppResult<Vec<ReceiptCache>> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
@@ -462,7 +462,7 @@ impl CacheManager {
         let (query, params): (String, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(uid) = user_id {
             (
                 "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache WHERE last_accessed < ?1 AND user_id = ?2".to_string(),
-                vec![Box::new(cutoff_str), Box::new(uid)]
+                vec![Box::new(cutoff_str), Box::new(uid.to_string())]
             )
         } else {
             (
@@ -505,12 +505,12 @@ impl CacheManager {
         &self,
         conn: &Connection,
         limit: i64,
-        user_id: Option<i64>,
+        user_id: Option<&str>,
     ) -> AppResult<Vec<ReceiptCache>> {
         let (query, params): (String, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(uid) = user_id {
             (
                 "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed FROM receipt_cache WHERE user_id = ?1 ORDER BY last_accessed ASC LIMIT ?2".to_string(),
-                vec![Box::new(uid), Box::new(limit)]
+                vec![Box::new(uid.to_string()), Box::new(limit)]
             )
         } else {
             (
@@ -553,7 +553,7 @@ impl CacheManager {
         &self,
         conn: &Connection,
         max_age_days: i64,
-        user_id: Option<i64>,
+        user_id: Option<&str>,
     ) -> AppResult<usize> {
         use chrono::Utc;
         use chrono_tz::Asia::Tokyo;
