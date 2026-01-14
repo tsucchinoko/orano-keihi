@@ -68,7 +68,16 @@ jobs:
   # MacOSビルド
   build-macos:
     needs: version-tag
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            runner: macos-13  # Intel Mac
+            arch: x86_64
+          - target: aarch64-apple-darwin
+            runner: macos-14  # Apple Silicon
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -89,6 +98,8 @@ jobs:
 
       - name: Rust環境のセットアップ
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Apple Developer証明書のインポート
         env:
@@ -192,13 +203,9 @@ jobs:
           echo "📊 ファイルサイズ:"
           ls -lh "$APP_TAR_GZ_ABS"
 
-          # アーキテクチャを検出
-          ARCH=$(uname -m)
-          if [ "$ARCH" = "arm64" ]; then
-            ARCH="aarch64"
-          elif [ "$ARCH" = "x86_64" ]; then
-            ARCH="x86_64"
-          fi
+          # アーキテクチャはマトリックスから取得
+          ARCH="${{ matrix.arch }}"
+          echo "🏗️ ビルドアーキテクチャ: $ARCH"
 
           # バージョン情報を取得
           VERSION="${{ needs.version-tag.outputs.VERSION }}"
@@ -280,30 +287,43 @@ jobs:
           mkdir -p ./macos-artifacts
 
           # .app.tar.gzファイルをコピー
-          if [ -f packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz ]; then
-            cp packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz ./macos-artifacts/
+          echo "🔍 .app.tar.gzファイルを検索中..."
+          find packages/desktop/src-tauri/target/release/bundle/macos -name "*.app.tar.gz" -type f ! -name "*.sig" -exec cp {} ./macos-artifacts/ \; 2>/dev/null && {
             echo "✅ .app.tar.gzファイルをコピーしました"
-          fi
+          } || {
+            echo "⚠️ .app.tar.gzファイルが見つかりません"
+          }
 
           # .app.tar.gz.sigファイルをコピー
-          if [ -f packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig ]; then
-            cp packages/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig ./macos-artifacts/
+          echo "🔍 .app.tar.gz.sigファイルを検索中..."
+          find packages/desktop/src-tauri/target/release/bundle/macos -name "*.app.tar.gz.sig" -type f -exec cp {} ./macos-artifacts/ \; 2>/dev/null && {
             echo "✅ .app.tar.gz.sigファイルをコピーしました"
-          fi
+          } || {
+            echo "❌ .app.tar.gz.sigファイルが見つかりません - これは必須ファイルです"
+            exit 1
+          }
 
           # DMGファイルをコピー
-          if [ -f packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg ]; then
-            cp packages/desktop/src-tauri/target/release/bundle/dmg/*.dmg ./macos-artifacts/
+          echo "🔍 DMGファイルを検索中..."
+          find packages/desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" -type f -exec cp {} ./macos-artifacts/ \; 2>/dev/null && {
             echo "✅ DMGファイルをコピーしました"
-          fi
+          } || {
+            echo "⚠️ DMGファイルが見つかりません"
+          }
 
           echo "📁 整理された成果物:"
           ls -lh ./macos-artifacts/
+          
+          # 署名ファイルの存在を確認
+          if [ ! -f ./macos-artifacts/*.app.tar.gz.sig ]; then
+            echo "❌ エラー: 署名ファイルが成果物に含まれていません"
+            exit 1
+          fi
 
       - name: MacOS成果物のアップロード
         uses: actions/upload-artifact@v4
         with:
-          name: macos-artifacts
+          name: macos-${{ matrix.arch }}-artifacts
           path: ./macos-artifacts/
           retention-days: 7
 
@@ -552,6 +572,25 @@ jobs:
         with:
           path: ./artifacts
 
+      - name: MacOS成果物の統合
+        run: |
+          echo "📦 MacOS成果物を統合中..."
+          mkdir -p ./artifacts/macos-artifacts
+          
+          # x86_64とaarch64の成果物を統合
+          if [ -d "./artifacts/macos-x86_64-artifacts" ]; then
+            echo "✅ x86_64成果物を統合"
+            cp -r ./artifacts/macos-x86_64-artifacts/* ./artifacts/macos-artifacts/
+          fi
+          
+          if [ -d "./artifacts/macos-aarch64-artifacts" ]; then
+            echo "✅ aarch64成果物を統合"
+            cp -r ./artifacts/macos-aarch64-artifacts/* ./artifacts/macos-artifacts/
+          fi
+          
+          echo "📁 統合されたMacOS成果物:"
+          ls -lh ./artifacts/macos-artifacts/
+
       - name: ダウンロードされた成果物の確認
         run: |
           echo "📁 ダウンロードされた成果物を確認中..."
@@ -560,7 +599,7 @@ jobs:
 
           if [ -d "./artifacts/macos-artifacts" ]; then
             echo ""
-            echo "=== MacOS成果物 ==="
+            echo "=== MacOS成果物（統合後） ==="
             ls -la ./artifacts/macos-artifacts/
           else
             echo "⚠️ MacOS成果物が見つかりません"
@@ -693,26 +732,35 @@ jobs:
             }
 
             // ファイルパスとサイズの取得
-            const dmgPath = path.join(macosArtifactsDir, dmgFiles[0]);
             const msiPath = path.join(windowsArtifactsDir, msiFiles[0]);
-
-            const dmgStats = fs.statSync(dmgPath);
             const msiStats = fs.statSync(msiPath);
-            const dmgSizeMB = (dmgStats.size / 1024 / 1024).toFixed(2);
             const msiSizeMB = (msiStats.size / 1024 / 1024).toFixed(2);
 
             console.log('📊 ファイルサイズ:');
-            console.log('   - MacOS DMG: ' + dmgFiles[0] + ' (' + dmgSizeMB + ' MB)');
+            
+            // MacOS DMGファイルのサイズ情報
+            const dmgInfoList = dmgFiles.map(dmgFile => {
+              const dmgPath = path.join(macosArtifactsDir, dmgFile);
+              const dmgStats = fs.statSync(dmgPath);
+              const dmgSizeMB = (dmgStats.size / 1024 / 1024).toFixed(2);
+              console.log('   - MacOS DMG: ' + dmgFile + ' (' + dmgSizeMB + ' MB)');
+              return { file: dmgFile, size: dmgSizeMB };
+            });
+            
             console.log('   - Windows MSI: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
 
             // リリースノートの生成
+            const dmgTableRows = dmgInfoList.map(info => 
+              '| **MacOS** | ' + info.file + ' | ' + info.size + ' MB |'
+            ).join('\n');
+            
             const releaseNotes = [
               '## 🎉 新しいクロスプラットフォームリリース: ' + releaseTag,
               '',
               '### 📦 ダウンロード',
               '| プラットフォーム | ファイル | サイズ |',
               '|---|---|---|',
-              '| **MacOS** | ' + dmgFiles[0] + ' | ' + dmgSizeMB + ' MB |',
+              dmgTableRows,
               '| **Windows** | ' + msiFiles[0] + ' | ' + msiSizeMB + ' MB |',
               '',
               '### 🔄 自動アップデート',
@@ -776,23 +824,32 @@ jobs:
               }
             }
 
-            // MacOS DMGファイルのアップロード（ユーザー配布用）
-            await uploadFile(dmgPath, dmgFiles[0], 'MacOS DMGファイル');
-
-            // MacOS アップデーター用圧縮ファイルのアップロード
-            if (appTarGzFiles.length > 0) {
-              const appTarGzPath = path.join(macosArtifactsDir, appTarGzFiles[0]);
-              await uploadFile(appTarGzPath, appTarGzFiles[0], 'MacOS アップデーター用ファイル (.app.tar.gz)');
-            } else {
-              console.warn('⚠️  MacOS .app.tar.gzファイルが見つかりません');
+            // MacOS DMGファイルのアップロード（ユーザー配布用 - 全アーキテクチャ）
+            for (const dmgFile of dmgFiles) {
+              const dmgPath = path.join(macosArtifactsDir, dmgFile);
+              await uploadFile(dmgPath, dmgFile, 'MacOS DMGファイル');
             }
 
-            // MacOS 圧縮ファイル署名のアップロード
-            if (appTarGzSigFiles.length > 0) {
-              const appTarGzSigPath = path.join(macosArtifactsDir, appTarGzSigFiles[0]);
-              await uploadFile(appTarGzSigPath, appTarGzSigFiles[0], 'MacOS 圧縮ファイル署名');
+            // MacOS アップデーター用圧縮ファイルのアップロード（全アーキテクチャ）
+            if (appTarGzFiles.length > 0) {
+              for (const appTarGzFile of appTarGzFiles) {
+                const appTarGzPath = path.join(macosArtifactsDir, appTarGzFile);
+                await uploadFile(appTarGzPath, appTarGzFile, 'MacOS アップデーター用ファイル (.app.tar.gz)');
+              }
             } else {
-              console.warn('⚠️  MacOS .app.tar.gz.sigファイルが見つかりません');
+              console.error('❌ MacOS .app.tar.gzファイルが見つかりません');
+              throw new Error('MacOS .app.tar.gzファイルが見つかりません');
+            }
+
+            // MacOS 圧縮ファイル署名のアップロード（全アーキテクチャ）
+            if (appTarGzSigFiles.length > 0) {
+              for (const appTarGzSigFile of appTarGzSigFiles) {
+                const appTarGzSigPath = path.join(macosArtifactsDir, appTarGzSigFile);
+                await uploadFile(appTarGzSigPath, appTarGzSigFile, 'MacOS 圧縮ファイル署名');
+              }
+            } else {
+              console.error('❌ MacOS .app.tar.gz.sigファイルが見つかりません');
+              throw new Error('MacOS .app.tar.gz.sigファイルが見つかりません');
             }
 
             // Windows MSIファイルのアップロード（ユーザー配布用）

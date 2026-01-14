@@ -66,40 +66,59 @@ function getPlatformConfigurations() {
  * ファイルの署名を生成（実際の署名ファイルが存在する場合）
  * GitHub Actionsでは、Tauriが自動的に署名ファイルを生成するため、
  * それを読み込んで使用します。
+ * 
+ * minisignの署名ファイル形式:
+ * 1行目: untrusted comment: signature from minisign secret key
+ * 2行目: base64エンコードされた署名データ
+ * 
+ * Tauriは2行目のbase64署名データのみを必要とします。
  */
 function getSignature(filePath) {
     const signatureFilePath = `${filePath}.sig`;
     
     try {
         if (fs.existsSync(signatureFilePath)) {
-            const signature = fs.readFileSync(signatureFilePath, 'utf8').trim();
-            console.log(`✅ 署名ファイルを読み込み: ${path.basename(signatureFilePath)}`);
-            return signature;
+            const signatureContent = fs.readFileSync(signatureFilePath, 'utf8').trim();
+            
+            // minisign署名ファイルは複数行で構成されている
+            // 1行目: コメント行（"untrusted comment: ..."）
+            // 2行目: base64エンコードされた署名データ
+            const lines = signatureContent.split('\n');
+            
+            if (lines.length >= 2) {
+                // 2行目以降を結合（改行を除去）
+                const signature = lines.slice(1).join('').trim();
+                console.log(`✅ 署名ファイルを読み込み: ${path.basename(signatureFilePath)}`);
+                console.log(`   署名データ（最初の50文字）: ${signature.substring(0, 50)}...`);
+                return signature;
+            } else {
+                console.warn(`⚠️  署名ファイルの形式が不正: ${signatureFilePath}`);
+                console.warn(`   期待される形式: 1行目=コメント、2行目=署名データ`);
+                console.warn(`   実際の行数: ${lines.length}`);
+            }
         }
     } catch (error) {
         console.warn(`⚠️  署名ファイルの読み込みに失敗: ${signatureFilePath}`, error.message);
     }
     
-    // 署名ファイルが見つからない場合の処理
-    console.warn(`⚠️  署名ファイルが見つかりません: ${signatureFilePath}`);
+    // 署名ファイルが見つからない場合はエラーをスロー
+    console.error(`❌ 署名ファイルが見つかりません: ${signatureFilePath}`);
+    console.error(`🔍 ファイルパス: ${filePath}`);
+    console.error(`🔍 署名ファイルパス: ${signatureFilePath}`);
     
-    // GitHub Actionsでは、実際の署名は後でTauriが生成するため、
-    // プレースホルダーではなく、実際のファイルから署名を生成する
-    try {
-        if (fs.existsSync(filePath)) {
-            // ファイルが存在する場合は、ダミー署名を生成
-            // 実際のリリース時には、Tauriが適切な署名を生成します
-            const fileContent = fs.readFileSync(filePath);
-            const hash = require('crypto').createHash('sha256').update(fileContent).digest('hex');
-            console.log(`ℹ️  ダミー署名を生成: ${path.basename(filePath)}`);
-            return `dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIG1pbmlzaWduIHNlY3JldCBrZXkKUldTN0NHckpXaU9JR2RwZ0pIUVIwbTE2WGF0ei9CWVRvejdLTnRlclV0ZmlzdUluNmhpbDdTUHEK${hash.substring(0, 32)}`;
-        }
-    } catch (error) {
-        console.warn(`⚠️  ファイルの読み込みに失敗: ${filePath}`, error.message);
+    // ディレクトリ内のファイルを表示
+    const dir = path.dirname(filePath);
+    if (fs.existsSync(dir)) {
+        console.error(`📁 ディレクトリ内のファイル (${dir}):`);
+        const files = fs.readdirSync(dir);
+        files.forEach(f => console.error(`   - ${f}`));
     }
     
-    // 最後の手段として、プレースホルダーを返す
-    return 'SIGNATURE_PLACEHOLDER';
+    throw new Error(
+        `署名ファイルが見つかりません: ${signatureFilePath}\n` +
+        `Tauriビルドプロセスで署名ファイルが正しく生成されているか確認してください。\n` +
+        `GitHub Actionsの「Tauri署名ファイルの生成」ステップを確認してください。`
+    );
 }
 
 /**
