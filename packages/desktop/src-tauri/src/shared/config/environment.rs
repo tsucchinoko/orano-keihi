@@ -225,7 +225,7 @@ impl ApiConfig {
                 val
             })
             .unwrap_or_else(|| {
-                let default_url = "http://localhost:3000";
+                let default_url = "http://localhost:8787";
                 log::debug!(
                     "API_SERVER_URL が設定されていないため、デフォルト値を使用: {default_url}"
                 );

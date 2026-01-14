@@ -20,7 +20,7 @@ pub struct ApiClientConfig {
 impl Default for ApiClientConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://localhost:3000".to_string(),
+            base_url: "http://localhost:8787".to_string(),
             timeout_seconds: 30,
             max_retries: 3,
         }

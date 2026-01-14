@@ -9,10 +9,10 @@ use features::security::models::SecurityConfig;
 use features::security::service::SecurityManager;
 use features::{
     auth::commands as auth_commands,
-    expenses::commands as expense_commands,
+    expenses::api_commands as expense_commands,
     receipts::{api_commands as receipt_api_commands, commands as receipt_commands},
     security::commands as security_commands,
-    subscriptions::{api_commands as subscription_api_commands, commands as subscription_commands},
+    subscriptions::api_commands as subscription_commands,
     updater::commands as updater_commands,
 };
 use log::info;
@@ -351,25 +351,20 @@ pub fn run() {
             auth_commands::logout,
             auth_commands::get_auth_state,
             auth_commands::cleanup_expired_sessions,
-            // 経費コマンド
+            // 経費コマンド（API Server経由）
             expense_commands::create_expense,
             expense_commands::get_expenses,
             expense_commands::update_expense,
             expense_commands::delete_expense,
             expense_commands::delete_expense_receipt,
-            // サブスクリプションコマンド
+            // サブスクリプションコマンド（API Server経由）
             subscription_commands::create_subscription,
             subscription_commands::get_subscriptions,
             subscription_commands::update_subscription,
             subscription_commands::toggle_subscription_status,
             subscription_commands::delete_subscription,
             subscription_commands::get_monthly_subscription_total,
-            subscription_commands::save_subscription_receipt,
             subscription_commands::delete_subscription_receipt,
-            subscription_commands::get_subscription_receipt_path,
-            // サブスクリプションコマンド（APIサーバー経由）
-            subscription_api_commands::upload_subscription_receipt_via_api,
-            subscription_api_commands::delete_subscription_receipt_via_api,
             // 領収書コマンド（APIサーバー経由）
             receipt_api_commands::upload_receipt_via_api,
             receipt_api_commands::upload_multiple_receipts_via_api,

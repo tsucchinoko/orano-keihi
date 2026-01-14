@@ -14,7 +14,7 @@ pub struct Expense {
 }
 
 /// 経費作成用DTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateExpenseDto {
     pub date: String,
     pub amount: f64,
@@ -25,7 +25,7 @@ pub struct CreateExpenseDto {
 }
 
 /// 経費更新用DTO
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateExpenseDto {
     pub date: Option<String>,
     pub amount: Option<f64>,
