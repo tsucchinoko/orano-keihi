@@ -117,9 +117,10 @@ impl ApiClient {
         expense_id: i64,
         file_data: &[u8],
         filename: &str,
+        user_id: &str,
         auth_token: &str,
     ) -> Result<UploadResponse, AppError> {
-        info!("APIサーバー経由でファイルアップロード開始: expense_id={expense_id}, filename={filename}");
+        info!("APIサーバー経由でファイルアップロード開始: expense_id={expense_id}, filename={filename}, user_id={user_id}");
 
         let url = format!("{}/api/v1/receipts/upload", self.config.base_url);
 
@@ -136,7 +137,7 @@ impl ApiClient {
                         .map_err(|e| AppError::Validation(format!("MIMEタイプ設定エラー: {e}")))?,
                 )
                 .text("expenseId", expense_id.to_string())
-                .text("userId", "1"); // TODO: 実際のユーザーIDを使用
+                .text("userId", user_id.to_string());
 
             match self
                 .client
@@ -190,10 +191,11 @@ impl ApiClient {
     pub async fn upload_multiple_files(
         &self,
         files: Vec<(i64, String, Vec<u8>, String)>, // (expense_id, file_path, file_data, filename)
+        user_id: &str,
         auth_token: &str,
     ) -> Result<MultipleUploadResponse, AppError> {
         info!(
-            "APIサーバー経由で複数ファイル並列アップロード開始: {} ファイル",
+            "APIサーバー経由で複数ファイル並列アップロード開始: {} ファイル, user_id={user_id}",
             files.len()
         );
 
@@ -219,7 +221,7 @@ impl ApiClient {
                     .text(format!("expenseIds[{i}]"), expense_id.to_string());
             }
 
-            form = form.text("userId", "1"); // TODO: 実際のユーザーIDを使用
+            form = form.text("userId", user_id.to_string());
 
             match self
                 .client

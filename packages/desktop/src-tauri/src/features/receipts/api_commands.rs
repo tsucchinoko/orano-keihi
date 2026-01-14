@@ -180,9 +180,9 @@ pub async fn upload_receipt_via_api(
         format!("APIクライアント作成エラー: {e}")
     })?;
 
-    // ファイルをアップロード
+    // ファイルをアップロード（ユーザーIDを渡す）
     match api_client
-        .upload_file(expense_id, &file_data, filename, &token)
+        .upload_file(expense_id, &file_data, filename, &user.id, &token)
         .await
     {
         Ok(response) => {

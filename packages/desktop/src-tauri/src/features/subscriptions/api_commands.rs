@@ -543,6 +543,7 @@ pub async fn upload_subscription_receipt_via_api(
     // アップロード用のリクエストボディを作成
     let upload_request = serde_json::json!({
         "subscriptionId": subscription_id,
+        "userId": user.id,
         "fileName": file_name,
         "fileData": general_purpose::STANDARD.encode(&file_data)
     });

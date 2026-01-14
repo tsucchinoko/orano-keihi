@@ -136,17 +136,20 @@ export class AuthService {
 
       // 開発環境では任意のトークンを受け入れる
       if (token && token.length > 0) {
-        // トークンからユーザーIDを抽出を試行（簡易的な実装）
-        let userId = 2; // デフォルトユーザーID
+        // トークンをユーザーIDとして使用（nanoIdまたは数値文字列）
+        let userId = "2"; // デフォルトユーザーID
 
-        // トークンが数値の場合はユーザーIDとして使用
+        // トークンが数値の場合は文字列として使用
         const parsedUserId = parseInt(token, 10);
         if (!isNaN(parsedUserId) && parsedUserId > 0) {
-          userId = parsedUserId;
+          userId = parsedUserId.toString();
+        } else {
+          // トークンがnanoIdの場合はそのまま使用
+          userId = token;
         }
 
         // 利用可能なユーザーIDを順番に試行
-        const userIdsToTry = [userId, 2, 1];
+        const userIdsToTry = [userId, "2", "1"];
 
         for (const tryUserId of userIdsToTry) {
           const user = await this.getUserById(tryUserId);
@@ -189,7 +192,7 @@ export class AuthService {
    * @param userId ユーザーID
    * @returns 認証結果
    */
-  async authenticateUser(userId: number): Promise<AuthResult> {
+  async authenticateUser(userId: string): Promise<AuthResult> {
     try {
       const user = await this.getUserById(userId);
 
@@ -226,7 +229,7 @@ export class AuthService {
    * @param resource リソース名
    * @returns 権限があるかどうか
    */
-  async checkPermission(userId: number, resource: string): Promise<boolean> {
+  async checkPermission(userId: string, resource: string): Promise<boolean> {
     try {
       // TODO: 実際の実装では、データベースから権限情報を取得する
       // 現在は基本的な権限チェックのみ実装
@@ -333,7 +336,7 @@ export class AuthService {
       if (sessionId === "test-session-id") {
         return {
           id: sessionId,
-          userId: 1,
+          userId: "1",
           expiresAt: new Date(Date.now() + this.sessionExpirationMs).toISOString(),
           createdAt: new Date().toISOString(),
         };
@@ -348,13 +351,13 @@ export class AuthService {
    * @param userId ユーザーID
    * @returns ユーザー情報
    */
-  private async getUserById(userId: number): Promise<User | null> {
+  private async getUserById(userId: string): Promise<User | null> {
     return withDatabaseRetry(async () => {
       // TODO: 実際の実装では、データベースからユーザー情報を取得する
       // 現在はモックデータを返す
 
       // テスト用のモックユーザー
-      if (userId === 1) {
+      if (userId === "1") {
         return {
           id: userId,
           googleId: "test-google-id",
@@ -367,7 +370,7 @@ export class AuthService {
       }
 
       // 開発環境用のモックユーザー（ユーザーID=2）
-      if (userId === 2) {
+      if (userId === "2") {
         return {
           id: userId,
           googleId: "dev-google-id",
