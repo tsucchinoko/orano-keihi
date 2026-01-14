@@ -120,23 +120,23 @@
   - 正規表現パターンを更新して文字列のuser_idを抽出
   - _要件: 4.3_
 
-- [ ] 8. コマンドハンドラの更新
-  - [ ] 8.1 Auth関連コマンドの更新
+- [x] 8. コマンドハンドラの更新
+  - [x] 8.1 Auth関連コマンドの更新
     - `packages/desktop/src-tauri/src/features/auth/commands.rs`を更新
     - すべてのコマンドハンドラでuser_idの型をStringに変更
     - _要件: 4.4_
 
-  - [ ] 8.2 Expense関連コマンドの更新
+  - [x] 8.2 Expense関連コマンドの更新
     - `packages/desktop/src-tauri/src/features/expenses/commands.rs`を更新
     - すべてのコマンドハンドラでuser_idの型をStringに変更
     - _要件: 4.4_
 
-  - [ ] 8.3 Subscription関連コマンドの更新
+  - [x] 8.3 Subscription関連コマンドの更新
     - `packages/desktop/src-tauri/src/features/subscriptions/commands.rs`を更新
     - すべてのコマンドハンドラでuser_idの型をStringに変更
     - _要件: 4.4_
 
-  - [ ] 8.4 Receipt関連コマンドの更新
+  - [x] 8.4 Receipt関連コマンドの更新
     - `packages/desktop/src-tauri/src/features/receipts/commands.rs`を更新
     - すべてのコマンドハンドラでuser_idの型をStringに変更
     - _要件: 4.4_
