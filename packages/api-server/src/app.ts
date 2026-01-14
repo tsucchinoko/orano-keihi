@@ -34,6 +34,8 @@ import {
 } from "./middleware/index.js";
 import { updaterApp } from "./routes/updater.js";
 import { createReceiptsRouter } from "./routes/receipts.js";
+import { createUsersRouter } from "./routes/users.js";
+import { UserRepository } from "./repositories/user-repository.js";
 
 /**
  * ファイルキーからContent-Typeを推定する
@@ -69,8 +71,14 @@ function getContentTypeFromFileKey(fileKey: string): string {
  * @param config API サーバー設定
  * @param r2Bucket Workers環境でのR2バケットバインディング（オプション）
  * @param accountId CloudflareアカウントID（Workers環境で必要）
+ * @param db D1データベースバインディング（オプション）
  */
-export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket, accountId?: string): Hono {
+export function createApp(
+  config: ApiServerConfig,
+  r2Bucket?: R2Bucket,
+  accountId?: string,
+  db?: D1Database,
+): Hono {
   const app = new Hono();
 
   // 環境に応じたR2クライアントを初期化
@@ -135,6 +143,14 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket, accountI
 
   // アップデーター関連エンドポイント
   app.route("/api/updater", updaterApp);
+
+  // ユーザー関連エンドポイント（認証が必要）
+  if (db) {
+    const userRepository = new UserRepository(db);
+    const usersRouter = createUsersRouter(userRepository);
+    app.use("/api/v1/users/*", authMiddleware);
+    app.route("/api/v1/users", usersRouter);
+  }
 
   // 領収書関連エンドポイント（認証が必要）
   const receiptsRouter = createReceiptsRouter(r2Client);

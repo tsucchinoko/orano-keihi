@@ -13,6 +13,15 @@ export interface GoogleUser {
 }
 
 /**
+ * ユーザー更新DTO
+ */
+export interface UpdateUserDto {
+  email?: string; // メールアドレス
+  name?: string; // ユーザー名
+  picture_url?: string; // プロフィール画像URL
+}
+
+/**
  * 経費作成DTO
  */
 export interface CreateExpenseDto {
