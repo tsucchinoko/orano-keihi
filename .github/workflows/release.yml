@@ -188,9 +188,29 @@ jobs:
 
           # 絶対パスに変換
           APP_TAR_GZ_ABS=$(realpath "$APP_TAR_GZ")
-          echo "📦 署名対象ファイル: $APP_TAR_GZ_ABS"
+          echo "📦 元のファイル: $APP_TAR_GZ_ABS"
           echo "📊 ファイルサイズ:"
           ls -lh "$APP_TAR_GZ_ABS"
+
+          # アーキテクチャを検出
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "arm64" ]; then
+            ARCH="aarch64"
+          elif [ "$ARCH" = "x86_64" ]; then
+            ARCH="x86_64"
+          fi
+
+          # バージョン情報を取得
+          VERSION="${{ needs.version-tag.outputs.VERSION }}"
+
+          # 新しいファイル名を生成（バージョンとアーキテクチャを含む）
+          DIR=$(dirname "$APP_TAR_GZ_ABS")
+          NEW_FILE_NAME="orano-keihi_${VERSION}_${ARCH}.app.tar.gz"
+          NEW_APP_TAR_GZ="${DIR}/${NEW_FILE_NAME}"
+
+          # ファイルをリネーム
+          echo "📝 ファイルをリネーム中: $NEW_FILE_NAME"
+          mv "$APP_TAR_GZ_ABS" "$NEW_APP_TAR_GZ"
 
           # 秘密鍵を一時ファイルに保存（改行を削除）
           TEMP_KEY_FILE=$(mktemp)
@@ -200,9 +220,9 @@ jobs:
           # Tauri署名を生成
           cd packages/desktop
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            pnpm tauri signer sign "$APP_TAR_GZ_ABS" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            pnpm tauri signer sign "$NEW_APP_TAR_GZ" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
           else
-            pnpm tauri signer sign "$APP_TAR_GZ_ABS" --private-key-path "$TEMP_KEY_FILE"
+            pnpm tauri signer sign "$NEW_APP_TAR_GZ" --private-key-path "$TEMP_KEY_FILE"
           fi
           cd ../..
 
@@ -210,7 +230,7 @@ jobs:
           rm -f "$TEMP_KEY_FILE"
 
           # 署名ファイルの確認
-          SIG_FILE="${APP_TAR_GZ_ABS}.sig"
+          SIG_FILE="${NEW_APP_TAR_GZ}.sig"
           if [ -f "$SIG_FILE" ]; then
             echo "✅ 署名ファイルが生成されました: $SIG_FILE"
             echo "📋 署名内容:"
@@ -219,6 +239,8 @@ jobs:
             echo "❌ 署名ファイルの生成に失敗しました"
             exit 1
           fi
+
+          echo "✅ リネームと署名が完了: $NEW_FILE_NAME"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
