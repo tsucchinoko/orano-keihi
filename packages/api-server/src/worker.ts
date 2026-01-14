@@ -54,8 +54,8 @@ export default {
       // Workers環境用の設定を読み込み
       const config = loadWorkerConfig(env);
 
-      // Honoアプリケーションを作成（R2バケットバインディング、アカウントID、D1データベースを渡す）
-      const app = createApp(config, env.R2_BUCKET, env.R2_ACCOUNT_ID, env.DB);
+      // Honoアプリケーションを作成（D1データベース、R2バケットバインディング、アカウントIDを渡す）
+      const app = createApp(config, env.DB, env.R2_BUCKET, env.R2_ACCOUNT_ID);
 
       // リクエストを処理
       return await app.fetch(request, env, ctx);

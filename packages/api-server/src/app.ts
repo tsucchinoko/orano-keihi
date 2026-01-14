@@ -72,15 +72,15 @@ function getContentTypeFromFileKey(fileKey: string): string {
 /**
  * Honoアプリケーションを作成
  * @param config API サーバー設定
+ * @param db D1データベースバインディング（必須）
  * @param r2Bucket Workers環境でのR2バケットバインディング（オプション）
  * @param accountId CloudflareアカウントID（Workers環境で必要）
- * @param db D1データベースバインディング（オプション）
  */
 export function createApp(
   config: ApiServerConfig,
+  db: D1Database,
   r2Bucket?: R2Bucket,
   accountId?: string,
-  db?: D1Database,
 ): Hono {
   const app = new Hono();
 
@@ -88,8 +88,13 @@ export function createApp(
   const r2Client = createEnvironmentAwareR2Client(config.r2, r2Bucket, accountId);
   const r2TestService = createR2TestService(r2Client);
 
+  // リポジトリを初期化
+  const userRepository = new UserRepository(db);
+  const expenseRepository = new ExpenseRepository(db);
+  const subscriptionRepository = new SubscriptionRepository(db);
+
   // 認証サービスを初期化
-  const authService = createAuthService(config.auth);
+  const authService = createAuthService(config.auth, userRepository);
 
   // ファイルアップロードサービスを初期化
   const fileUploadService = createFileUploadService(r2Client, config.fileUpload);
@@ -145,28 +150,21 @@ export function createApp(
   app.route("/api/updater", updaterApp);
 
   // ユーザー関連エンドポイント（認証が必要）
-  if (db) {
-    const userRepository = new UserRepository(db);
-    const usersRouter = createUsersRouter(userRepository);
-    app.use("/api/v1/users/*", authMiddleware);
-    app.route("/api/v1/users", usersRouter);
+  const usersRouter = createUsersRouter(userRepository);
+  app.use("/api/v1/users/*", authMiddleware);
+  app.route("/api/v1/users", usersRouter);
 
-    // 経費関連エンドポイント（認証が必要）
-    const expenseRepository = new ExpenseRepository(db);
-    const expensesRouter = createExpensesRouter(expenseRepository);
-    // 認証ミドルウェアを経費ルーター全体に適用
-    app.use("/api/v1/expenses", authMiddleware);
-    app.use("/api/v1/expenses/*", authMiddleware);
-    app.route("/api/v1/expenses", expensesRouter);
+  // 経費関連エンドポイント（認証が必要）
+  const expensesRouter = createExpensesRouter(expenseRepository);
+  app.use("/api/v1/expenses", authMiddleware);
+  app.use("/api/v1/expenses/*", authMiddleware);
+  app.route("/api/v1/expenses", expensesRouter);
 
-    // サブスクリプション関連エンドポイント（認証が必要）
-    const subscriptionRepository = new SubscriptionRepository(db);
-    const subscriptionsRouter = createSubscriptionsRouter(subscriptionRepository);
-    // 認証ミドルウェアをサブスクリプションルーター全体に適用
-    app.use("/api/v1/subscriptions", authMiddleware);
-    app.use("/api/v1/subscriptions/*", authMiddleware);
-    app.route("/api/v1/subscriptions", subscriptionsRouter);
-  }
+  // サブスクリプション関連エンドポイント（認証が必要）
+  const subscriptionsRouter = createSubscriptionsRouter(subscriptionRepository);
+  app.use("/api/v1/subscriptions", authMiddleware);
+  app.use("/api/v1/subscriptions/*", authMiddleware);
+  app.route("/api/v1/subscriptions", subscriptionsRouter);
 
   // 領収書関連エンドポイント（認証が必要）
   const receiptsRouter = createReceiptsRouter(r2Client);

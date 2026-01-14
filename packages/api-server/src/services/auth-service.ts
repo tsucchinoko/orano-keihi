@@ -8,6 +8,7 @@ import type { AuthConfig, User, Session, AuthResult, ValidationResult } from "..
 import { logger } from "../utils/logger.js";
 import { withAuthRetry, withDatabaseRetry } from "../utils/retry.js";
 import { AppError, createAuthError } from "../utils/error-handler.js";
+import type { UserRepository } from "../repositories/user-repository.js";
 
 /**
  * 認証エラーの種類
@@ -30,8 +31,10 @@ export class AuthService {
   private readonly encryptionKey: Buffer;
   private readonly algorithm = "aes-256-gcm";
   private readonly sessionExpirationMs: number;
+  private readonly userRepository: UserRepository;
 
-  constructor(config: AuthConfig) {
+  constructor(config: AuthConfig, userRepository: UserRepository) {
+    this.userRepository = userRepository;
     // 暗号化キーを32バイトに調整
     const keyBytes = Buffer.from(config.sessionEncryptionKey, "utf8");
     this.encryptionKey = Buffer.alloc(32);
@@ -88,7 +91,9 @@ export class AuthService {
           // ユーザー情報を取得
           const user = await this.getUserById(session.userId);
           if (!user) {
-            logger.error("ユーザーが見つかりません", { userId: session.userId });
+            logger.error("ユーザーが見つかりません", {
+              userId: session.userId,
+            });
             return {
               isValid: false,
               error: "ユーザーが見つかりません",
@@ -132,42 +137,25 @@ export class AuthService {
    */
   private async validateDevelopmentToken(token: string): Promise<ValidationResult> {
     try {
-      logger.debug("開発環境用トークン検証を実行", { tokenLength: token.length });
+      logger.debug("開発環境用トークン検証を実行", {
+        tokenLength: token.length,
+      });
 
       // 開発環境では任意のトークンを受け入れる
       if (token && token.length > 0) {
-        // トークンをユーザーIDとして使用（nanoIdまたは数値文字列）
-        let userId = "2"; // デフォルトユーザーID
-
-        // トークンが数値の場合は文字列として使用
-        const parsedUserId = parseInt(token, 10);
-        if (!isNaN(parsedUserId) && parsedUserId > 0) {
-          userId = parsedUserId.toString();
-        } else {
-          // トークンがnanoIdの場合はそのまま使用
-          userId = token;
-        }
-
-        // 利用可能なユーザーIDを順番に試行
-        const userIdsToTry = [userId, "2", "1"];
-
-        for (const tryUserId of userIdsToTry) {
-          const user = await this.getUserById(tryUserId);
-          if (user) {
-            logger.debug("開発環境用トークン検証が成功しました", {
-              requestedUserId: userId,
-              actualUserId: user.id,
-              email: user.email,
-            });
-
-            return {
-              isValid: true,
-              user,
-            };
-          }
+        // まずトークンをユーザーIDとして試行
+        let user = await this.getUserById(token);
+        if (user) {
+          logger.debug("開発環境用トークン検証が成功しました（トークン=ユーザーID）", {
+            userId: user.id,
+            email: user.email,
+          });
+          return {
+            isValid: true,
+            user,
+          };
         }
       }
-
       logger.warn("開発環境用トークン検証が失敗しました", {
         token: token.substring(0, 10) + "...",
       });
@@ -347,42 +335,34 @@ export class AuthService {
   }
 
   /**
-   * ユーザーIDからユーザー情報を取得する（モック実装）
+   * ユーザーIDからユーザー情報を取得する
    * @param userId ユーザーID
    * @returns ユーザー情報
    */
   private async getUserById(userId: string): Promise<User | null> {
     return withDatabaseRetry(async () => {
-      // TODO: 実際の実装では、データベースからユーザー情報を取得する
-      // 現在はモックデータを返す
-
-      // テスト用のモックユーザー
-      if (userId === "1") {
-        return {
-          id: userId,
-          googleId: "test-google-id",
-          email: "test@example.com",
-          name: "テストユーザー",
-          pictureUrl: "https://example.com/avatar.jpg",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+      try {
+        const dbUser = await this.userRepository.getUserById(userId);
+        if (dbUser) {
+          // D1のUser型をconfig.jsのUser型に変換
+          return {
+            id: dbUser.id,
+            googleId: dbUser.google_id,
+            email: dbUser.email,
+            name: dbUser.name,
+            pictureUrl: dbUser.picture_url || undefined,
+            createdAt: dbUser.created_at,
+            updatedAt: dbUser.updated_at,
+          };
+        }
+        return null;
+      } catch (error) {
+        logger.error("データベースからのユーザー取得に失敗しました", {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
       }
-
-      // 開発環境用のモックユーザー（ユーザーID=2）
-      if (userId === "2") {
-        return {
-          id: userId,
-          googleId: "dev-google-id",
-          email: "dev@example.com",
-          name: "開発用ユーザー",
-          pictureUrl: "https://example.com/dev-avatar.jpg",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-      }
-
-      return null;
     }, `ユーザー取得: ${userId}`);
   }
 }
@@ -390,8 +370,9 @@ export class AuthService {
 /**
  * AuthServiceインスタンスを作成する
  * @param config 認証設定
+ * @param userRepository ユーザーリポジトリ
  * @returns AuthServiceインスタンス
  */
-export function createAuthService(config: AuthConfig): AuthService {
-  return new AuthService(config);
+export function createAuthService(config: AuthConfig, userRepository: UserRepository): AuthService {
+  return new AuthService(config, userRepository);
 }
