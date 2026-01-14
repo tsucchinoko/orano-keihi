@@ -22,7 +22,6 @@ import {
   createR2TestService,
   createAuthService,
   createFileUploadService,
-  createTauriSubscriptionService,
 } from "./services/index.js";
 import {
   createAuthMiddleware,
@@ -36,8 +35,10 @@ import { updaterApp } from "./routes/updater.js";
 import { createReceiptsRouter } from "./routes/receipts.js";
 import { createUsersRouter } from "./routes/users.js";
 import { createExpensesRouter } from "./routes/expenses.js";
+import { createSubscriptionsRouter } from "./routes/subscriptions.js";
 import { UserRepository } from "./repositories/user-repository.js";
 import { ExpenseRepository } from "./repositories/expense-repository.js";
+import { SubscriptionRepository } from "./repositories/subscription-repository.js";
 
 /**
  * ファイルキーからContent-Typeを推定する
@@ -92,9 +93,6 @@ export function createApp(
 
   // ファイルアップロードサービスを初期化
   const fileUploadService = createFileUploadService(r2Client, config.fileUpload);
-
-  // サブスクリプションサービスを初期化（Tauri経由）
-  const subscriptionService = createTauriSubscriptionService();
 
   // 認証ミドルウェアを作成
   const authMiddleware = createAuthMiddleware(authService);
@@ -157,8 +155,17 @@ export function createApp(
     const expenseRepository = new ExpenseRepository(db);
     const expensesRouter = createExpensesRouter(expenseRepository);
     // 認証ミドルウェアを経費ルーター全体に適用
-    app.use("/api/v1/expenses*", authMiddleware);
+    app.use("/api/v1/expenses", authMiddleware);
+    app.use("/api/v1/expenses/*", authMiddleware);
     app.route("/api/v1/expenses", expensesRouter);
+
+    // サブスクリプション関連エンドポイント（認証が必要）
+    const subscriptionRepository = new SubscriptionRepository(db);
+    const subscriptionsRouter = createSubscriptionsRouter(subscriptionRepository);
+    // 認証ミドルウェアをサブスクリプションルーター全体に適用
+    app.use("/api/v1/subscriptions", authMiddleware);
+    app.use("/api/v1/subscriptions/*", authMiddleware);
+    app.route("/api/v1/subscriptions", subscriptionsRouter);
   }
 
   // 領収書関連エンドポイント（認証が必要）
@@ -305,307 +312,6 @@ export function createApp(
       total: alerts.length,
       timestamp: new Date().toISOString(),
     });
-  });
-
-  // サブスクリプション関連エンドポイント
-
-  // サブスクリプション一覧取得
-  app.get("/api/v1/subscriptions", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      const activeOnly = c.req.query("activeOnly") === "true";
-
-      const result = await subscriptionService.getSubscriptions(user.id, activeOnly);
-
-      logger.info("サブスクリプション一覧を取得しました", {
-        userId: user.id,
-        activeOnly,
-        total: result.total,
-        activeCount: result.activeCount,
-      });
-
-      return c.json(result);
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "サブスクリプション一覧取得",
-      });
-    }
-  });
-
-  // 開発環境用：認証不要のサブスクリプション一覧取得
-  if (config.nodeEnv === "development") {
-    app.get("/api/v1/subscriptions/dev", async (c) => {
-      try {
-        // 開発環境では固定のユーザーID（"1"）を使用
-        const activeOnly = c.req.query("activeOnly") === "true";
-        const result = await subscriptionService.getSubscriptions("1", activeOnly);
-
-        logger.info("開発用サブスクリプション一覧を取得しました", {
-          userId: "1",
-          activeOnly,
-          total: result.total,
-          activeCount: result.activeCount,
-        });
-
-        return c.json(result);
-      } catch (error) {
-        return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-          context: "開発用サブスクリプション一覧取得",
-        });
-      }
-    });
-  }
-
-  // サブスクリプション作成
-  app.post("/api/v1/subscriptions", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      const body = await c.req.json();
-
-      const subscription = await subscriptionService.createSubscription(user.id, body);
-
-      logger.info("サブスクリプションを作成しました", {
-        userId: user.id,
-        subscriptionId: subscription.id,
-        name: subscription.name,
-      });
-
-      return c.json(subscription, 201);
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "サブスクリプション作成",
-      });
-    }
-  });
-
-  // サブスクリプション更新
-  app.put("/api/v1/subscriptions/:id", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      const subscriptionId = parseInt(c.req.param("id"), 10);
-      const body = await c.req.json();
-
-      if (isNaN(subscriptionId)) {
-        throw createValidationError(
-          "有効なサブスクリプションIDが指定されていません",
-          "id",
-          subscriptionId,
-          "valid number required",
-        );
-      }
-
-      const subscription = await subscriptionService.updateSubscription(
-        user.id,
-        subscriptionId,
-        body,
-      );
-
-      logger.info("サブスクリプションを更新しました", {
-        userId: user.id,
-        subscriptionId,
-      });
-
-      return c.json(subscription);
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "サブスクリプション更新",
-      });
-    }
-  });
-
-  // サブスクリプションステータス切り替え
-  app.patch("/api/v1/subscriptions/:id/toggle", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      const subscriptionId = parseInt(c.req.param("id"), 10);
-
-      if (isNaN(subscriptionId)) {
-        throw createValidationError(
-          "有効なサブスクリプションIDが指定されていません",
-          "id",
-          subscriptionId,
-          "valid number required",
-        );
-      }
-
-      const subscription = await subscriptionService.toggleSubscriptionStatus(
-        user.id,
-        subscriptionId,
-      );
-
-      logger.info("サブスクリプションのステータスを切り替えました", {
-        userId: user.id,
-        subscriptionId,
-        newStatus: subscription.is_active,
-      });
-
-      return c.json(subscription);
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "サブスクリプションステータス切り替え",
-      });
-    }
-  });
-
-  // サブスクリプション削除
-  app.delete("/api/v1/subscriptions/:id", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      const subscriptionId = parseInt(c.req.param("id"), 10);
-
-      if (isNaN(subscriptionId)) {
-        throw createValidationError(
-          "有効なサブスクリプションIDが指定されていません",
-          "id",
-          subscriptionId,
-          "valid number required",
-        );
-      }
-
-      await subscriptionService.deleteSubscription(user.id, subscriptionId);
-
-      logger.info("サブスクリプションを削除しました", {
-        userId: user.id,
-        subscriptionId,
-      });
-
-      return c.json({
-        success: true,
-        message: "サブスクリプションが正常に削除されました",
-        subscriptionId,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "サブスクリプション削除",
-      });
-    }
-  });
-
-  // 月額サブスクリプション合計取得
-  app.get("/api/v1/subscriptions/monthly-total", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-
-      const result = await subscriptionService.getMonthlyTotal(user.id);
-
-      logger.info("月額サブスクリプション合計を取得しました", {
-        userId: user.id,
-        monthlyTotal: result.monthlyTotal,
-        activeSubscriptions: result.activeSubscriptions,
-      });
-
-      return c.json(result);
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "月額サブスクリプション合計取得",
-      });
-    }
-  });
-
-  // サブスクリプション領収書アップロード
-  app.post("/api/v1/subscriptions/receipt/upload", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      const body = await c.req.json();
-
-      const { subscriptionId, fileName, fileData } = body;
-
-      if (!subscriptionId || !fileName || !fileData) {
-        throw createValidationError(
-          "必要なパラメータが不足しています",
-          "body",
-          { subscriptionId, fileName, fileData: !!fileData },
-          "subscriptionId, fileName, fileData are required",
-        );
-      }
-
-      // Base64データをデコード
-      const buffer = Buffer.from(fileData, "base64");
-
-      // ファイルキーを生成（users/subscriptionsフォルダを使用）
-      const timestamp = Date.now();
-      const fileKey = `users/${user.id}/subscriptions/${subscriptionId}/${timestamp}_${fileName}`;
-
-      // R2にアップロード
-      await r2Client.uploadFile(fileKey, buffer);
-
-      // HTTPS URLを生成（R2クライアントのputObjectメソッドが返すURLを使用）
-      const httpsUrl = await r2Client.putObject(fileKey, buffer, "application/octet-stream");
-
-      logger.info("サブスクリプション領収書をアップロードしました", {
-        userId: user.id,
-        subscriptionId,
-        fileKey,
-        fileSize: buffer.length,
-        httpsUrl,
-      });
-
-      return c.json({
-        success: true,
-        url: httpsUrl,
-        fileKey,
-        fileSize: buffer.length,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "サブスクリプション領収書アップロード",
-      });
-    }
-  });
-
-  // サブスクリプション領収書削除
-  app.delete("/api/v1/subscriptions/:id/receipt", authMiddleware, async (c) => {
-    try {
-      const user = c.get("user");
-      const subscriptionId = parseInt(c.req.param("id"), 10);
-
-      if (isNaN(subscriptionId)) {
-        throw createValidationError(
-          "有効なサブスクリプションIDが指定されていません",
-          "id",
-          subscriptionId,
-          "valid number required",
-        );
-      }
-
-      // サブスクリプションフォルダ内のファイルを削除
-      const folderPrefix = `users/${user.id}/subscriptions/${subscriptionId}/`;
-
-      try {
-        // フォルダ内のファイル一覧を取得して削除
-        const files = await r2Client.listFiles(folderPrefix);
-        for (const file of files) {
-          await r2Client.deleteFile(file.key);
-        }
-      } catch (error) {
-        // ファイルが存在しない場合は正常として扱う
-        logger.debug("サブスクリプション領収書フォルダが見つかりませんでした", {
-          userId: user.id,
-          subscriptionId,
-          folderPrefix,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-
-      logger.info("サブスクリプション領収書を削除しました", {
-        userId: user.id,
-        subscriptionId,
-        folderPrefix,
-      });
-
-      return c.json({
-        success: true,
-        message: "サブスクリプション領収書が正常に削除されました",
-        subscriptionId,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
-        context: "サブスクリプション領収書削除",
-      });
-    }
   });
 
   // ファイルアップロード関連エンドポイント

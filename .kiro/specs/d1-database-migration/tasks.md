@@ -157,43 +157,43 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - **検証: 要件 5.2, 8.3**
     - _要件: 10.2_
 
-- [ ] 9. サブスクリプション関連APIエンドポイントの実装
-  - [ ] 9.1 POST /api/v1/subscriptionsエンドポイントを実装
+- [x] 9. サブスクリプション関連APIエンドポイントの実装
+  - [x] 9.1 POST /api/v1/subscriptionsエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを作成
     - _要件: 5.3_
 
-  - [ ] 9.2 GET /api/v1/subscriptions/:idエンドポイントを実装
+  - [x] 9.2 GET /api/v1/subscriptions/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを取得
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.3 GET /api/v1/subscriptionsエンドポイントを実装
+  - [x] 9.3 GET /api/v1/subscriptionsエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプション一覧を取得
     - クエリパラメータ（activeOnly）でフィルタリング
     - _要件: 5.3_
 
-  - [ ] 9.4 PUT /api/v1/subscriptions/:idエンドポイントを実装
+  - [x] 9.4 PUT /api/v1/subscriptions/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを更新
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.5 PATCH /api/v1/subscriptions/:id/toggleエンドポイントを実装
+  - [x] 9.5 PATCH /api/v1/subscriptions/:id/toggleエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションのステータスを切り替え
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.6 DELETE /api/v1/subscriptions/:idエンドポイントを実装
+  - [x] 9.6 DELETE /api/v1/subscriptions/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを削除
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.7 GET /api/v1/subscriptions/monthly-totalエンドポイントを実装
+  - [x] 9.7 GET /api/v1/subscriptions/monthly-totalエンドポイントを実装
     - 認証ミドルウェアを適用
     - 月額合計を取得
     - _要件: 5.3_

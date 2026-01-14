@@ -17,7 +17,7 @@ async function testUserEndpoints() {
   const token = "2"; // 開発用ユーザーID（AuthServiceのモックユーザー）
   console.log(`   トークン: ${token}\n`);
 
-  const baseUrl = "http://localhost:3000";
+  const baseUrl = "http://localhost:8787";
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
