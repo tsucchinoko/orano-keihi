@@ -1926,23 +1926,10 @@ mod tests {
 pub fn migrate_user_id_to_nanoid(conn: &Connection) -> Result<MigrationResult, AppError> {
     log::info!("ユーザーIDのnanoId移行を開始します");
 
-    // バックアップパスを生成（JST使用）
-    let now_jst = Utc::now().with_timezone(&Tokyo);
-    let backup_path = format!("database_backup_nanoid_{}.db", now_jst.timestamp());
+    // 注意: 自動マイグレーションシステムではバックアップを作成しません
+    // トランザクションによるロールバック機能で安全性を確保します
 
-    // 1. バックアップを作成
-    log::info!("データベースバックアップを作成中: {backup_path}");
-    if let Err(e) = create_backup(conn, &backup_path) {
-        log::error!("バックアップ作成に失敗: {e}");
-        return Ok(MigrationResult {
-            success: false,
-            message: format!("バックアップ作成に失敗しました: {e}"),
-            backup_path: None,
-        });
-    }
-    log::info!("バックアップ作成完了");
-
-    // 2. トランザクション内でマイグレーションを実行
+    // トランザクション内でマイグレーションを実行
     log::info!("マイグレーショントランザクションを開始");
     let tx = conn.unchecked_transaction()?;
 
@@ -1950,7 +1937,7 @@ pub fn migrate_user_id_to_nanoid(conn: &Connection) -> Result<MigrationResult, A
         Ok(_) => {
             log::info!("マイグレーション実行完了、検証を開始");
 
-            // 3. マイグレーション検証
+            // マイグレーション検証
             if let Err(e) = validate_user_id_nanoid_migration(&tx) {
                 // 検証失敗時はロールバック
                 log::error!("マイグレーション検証に失敗、ロールバック実行: {e}");
@@ -1958,11 +1945,11 @@ pub fn migrate_user_id_to_nanoid(conn: &Connection) -> Result<MigrationResult, A
                 return Ok(MigrationResult {
                     success: false,
                     message: format!("マイグレーション検証に失敗しました: {e}"),
-                    backup_path: Some(backup_path),
+                    backup_path: None,
                 });
             }
 
-            // 4. コミット
+            // コミット
             log::info!("マイグレーション検証完了、コミット実行");
             tx.commit()?;
             log::info!("ユーザーIDのnanoId移行が正常に完了しました");
@@ -1970,7 +1957,7 @@ pub fn migrate_user_id_to_nanoid(conn: &Connection) -> Result<MigrationResult, A
             Ok(MigrationResult {
                 success: true,
                 message: "ユーザーIDのnanoId移行が完了しました".to_string(),
-                backup_path: Some(backup_path),
+                backup_path: None,
             })
         }
         Err(e) => {
@@ -1980,7 +1967,7 @@ pub fn migrate_user_id_to_nanoid(conn: &Connection) -> Result<MigrationResult, A
             Ok(MigrationResult {
                 success: false,
                 message: format!("マイグレーション実行に失敗しました: {e}"),
-                backup_path: Some(backup_path),
+                backup_path: None,
             })
         }
     }
@@ -2086,6 +2073,231 @@ fn execute_user_id_nanoid_migration(tx: &Transaction) -> Result<(), rusqlite::Er
     tx.execute("PRAGMA foreign_keys = ON", [])?;
 
     log::info!("ユーザーIDマイグレーション処理が完了");
+    Ok(())
+}
+
+/// ユーザーIDのnanoIdマイグレーションをトランザクション内で実行する
+/// （既にトランザクション内で呼ばれることを想定）
+///
+/// # 引数
+/// * `conn` - データベース接続（既にトランザクション内）
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+pub fn execute_user_id_nanoid_migration_in_transaction(
+    conn: &Connection,
+) -> Result<(), rusqlite::Error> {
+    log::info!("ユーザーIDマイグレーション処理を開始（トランザクション内）");
+
+    // 外部キー制約を一時的に無効化
+    conn.execute("PRAGMA foreign_keys = OFF", [])?;
+
+    // 1. IDマッピングテーブルを作成
+    log::info!("IDマッピングテーブルを作成");
+    conn.execute(
+        "CREATE TEMPORARY TABLE user_id_mapping (
+            old_id INTEGER PRIMARY KEY,
+            new_id TEXT NOT NULL UNIQUE
+        )",
+        [],
+    )?;
+
+    // 2. 既存ユーザーに新しいIDを割り当て
+    log::info!("既存ユーザーに新しいnanoIdを割り当て");
+    let mut stmt = conn.prepare("SELECT id FROM users")?;
+    let old_ids: Vec<i64> = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    log::info!("既存ユーザー数: {}", old_ids.len());
+
+    for old_id in old_ids {
+        let new_id = crate::shared::utils::nanoid::generate_user_id();
+        conn.execute(
+            "INSERT INTO user_id_mapping (old_id, new_id) VALUES (?1, ?2)",
+            [&old_id.to_string(), &new_id],
+        )?;
+        log::debug!("ユーザーID変換: {old_id} -> {new_id}");
+    }
+
+    // 3. 新しいusersテーブルを作成
+    log::info!("新しいusersテーブルを作成");
+    conn.execute(
+        "CREATE TABLE users_new (
+            id TEXT PRIMARY KEY,
+            google_id TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL,
+            name TEXT NOT NULL,
+            picture_url TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    // 4. データを移行
+    log::info!("usersテーブルのデータを移行");
+    conn.execute(
+        "INSERT INTO users_new (id, google_id, email, name, picture_url, created_at, updated_at)
+         SELECT m.new_id, u.google_id, u.email, u.name, u.picture_url, u.created_at, u.updated_at
+         FROM users u
+         INNER JOIN user_id_mapping m ON u.id = m.old_id",
+        [],
+    )?;
+
+    // 5. 外部キー参照を持つテーブルを更新
+    log::info!("外部キー参照を持つテーブルを更新");
+    migrate_table_user_id_conn(conn, "expenses")?;
+    migrate_table_user_id_conn(conn, "subscriptions")?;
+    migrate_table_user_id_conn(conn, "sessions")?;
+    migrate_table_user_id_conn(conn, "receipt_cache")?;
+    migrate_table_user_id_conn(conn, "migration_logs")?;
+    migrate_table_user_id_conn(conn, "security_audit_logs")?;
+
+    // 6. 旧usersテーブルを削除して新テーブルをリネーム
+    log::info!("旧usersテーブルを削除して新テーブルをリネーム");
+    conn.execute("DROP TABLE users", [])?;
+    conn.execute("ALTER TABLE users_new RENAME TO users", [])?;
+
+    // 7. インデックスを再作成
+    log::info!("usersテーブルのインデックスを再作成");
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+        [],
+    )?;
+
+    // 8. マッピングテーブルを削除
+    log::info!("一時的なマッピングテーブルを削除");
+    conn.execute("DROP TABLE user_id_mapping", [])?;
+
+    // 外部キー制約を再度有効化
+    conn.execute("PRAGMA foreign_keys = ON", [])?;
+
+    log::info!("ユーザーIDマイグレーション処理が完了");
+    Ok(())
+}
+
+/// 汎用的なテーブルのuser_idマイグレーション（Connection版）
+///
+/// # 引数
+/// * `conn` - データベース接続
+/// * `table_name` - テーブル名
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn migrate_table_user_id_conn(conn: &Connection, table_name: &str) -> Result<(), rusqlite::Error> {
+    log::info!("{table_name}テーブルのマイグレーションを開始");
+
+    // テーブルが存在しない場合はスキップ
+    let table_exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+        [table_name],
+        |row| row.get(0),
+    )?;
+
+    if table_exists == 0 {
+        log::info!("{table_name}テーブルが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // user_idカラムが存在しない場合はスキップ
+    let has_user_id = check_column_exists(conn, table_name, "user_id");
+    if !has_user_id {
+        log::info!("{table_name}テーブルにuser_idカラムが存在しないためスキップ");
+        return Ok(());
+    }
+
+    // テーブルの全カラムと型を取得
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table_name})"))?;
+    let columns: Vec<(String, String, bool, Option<String>)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(1)?,         // name
+                row.get::<_, String>(2)?,         // type
+                row.get::<_, i64>(3)? != 0,       // notnull
+                row.get::<_, Option<String>>(4)?, // dflt_value
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // user_id以外のカラムリスト
+    let other_columns: Vec<String> = columns
+        .iter()
+        .filter(|(name, _, _, _)| name != "user_id")
+        .map(|(name, _, _, _)| name.clone())
+        .collect();
+
+    let columns_str = other_columns.join(", ");
+    let columns_with_prefix: Vec<String> = other_columns.iter().map(|c| format!("t.{c}")).collect();
+    let columns_with_prefix_str = columns_with_prefix.join(", ");
+
+    // 1. 新しいテーブルを作成（カラム定義を再構築）
+    log::info!("{table_name}_newテーブルを作成");
+
+    // カラム定義を再構築
+    let mut column_defs = Vec::new();
+    for (name, col_type, notnull, dflt_value) in &columns {
+        let mut def = if name == "user_id" {
+            // user_idをTEXT型に変更
+            format!("{name} TEXT")
+        } else {
+            format!("{name} {col_type}")
+        };
+
+        if *notnull {
+            def.push_str(" NOT NULL");
+        }
+
+        if let Some(default) = dflt_value {
+            def.push_str(&format!(" DEFAULT {default}"));
+        }
+
+        // PRIMARY KEYの処理
+        if name == "id" && col_type.contains("INTEGER") {
+            def.push_str(" PRIMARY KEY AUTOINCREMENT");
+        } else if name == "id" && col_type.contains("TEXT") {
+            def.push_str(" PRIMARY KEY");
+        }
+
+        column_defs.push(def);
+    }
+
+    let create_sql = format!("CREATE TABLE {table_name}_new ({})", column_defs.join(", "));
+
+    log::debug!("CREATE TABLE SQL: {create_sql}");
+    conn.execute(&create_sql, [])?;
+
+    // 2. データを移行（マッピングテーブルを使用）
+    log::info!("{table_name}テーブルのデータを移行");
+    let insert_sql = format!(
+        "INSERT INTO {table_name}_new ({columns_str}, user_id)
+         SELECT {columns_with_prefix_str}, COALESCE(m.new_id, t.user_id)
+         FROM {table_name} t
+         LEFT JOIN user_id_mapping m ON CAST(t.user_id AS TEXT) = CAST(m.old_id AS TEXT)"
+    );
+    conn.execute(&insert_sql, [])?;
+
+    // 3. 旧テーブルを削除して新テーブルをリネーム
+    log::info!("旧{table_name}テーブルを削除して新テーブルをリネーム");
+    conn.execute(&format!("DROP TABLE {table_name}"), [])?;
+    conn.execute(
+        &format!("ALTER TABLE {table_name}_new RENAME TO {table_name}"),
+        [],
+    )?;
+
+    // 4. インデックスを再作成（基本的なもののみ）
+    log::info!("{table_name}テーブルのインデックスを再作成");
+    conn.execute(
+        &format!("CREATE INDEX IF NOT EXISTS idx_{table_name}_user_id ON {table_name}(user_id)"),
+        [],
+    )?;
+
+    log::info!("{table_name}テーブルのマイグレーションが完了");
     Ok(())
 }
 

@@ -543,23 +543,18 @@ pub struct UserIdNanoidMigrationExecutor;
 
 impl MigrationExecutorTrait for UserIdNanoidMigrationExecutor {
     fn execute(&self, conn: &Connection) -> Result<(), String> {
-        use crate::features::migrations::service::migrate_user_id_to_nanoid;
-
         log::info!("ユーザーIDのnanoIdマイグレーションを実行");
 
-        match migrate_user_id_to_nanoid(conn) {
-            Ok(result) => {
-                if result.success {
-                    log::info!("マイグレーション成功: {}", result.message);
-                    Ok(())
-                } else {
-                    log::error!("マイグレーション失敗: {}", result.message);
-                    Err(result.message)
-                }
+        // 注意: この関数は既にトランザクション内で呼ばれているため、
+        // 内部でトランザクションを開始しない
+        match execute_user_id_nanoid_migration_direct(conn) {
+            Ok(_) => {
+                log::info!("マイグレーション成功");
+                Ok(())
             }
             Err(e) => {
-                log::error!("マイグレーション実行エラー: {e}");
-                Err(format!("マイグレーション実行エラー: {e}"))
+                log::error!("マイグレーション失敗: {e}");
+                Err(format!("マイグレーション失敗: {e}"))
             }
         }
     }
@@ -567,4 +562,25 @@ impl MigrationExecutorTrait for UserIdNanoidMigrationExecutor {
     fn name(&self) -> &str {
         "004_migrate_user_id_to_nanoid"
     }
+}
+
+/// ユーザーIDのnanoIdマイグレーションを直接実行する（トランザクションなし）
+///
+/// # 引数
+/// * `conn` - データベース接続（既にトランザクション内）
+///
+/// # 戻り値
+/// 成功時はOk(())、失敗時はエラー
+fn execute_user_id_nanoid_migration_direct(conn: &Connection) -> Result<(), rusqlite::Error> {
+    use crate::features::migrations::service::execute_user_id_nanoid_migration_in_transaction;
+
+    log::info!("ユーザーIDマイグレーション処理を開始（トランザクション内）");
+
+    // トランザクションとして接続を扱う
+    // 注意: この関数は既にトランザクション内で呼ばれているため、
+    // unchecked_transaction()を使用しない
+    execute_user_id_nanoid_migration_in_transaction(conn)?;
+
+    log::info!("ユーザーIDマイグレーション処理が完了");
+    Ok(())
 }
