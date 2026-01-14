@@ -65,19 +65,10 @@ jobs:
           echo "  - コミット: ${COMMIT_SHORT}"
           echo "  - タイムスタンプ: ${TIMESTAMP}"
 
-  # MacOSビルド
+  # MacOSビルド（Apple Silicon のみ）
   build-macos:
     needs: version-tag
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-apple-darwin
-            runner: macos-13  # Intel Mac
-            arch: x86_64
-          - target: aarch64-apple-darwin
-            runner: macos-14  # Apple Silicon
-            arch: aarch64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest  # Apple Silicon (ARM64)
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -99,7 +90,7 @@ jobs:
       - name: Rust環境のセットアップ
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin
 
       - name: Apple Developer証明書のインポート
         env:
@@ -203,8 +194,8 @@ jobs:
           echo "📊 ファイルサイズ:"
           ls -lh "$APP_TAR_GZ_ABS"
 
-          # アーキテクチャはマトリックスから取得
-          ARCH="${{ matrix.arch }}"
+          # Apple Silicon (ARM64) のみ
+          ARCH="aarch64"
           echo "🏗️ ビルドアーキテクチャ: $ARCH"
 
           # バージョン情報を取得
@@ -323,7 +314,7 @@ jobs:
       - name: MacOS成果物のアップロード
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}-artifacts
+          name: macos-artifacts
           path: ./macos-artifacts/
           retention-days: 7
 
@@ -572,25 +563,6 @@ jobs:
         with:
           path: ./artifacts
 
-      - name: MacOS成果物の統合
-        run: |
-          echo "📦 MacOS成果物を統合中..."
-          mkdir -p ./artifacts/macos-artifacts
-          
-          # x86_64とaarch64の成果物を統合
-          if [ -d "./artifacts/macos-x86_64-artifacts" ]; then
-            echo "✅ x86_64成果物を統合"
-            cp -r ./artifacts/macos-x86_64-artifacts/* ./artifacts/macos-artifacts/
-          fi
-          
-          if [ -d "./artifacts/macos-aarch64-artifacts" ]; then
-            echo "✅ aarch64成果物を統合"
-            cp -r ./artifacts/macos-aarch64-artifacts/* ./artifacts/macos-artifacts/
-          fi
-          
-          echo "📁 統合されたMacOS成果物:"
-          ls -lh ./artifacts/macos-artifacts/
-
       - name: ダウンロードされた成果物の確認
         run: |
           echo "📁 ダウンロードされた成果物を確認中..."
@@ -599,7 +571,7 @@ jobs:
 
           if [ -d "./artifacts/macos-artifacts" ]; then
             echo ""
-            echo "=== MacOS成果物（統合後） ==="
+            echo "=== MacOS成果物（Apple Silicon） ==="
             ls -la ./artifacts/macos-artifacts/
           else
             echo "⚠️ MacOS成果物が見つかりません"
@@ -751,7 +723,7 @@ jobs:
 
             // リリースノートの生成
             const dmgTableRows = dmgInfoList.map(info => 
-              '| **MacOS** | ' + info.file + ' | ' + info.size + ' MB |'
+              '| **MacOS (Apple Silicon)** | ' + info.file + ' | ' + info.size + ' MB |'
             ).join('\n');
             
             const releaseNotes = [
@@ -765,7 +737,6 @@ jobs:
               '',
               '### 🔄 自動アップデート',
               'このリリースには、Tauri自動アップデート機能用の静的JSONマニフェストファイルが含まれています：',
-              '- `darwin-x86_64.json` - macOS Intel用',
               '- `darwin-aarch64.json` - macOS Apple Silicon用',
               '- `windows-x86_64.json` - Windows 64bit用',
               '',
@@ -781,9 +752,11 @@ jobs:
               '### 🔧 インストール方法',
               '',
               '#### MacOS',
-              '1. dmgファイルをダウンロード',
+              '1. dmgファイルをダウンロード（Apple Silicon専用）',
               '2. dmgファイルをダブルクリックしてマウント',
               '3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ',
+              '',
+              '**注意**: このバージョンはApple Silicon (M1/M2/M3) Mac専用です。',
               '',
               '#### Windows',
               '1. msiファイルをダウンロード',

@@ -87,16 +87,18 @@ R2_BUCKET_NAME             # R2バケット名
 
 #### macOS
 - `orano-keihi_0.1.1_aarch64.dmg` - Apple Silicon用アプリケーション
-- `orano-keihi_0.1.1_aarch64.dmg.sig` - Tauri署名ファイル
-- `orano-keihi_0.1.1_x64.dmg` - Intel用アプリケーション
-- `orano-keihi_0.1.1_x64.dmg.sig` - Tauri署名ファイル
+- `orano-keihi_0.1.1_aarch64.app.tar.gz` - Apple Silicon用アップデーター
+- `orano-keihi_0.1.1_aarch64.app.tar.gz.sig` - Tauri署名ファイル
+
+**注意**: Intel Mac向けのビルドは提供していません。Apple Silicon (M1/M2/M3) Mac専用です。
 
 #### Windows
 - `orano-keihi_0.1.1_x64_ja-JP.msi` - Windows用インストーラー
+- `orano-keihi_0.1.1_x64_ja-JP.msi.zip` - Windows用アップデーター
+- `orano-keihi_0.1.1_x64_ja-JP.msi.zip.sig` - Tauri署名ファイル
 
 #### マニフェストファイル
 - `darwin-aarch64.json` - macOS Apple Silicon用
-- `darwin-x86_64.json` - macOS Intel用
 - `windows-x86_64.json` - Windows 64bit用
 
 ## ローカルビルド・手動リリース
