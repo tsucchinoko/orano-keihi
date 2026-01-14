@@ -13,7 +13,7 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
   - マイグレーションスクリプトを実行してテーブルを作成
   - _要件: 1.1, 1.2, 1.3_
 
-- [ ] 2. TypeScript型定義とDTOの作成
+- [x] 2. TypeScript型定義とDTOの作成
   - User, Expense, Subscription型を定義
   - CreateExpenseDto, UpdateExpenseDto, CreateSubscriptionDto, UpdateSubscriptionDto型を定義
   - エラーコードとエラーレスポンス型を定義
