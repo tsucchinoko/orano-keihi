@@ -23,9 +23,13 @@ onMount(async () => {
 
 // 認証状態の変化を監視してリダイレクト
 $effect(() => {
+	console.info("🔘 $effect が実行されました。isAuthenticated =", isAuthenticated);
 	if (isAuthenticated) {
 		console.info("🔘 認証成功を検出しました。メインページにリダイレクトします");
-		goto("/");
+		// 少し遅延を入れて確実にリダイレクト
+		setTimeout(() => {
+			goto("/");
+		}, 100);
 	}
 });
 
@@ -35,6 +39,14 @@ async function handleGoogleLogin() {
 	try {
 		await authStore.login();
 		console.info("🔘 authStore.login()が完了しました");
+		console.info("🔘 認証状態を確認:", authStore.isAuthenticated);
+
+		// ログイン成功後は$effectでリダイレクトを処理するため、ここでは何もしない
+		if (authStore.isAuthenticated) {
+			console.info("🔘 認証成功を確認。$effectによるリダイレクトを待機します");
+		} else {
+			console.warn("🔘 ログイン処理は完了しましたが、認証状態がfalseです");
+		}
 	} catch (error) {
 		console.error("🔘 ログイン処理でエラーが発生しました:", error);
 	}

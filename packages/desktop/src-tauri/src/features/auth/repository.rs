@@ -70,11 +70,11 @@ impl UserRepository {
     /// ユーザーIDでユーザーを取得する
     ///
     /// # 引数
-    /// * `user_id` - ユーザーID
+    /// * `user_id` - ユーザーID（nanoId形式）
     ///
     /// # 戻り値
     /// ユーザー情報（存在しない場合はNone）、失敗時はエラー
-    pub async fn get_user_by_id(&self, user_id: i64) -> Result<Option<User>, AuthError> {
+    pub async fn get_user_by_id(&self, user_id: &str) -> Result<Option<User>, AuthError> {
         let conn = self
             .db_connection
             .lock()
@@ -137,21 +137,21 @@ impl UserRepository {
         )?;
 
         // 更新後のユーザー情報を取得
-        self.get_user_by_id_internal(&conn, user.id)?
+        self.get_user_by_id_internal(&conn, &user.id)?
             .ok_or_else(|| AuthError::DatabaseError("更新後のユーザー取得に失敗".to_string()))
     }
 
     /// ユーザーを削除する
     ///
     /// # 引数
-    /// * `user_id` - 削除するユーザーのID
+    /// * `user_id` - 削除するユーザーのID（nanoId形式）
     ///
     /// # 戻り値
     /// 成功時はOk(())、失敗時はエラー
     ///
     /// # 注意
     /// 外部キー制約により、関連するセッションも自動的に削除される
-    pub async fn delete_user(&self, user_id: i64) -> Result<(), AuthError> {
+    pub async fn delete_user(&self, user_id: &str) -> Result<(), AuthError> {
         let conn = self
             .db_connection
             .lock()
@@ -198,7 +198,7 @@ impl UserRepository {
     fn get_user_by_id_internal(
         &self,
         conn: &Connection,
-        user_id: i64,
+        user_id: &str,
     ) -> Result<Option<User>, AuthError> {
         let mut stmt = conn.prepare(
             "SELECT id, google_id, email, name, picture_url, created_at, updated_at 
@@ -240,15 +240,19 @@ impl UserRepository {
         conn: &Connection,
         google_user: &GoogleUser,
     ) -> Result<User, AuthError> {
+        // nanoIdを生成
+        let user_id = crate::shared::utils::nanoid::generate_user_id();
+
         // 作成日時をJSTで生成
         let now_jst = Utc::now().with_timezone(&Tokyo);
         let timestamp = now_jst.to_rfc3339();
 
         // ユーザーを挿入
         conn.execute(
-            "INSERT INTO users (google_id, email, name, picture_url, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO users (id, google_id, email, name, picture_url, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
+                user_id,
                 google_user.id,
                 google_user.email,
                 google_user.name,
@@ -258,11 +262,8 @@ impl UserRepository {
             ],
         )?;
 
-        // 作成されたユーザーのIDを取得
-        let user_id = conn.last_insert_rowid();
-
         // 作成されたユーザー情報を取得して返す
-        self.get_user_by_id_internal(conn, user_id)?
+        self.get_user_by_id_internal(conn, &user_id)?
             .ok_or_else(|| AuthError::DatabaseError("作成されたユーザーの取得に失敗".to_string()))
     }
 
@@ -293,7 +294,7 @@ impl UserRepository {
                 google_user.name,
                 google_user.picture,
                 updated_at,
-                existing_user.id
+                &existing_user.id
             ],
         )?;
 
@@ -302,6 +303,8 @@ impl UserRepository {
 
     /// データベース行からUserオブジェクトを作成する
     fn row_to_user(&self, row: &Row) -> Result<User, rusqlite::Error> {
+        // id: String型（nanoId形式）
+        let id: String = row.get(0)?;
         let created_at_str: String = row.get(5)?;
         let updated_at_str: String = row.get(6)?;
 
@@ -327,7 +330,7 @@ impl UserRepository {
             .with_timezone(&Utc);
 
         Ok(User {
-            id: row.get(0)?,
+            id,
             google_id: row.get(1)?,
             email: row.get(2)?,
             name: row.get(3)?,
@@ -397,7 +400,8 @@ mod tests {
         assert_eq!(user.email, google_user.email);
         assert_eq!(user.name, google_user.name);
         assert_eq!(user.picture_url, google_user.picture);
-        assert!(user.id > 0);
+        // IDがnanoId形式（21文字）であることを確認
+        assert_eq!(user.id.len(), 21);
     }
 
     #[tokio::test]
@@ -429,7 +433,7 @@ mod tests {
 
         // IDで取得
         let retrieved_user = repository
-            .get_user_by_id(created_user.id)
+            .get_user_by_id(&created_user.id)
             .await
             .unwrap()
             .unwrap();
@@ -445,7 +449,7 @@ mod tests {
         let repository = create_test_repository();
 
         // 存在しないIDで取得
-        let result = repository.get_user_by_id(999).await.unwrap();
+        let result = repository.get_user_by_id("nonexistent_id").await.unwrap();
 
         // Noneが返されることを確認
         assert!(result.is_none());
@@ -503,10 +507,10 @@ mod tests {
         let user = repository.find_or_create_user(google_user).await.unwrap();
 
         // ユーザーを削除
-        repository.delete_user(user.id).await.unwrap();
+        repository.delete_user(&user.id).await.unwrap();
 
         // ユーザーが削除されていることを確認
-        let result = repository.get_user_by_id(user.id).await.unwrap();
+        let result = repository.get_user_by_id(&user.id).await.unwrap();
         assert!(result.is_none());
     }
 
@@ -515,7 +519,7 @@ mod tests {
         let repository = create_test_repository();
 
         // 存在しないユーザーを削除しようとする
-        let result = repository.delete_user(999).await;
+        let result = repository.delete_user("nonexistent_id").await;
 
         // エラーが返されることを確認
         assert!(result.is_err());

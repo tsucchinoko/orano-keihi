@@ -7,7 +7,6 @@
  * 各プラットフォーム・アーキテクチャ用の静的JSONファイルを生成します。
  * 
  * 生成されるファイル:
- * - darwin-x86_64.json (macOS Intel)
  * - darwin-aarch64.json (macOS Apple Silicon)
  * - windows-x86_64.json (Windows 64bit)
  */
@@ -43,20 +42,14 @@ function getPlatformConfigurations() {
     return [
         {
             target: 'darwin',
-            arch: 'x86_64',
-            fileExtension: 'dmg',
-            description: 'macOS Intel'
-        },
-        {
-            target: 'darwin',
             arch: 'aarch64',
-            fileExtension: 'dmg',
+            fileExtension: 'app.tar.gz',
             description: 'macOS Apple Silicon'
         },
         {
             target: 'windows',
             arch: 'x86_64',
-            fileExtension: 'msi',
+            fileExtension: 'msi.zip',
             description: 'Windows 64bit'
         }
     ];
@@ -132,7 +125,6 @@ function generateFileName(target, arch, version, extension) {
  */
 function generateUpdateManifest(config, envInfo) {
     const fileName = generateFileName(config.target, config.arch, envInfo.version, config.fileExtension);
-    const downloadUrl = generateDownloadUrl(envInfo.githubRepo, envInfo.releaseTag, fileName);
     
     // 実際のファイルパス（ビルド成果物の場所）
     const actualFilePath = getActualFilePath(config, fileName);
@@ -141,7 +133,10 @@ function generateUpdateManifest(config, envInfo) {
     console.log(`   期待されるファイル名: ${fileName}`);
     console.log(`   ファイルパス: ${actualFilePath}`);
     
-    // ファイルの存在確認
+    let finalFileName = fileName;
+    let finalFilePath = actualFilePath;
+    
+    // ファイルの存在確認と実際のファイル名の取得
     if (!fs.existsSync(actualFilePath)) {
         // ファイルが見つからない場合、ディレクトリ内の類似ファイルを探す
         const dir = path.dirname(actualFilePath);
@@ -150,33 +145,21 @@ function generateUpdateManifest(config, envInfo) {
             console.log(`   ディレクトリ内のファイル: ${files.join(', ')}`);
             
             // 拡張子が一致するファイルを探す
-            const matchingFiles = files.filter(f => f.endsWith(`.${config.fileExtension}`));
+            const matchingFiles = files.filter(f => f.endsWith(`.${config.fileExtension}`) && !f.endsWith(`.${config.fileExtension}.sig`));
             if (matchingFiles.length > 0) {
-                const actualFileName = matchingFiles[0];
-                const correctedPath = path.join(dir, actualFileName);
-                console.log(`   実際のファイル名を使用: ${actualFileName}`);
-                
-                const signature = getSignature(correctedPath);
-                const correctedUrl = generateDownloadUrl(envInfo.githubRepo, envInfo.releaseTag, actualFileName);
-                
-                return {
-                    version: envInfo.version,
-                    notes: envInfo.releaseNotes,
-                    pub_date: envInfo.pubDate,
-                    platforms: {
-                        [`${config.target}-${config.arch}`]: {
-                            signature: signature,
-                            url: correctedUrl
-                        }
-                    }
-                };
+                finalFileName = matchingFiles[0];
+                finalFilePath = path.join(dir, finalFileName);
+                console.log(`   実際のファイル名を使用: ${finalFileName}`);
+            } else {
+                console.warn(`⚠️  ${config.fileExtension}ファイルが見つかりません: ${dir}`);
             }
+        } else {
+            console.warn(`⚠️  ディレクトリが見つかりません: ${dir}`);
         }
-        
-        console.warn(`⚠️  ファイルが見つかりません: ${actualFilePath}`);
     }
     
-    const signature = getSignature(actualFilePath);
+    const downloadUrl = generateDownloadUrl(envInfo.githubRepo, envInfo.releaseTag, finalFileName);
+    const signature = getSignature(finalFilePath);
     
     return {
         version: envInfo.version,
@@ -200,11 +183,39 @@ function getActualFilePath(config, fileName) {
     const artifactsBasePath = path.join(__dirname, '..', 'artifacts');
     
     if (config.target === 'darwin') {
-        // MacOS成果物: artifacts/macos-artifacts/*.dmg
-        return path.join(artifactsBasePath, 'macos-artifacts', fileName);
+        // MacOS成果物: artifacts/macos-artifacts/*.app.tar.gz
+        const macosDir = path.join(artifactsBasePath, 'macos-artifacts');
+
+        // 実際のファイル名を検索（バージョンやアーキテクチャが異なる場合に対応）
+        if (fs.existsSync(macosDir)) {
+            const files = fs.readdirSync(macosDir);
+            const appFiles = files.filter(f => f.endsWith('.app.tar.gz') && !f.endsWith('.app.tar.gz.sig'));
+
+            if (appFiles.length > 0) {
+                // Apple Silicon用ファイルを探す（aarch64またはarm64を含む）
+                const armFile = appFiles.find(f => f.includes('aarch64') || f.includes('arm64'));
+                const targetFile = armFile || appFiles[0]; // 見つからない場合は最初のファイルを使用
+
+                return path.join(macosDir, targetFile);
+            }
+        }
+
+        return path.join(macosDir, fileName);
     } else if (config.target === 'windows') {
-        // Windows成果物: artifacts/windows-artifacts/*.msi
-        return path.join(artifactsBasePath, 'windows-artifacts', fileName);
+        // Windows成果物: artifacts/windows-artifacts/*.msi.zip
+        const windowsDir = path.join(artifactsBasePath, 'windows-artifacts');
+
+        // 実際のファイル名を検索
+        if (fs.existsSync(windowsDir)) {
+            const files = fs.readdirSync(windowsDir);
+            const msiZipFiles = files.filter(f => f.endsWith('.msi.zip') && !f.endsWith('.msi.zip.sig'));
+
+            if (msiZipFiles.length > 0) {
+                return path.join(windowsDir, msiZipFiles[0]);
+            }
+        }
+
+        return path.join(windowsDir, fileName);
     }
     
     return path.join(artifactsBasePath, fileName);

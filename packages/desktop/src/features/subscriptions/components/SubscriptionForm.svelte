@@ -44,12 +44,19 @@ $effect(() => {
 
 		// 既存の領収書を表示
 		if (subscription.receipt_path) {
-			// ローカルパスの場合は変換
-			import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
-				if (subscription?.receipt_path) {
-					receiptPreview = convertFileSrc(subscription.receipt_path);
-				}
-			});
+			// HTTPS URLの場合はR2から取得、ローカルパスの場合は変換
+			if (subscription.receipt_path.startsWith('https://')) {
+				loadReceiptPreview(subscription.receipt_path);
+			} else {
+				// ローカルパスの場合は変換
+				import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
+					if (subscription?.receipt_path && !subscription.receipt_path.startsWith('https://')) {
+						receiptPreview = convertFileSrc(subscription.receipt_path);
+					}
+				});
+			}
+		} else {
+			receiptPreview = undefined;
 		}
 	} else {
 		// 新規作成時の初期値
@@ -211,6 +218,14 @@ async function deleteReceipt() {
 		receiptPreview = undefined;
 		receiptFile = undefined;
 
+		// subscriptionオブジェクトを更新（リアクティブに反映）
+		if (subscription) {
+			subscription.receipt_path = undefined;
+		}
+
+		// ストアを更新して他のコンポーネントにも反映
+		await expenseStore.loadSubscriptions();
+
 		toastStore.success("領収書を削除しました");
 	} catch (error) {
 		console.error("領収書削除エラー:", error);
@@ -282,6 +297,13 @@ async function handleSubmit(event: Event) {
 				);
 				if (saveResult.error) {
 					toastStore.error(`領収書パスの保存に失敗しました: ${saveResult.error}`);
+				} else {
+					// 領収書アップロード成功時、subscriptionオブジェクトを更新
+					if (subscription) {
+						subscription.receipt_path = uploadResult.data;
+					}
+					// ストアを更新して最新データを反映
+					await expenseStore.loadSubscriptions();
 				}
 			}
 		}

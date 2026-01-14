@@ -250,7 +250,7 @@ impl AuthService {
             .await?;
 
         // セッションを作成
-        let session = self.session_manager.create_session(user.id)?;
+        let session = self.session_manager.create_session(&user.id)?;
 
         log::info!(
             "ループバック認証コールバック処理が完了しました: user_id={}",
@@ -281,7 +281,7 @@ impl AuthService {
         // ユーザー情報を取得
         let user = self
             .user_repository
-            .get_user_by_id(session.user_id)
+            .get_user_by_id(&session.user_id)
             .await?
             .ok_or_else(|| AuthError::DatabaseError("ユーザーが見つかりません".to_string()))?;
 

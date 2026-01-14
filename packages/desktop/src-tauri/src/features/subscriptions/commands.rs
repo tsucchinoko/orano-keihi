@@ -37,7 +37,7 @@ pub async fn create_subscription(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 認証されたユーザーのサブスクリプションを作成
-    repository::create(&db, dto, user.id).map_err(|e| e.user_message().to_string())
+    repository::create(&db, dto, &user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプション一覧を取得する
@@ -70,7 +70,7 @@ pub async fn get_subscriptions(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 認証されたユーザーのサブスクリプション一覧を取得
-    repository::find_all(&db, user.id, active_only).map_err(|e| e.user_message().to_string())
+    repository::find_all(&db, &user.id, active_only).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプションを更新する
@@ -108,7 +108,7 @@ pub async fn update_subscription(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 認証されたユーザーのサブスクリプションを更新
-    repository::update(&db, id, dto, user.id).map_err(|e| e.user_message().to_string())
+    repository::update(&db, id, dto, &user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプションのアクティブ状態を切り替える
@@ -141,7 +141,7 @@ pub async fn toggle_subscription_status(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 認証されたユーザーのサブスクリプションのアクティブ状態を切り替え
-    repository::toggle_status(&db, id, user.id).map_err(|e| e.user_message().to_string())
+    repository::toggle_status(&db, id, &user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// アクティブなサブスクリプションの月額合計を取得する
@@ -172,7 +172,7 @@ pub async fn get_monthly_subscription_total(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 認証されたユーザーの月額合計を計算
-    repository::calculate_monthly_total(&db, user.id).map_err(|e| e.user_message().to_string())
+    repository::calculate_monthly_total(&db, &user.id).map_err(|e| e.user_message().to_string())
 }
 
 /// サブスクリプション作成DTOのバリデーション
@@ -346,7 +346,7 @@ pub async fn delete_subscription(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 認証されたユーザーのサブスクリプションを削除
-    repository::delete(&db, id, user.id).map_err(|e| e.user_message().to_string())
+    repository::delete(&db, id, &user.id).map_err(|e| e.user_message().to_string())
 }
 /// サブスクリプションの領収書ファイルを保存する
 ///
@@ -380,7 +380,7 @@ pub async fn save_subscription_receipt(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 領収書パスを設定
-    repository::set_receipt_path(&db, subscription_id, file_path.clone(), user.id)
+    repository::set_receipt_path(&db, subscription_id, file_path.clone(), &user.id)
         .map_err(|e| e.user_message().to_string())?;
 
     Ok(file_path)
@@ -416,7 +416,7 @@ pub async fn delete_subscription_receipt(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 領収書パスを削除（空文字列を設定）
-    repository::set_receipt_path(&db, subscription_id, String::new(), user.id)
+    repository::set_receipt_path(&db, subscription_id, String::new(), &user.id)
         .map_err(|e| e.user_message().to_string())?;
 
     Ok(true)
@@ -452,6 +452,6 @@ pub async fn get_subscription_receipt_path(
         .map_err(|e| format!("データベースロックエラー: {e}"))?;
 
     // 領収書パスを取得
-    repository::get_receipt_path(&db, subscription_id, user.id)
+    repository::get_receipt_path(&db, subscription_id, &user.id)
         .map_err(|e| e.user_message().to_string())
 }

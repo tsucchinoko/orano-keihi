@@ -42,6 +42,8 @@ export interface UpdateNotificationState {
   updateInfo?: UpdateInfo;
   /** ダウンロード中かどうか */
   downloading: boolean;
+  /** ダウンロード完了したかどうか */
+  downloadComplete: boolean;
   /** ダウンロード進捗（0-100） */
   progress: number;
   /** エラーメッセージ */

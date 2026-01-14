@@ -11,13 +11,13 @@ impl UserPathManager {
     /// 新しいユーザー別ファイルパスを生成
     ///
     /// # 引数
-    /// * `user_id` - ユーザーID
+    /// * `user_id` - ユーザーID（nanoId形式）
     /// * `expense_id` - 経費ID
     /// * `filename` - ファイル名
     ///
     /// # 戻り値
     /// 新しいユーザー別パス（`users/{user_id}/receipts/{expense_id}/{timestamp}-{uuid}-{filename}`）
-    pub fn generate_user_receipt_path(user_id: i64, expense_id: i64, filename: &str) -> String {
+    pub fn generate_user_receipt_path(user_id: &str, expense_id: i64, filename: &str) -> String {
         let timestamp = chrono::Utc::now().timestamp();
         let uuid = uuid::Uuid::new_v4();
         format!("users/{user_id}/receipts/{expense_id}/{timestamp}-{uuid}-{filename}")
@@ -27,7 +27,7 @@ impl UserPathManager {
     ///
     /// # 引数
     /// * `legacy_path` - レガシーパス（`receipts/{expense_id}/...`）
-    /// * `user_id` - 変換先のユーザーID
+    /// * `user_id` - 変換先のユーザーID（nanoId形式）
     ///
     /// # 戻り値
     /// 新しいユーザーパス、または変換エラー
@@ -35,10 +35,10 @@ impl UserPathManager {
     /// # 例
     /// ```
     /// let legacy = "receipts/123/timestamp-uuid-filename.pdf";
-    /// let user_path = UserPathManager::convert_legacy_to_user_path(legacy, 456)?;
-    /// // => "users/456/receipts/123/timestamp-uuid-filename.pdf"
+    /// let user_path = UserPathManager::convert_legacy_to_user_path(legacy, "abc123xyz")?;
+    /// // => "users/abc123xyz/receipts/123/timestamp-uuid-filename.pdf"
     /// ```
-    pub fn convert_legacy_to_user_path(legacy_path: &str, user_id: i64) -> AppResult<String> {
+    pub fn convert_legacy_to_user_path(legacy_path: &str, user_id: &str) -> AppResult<String> {
         if let Some(stripped) = legacy_path.strip_prefix("receipts/") {
             Ok(format!("users/{user_id}/receipts/{stripped}"))
         } else {
@@ -54,22 +54,20 @@ impl UserPathManager {
     /// * `path` - ユーザーパス（`users/{user_id}/receipts/...`）
     ///
     /// # 戻り値
-    /// ユーザーID、または抽出エラー
+    /// ユーザーID（nanoId形式）、または抽出エラー
     ///
     /// # 例
     /// ```
-    /// let path = "users/123/receipts/456/file.pdf";
+    /// let path = "users/abc123xyz/receipts/456/file.pdf";
     /// let user_id = UserPathManager::extract_user_id_from_path(path)?;
-    /// // => 123
+    /// // => "abc123xyz"
     /// ```
-    pub fn extract_user_id_from_path(path: &str) -> AppResult<i64> {
-        let regex = Regex::new(r"^users/(\d+)/receipts/")
+    pub fn extract_user_id_from_path(path: &str) -> AppResult<String> {
+        let regex = Regex::new(r"^users/([A-Za-z0-9_-]+)/receipts/")
             .map_err(|e| AppError::validation(format!("正規表現エラー: {e}")))?;
 
         if let Some(captures) = regex.captures(path) {
-            captures[1]
-                .parse::<i64>()
-                .map_err(|_| AppError::validation("ユーザーIDの解析に失敗"))
+            Ok(captures[1].to_string())
         } else {
             Err(AppError::validation("ユーザーパス形式が無効"))
         }
@@ -78,12 +76,12 @@ impl UserPathManager {
     /// ユーザーがパスにアクセス権限を持つかチェック
     ///
     /// # 引数
-    /// * `user_id` - 認証されたユーザーID
+    /// * `user_id` - 認証されたユーザーID（nanoId形式）
     /// * `path` - アクセス対象のパス
     ///
     /// # 戻り値
     /// アクセス許可の場合はOk(())、拒否の場合はErr
-    pub fn validate_user_access(user_id: i64, path: &str) -> AppResult<()> {
+    pub fn validate_user_access(user_id: &str, path: &str) -> AppResult<()> {
         let path_user_id = Self::extract_user_id_from_path(path)?;
         if user_id == path_user_id {
             Ok(())
@@ -119,25 +117,25 @@ impl UserPathManager {
     ///
     /// # 例
     /// ```
-    /// assert!(UserPathManager::is_user_path("users/123/receipts/456/file.pdf"));
+    /// assert!(UserPathManager::is_user_path("users/abc123xyz/receipts/456/file.pdf"));
     /// assert!(!UserPathManager::is_user_path("receipts/123/file.pdf"));
     /// ```
     pub fn is_user_path(path: &str) -> bool {
-        let regex = Regex::new(r"^users/\d+/receipts/").unwrap();
+        let regex = Regex::new(r"^users/[A-Za-z0-9_-]+/receipts/").unwrap();
         regex.is_match(path)
     }
 
     /// サブスクリプション用のユーザー別ファイルパスを生成
     ///
     /// # 引数
-    /// * `user_id` - ユーザーID
+    /// * `user_id` - ユーザーID（nanoId形式）
     /// * `subscription_id` - サブスクリプションID
     /// * `filename` - ファイル名
     ///
     /// # 戻り値
     /// 新しいユーザー別パス（`users/{user_id}/subscriptions/{subscription_id}/{timestamp}-{uuid}-{filename}`）
     pub fn generate_user_subscription_path(
-        user_id: i64,
+        user_id: &str,
         subscription_id: i64,
         filename: &str,
     ) -> String {
@@ -150,7 +148,7 @@ impl UserPathManager {
     ///
     /// # 引数
     /// * `legacy_path` - レガシーパス（`subscriptions/{subscription_id}/...`）
-    /// * `user_id` - 変換先のユーザーID
+    /// * `user_id` - 変換先のユーザーID（nanoId形式）
     ///
     /// # 戻り値
     /// 新しいユーザーパス、または変換エラー
@@ -158,12 +156,12 @@ impl UserPathManager {
     /// # 例
     /// ```
     /// let legacy = "subscriptions/123/timestamp-uuid-filename.pdf";
-    /// let user_path = UserPathManager::convert_legacy_subscription_to_user_path(legacy, 456)?;
-    /// // => "users/456/subscriptions/123/timestamp-uuid-filename.pdf"
+    /// let user_path = UserPathManager::convert_legacy_subscription_to_user_path(legacy, "abc123xyz")?;
+    /// // => "users/abc123xyz/subscriptions/123/timestamp-uuid-filename.pdf"
     /// ```
     pub fn convert_legacy_subscription_to_user_path(
         legacy_path: &str,
-        user_id: i64,
+        user_id: &str,
     ) -> AppResult<String> {
         if let Some(stripped) = legacy_path.strip_prefix("subscriptions/") {
             Ok(format!("users/{user_id}/subscriptions/{stripped}"))
@@ -184,12 +182,12 @@ impl UserPathManager {
     ///
     /// # 例
     /// ```
-    /// let path = "users/123/subscriptions/456/file.pdf";
+    /// let path = "users/abc123xyz/subscriptions/456/file.pdf";
     /// let subscription_id = UserPathManager::extract_subscription_id_from_user_path(path)?;
     /// // => 456
     /// ```
     pub fn extract_subscription_id_from_user_path(path: &str) -> AppResult<i64> {
-        let regex = Regex::new(r"^users/\d+/subscriptions/(\d+)/")
+        let regex = Regex::new(r"^users/[A-Za-z0-9_-]+/subscriptions/(\d+)/")
             .map_err(|e| AppError::validation(format!("正規表現エラー: {e}")))?;
 
         if let Some(captures) = regex.captures(path) {
@@ -230,13 +228,14 @@ impl UserPathManager {
     ///
     /// # 例
     /// ```
-    /// assert!(UserPathManager::is_user_subscription_path("users/123/subscriptions/456/file.pdf"));
+    /// assert!(UserPathManager::is_user_subscription_path("users/abc123xyz/subscriptions/456/file.pdf"));
     /// assert!(!UserPathManager::is_user_subscription_path("subscriptions/123/file.pdf"));
     /// ```
     pub fn is_user_subscription_path(path: &str) -> bool {
-        let regex = Regex::new(r"^users/\d+/subscriptions/").unwrap();
+        let regex = Regex::new(r"^users/[A-Za-z0-9_-]+/subscriptions/").unwrap();
         regex.is_match(path)
     }
+    /// パスからexpense_idを抽出（ユーザーパス用）
     ///
     /// # 引数
     /// * `path` - ユーザーパス
@@ -244,7 +243,7 @@ impl UserPathManager {
     /// # 戻り値
     /// expense_id、または抽出エラー
     pub fn extract_expense_id_from_user_path(path: &str) -> AppResult<i64> {
-        let regex = Regex::new(r"^users/\d+/receipts/(\d+)/")
+        let regex = Regex::new(r"^users/[A-Za-z0-9_-]+/receipts/(\d+)/")
             .map_err(|e| AppError::validation(format!("正規表現エラー: {e}")))?;
 
         if let Some(captures) = regex.captures(path) {
@@ -314,14 +313,14 @@ impl UserPathManager {
     /// 管理者権限でのアクセス許可チェック
     ///
     /// # 引数
-    /// * `user_id` - ユーザーID
+    /// * `user_id` - ユーザーID（nanoId形式）
     /// * `is_admin` - 管理者フラグ
     /// * `path` - アクセス対象のパス
     ///
     /// # 戻り値
     /// アクセス許可の場合はOk(())、拒否の場合はErr
     pub fn validate_admin_or_user_access(
-        user_id: i64,
+        user_id: &str,
         is_admin: bool,
         path: &str,
     ) -> AppResult<()> {
@@ -341,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_generate_user_receipt_path() {
-        let user_id = 123;
+        let user_id = "abc123xyz456789012345";
         let expense_id = 456;
         let filename = "receipt.pdf";
 
@@ -352,14 +351,14 @@ mod tests {
         assert_ne!(path1, path2);
 
         // 正しい形式であることを確認
-        assert!(path1.starts_with("users/123/receipts/456/"));
+        assert!(path1.starts_with("users/abc123xyz456789012345/receipts/456/"));
         assert!(path1.ends_with("-receipt.pdf"));
     }
 
     #[test]
     fn test_convert_legacy_to_user_path() {
         let legacy_path = "receipts/123/timestamp-uuid-filename.pdf";
-        let user_id = 456;
+        let user_id = "abc123xyz456789012345";
 
         let result = UserPathManager::convert_legacy_to_user_path(legacy_path, user_id);
         assert!(result.is_ok());
@@ -367,14 +366,14 @@ mod tests {
         let user_path = result.unwrap();
         assert_eq!(
             user_path,
-            "users/456/receipts/123/timestamp-uuid-filename.pdf"
+            "users/abc123xyz456789012345/receipts/123/timestamp-uuid-filename.pdf"
         );
     }
 
     #[test]
     fn test_convert_legacy_to_user_path_invalid() {
         let invalid_path = "invalid/path/file.pdf";
-        let user_id = 456;
+        let user_id = "abc123xyz456789012345";
 
         let result = UserPathManager::convert_legacy_to_user_path(invalid_path, user_id);
         assert!(result.is_err());
@@ -382,11 +381,11 @@ mod tests {
 
     #[test]
     fn test_extract_user_id_from_path() {
-        let path = "users/123/receipts/456/file.pdf";
+        let path = "users/abc123xyz456789012345/receipts/456/file.pdf";
         let result = UserPathManager::extract_user_id_from_path(path);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 123);
+        assert_eq!(result.unwrap(), "abc123xyz456789012345");
     }
 
     #[test]
@@ -399,9 +398,9 @@ mod tests {
 
     #[test]
     fn test_validate_user_access() {
-        let user_id = 123;
-        let valid_path = "users/123/receipts/456/file.pdf";
-        let invalid_path = "users/456/receipts/789/file.pdf";
+        let user_id = "abc123xyz456789012345";
+        let valid_path = "users/abc123xyz456789012345/receipts/456/file.pdf";
+        let invalid_path = "users/xyz789def012345678901/receipts/789/file.pdf";
 
         // 正当なアクセス
         let result = UserPathManager::validate_user_access(user_id, valid_path);
@@ -436,10 +435,10 @@ mod tests {
     #[test]
     fn test_is_user_path() {
         assert!(UserPathManager::is_user_path(
-            "users/123/receipts/456/file.pdf"
+            "users/abc123xyz456789012345/receipts/456/file.pdf"
         ));
         assert!(UserPathManager::is_user_path(
-            "users/789/receipts/012/timestamp-uuid-file.jpg"
+            "users/xyz789def012345678901/receipts/012/timestamp-uuid-file.jpg"
         ));
 
         // レガシーパスは除外
@@ -451,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_extract_expense_id_from_user_path() {
-        let path = "users/123/receipts/456/file.pdf";
+        let path = "users/abc123xyz456789012345/receipts/456/file.pdf";
         let result = UserPathManager::extract_expense_id_from_user_path(path);
 
         assert!(result.is_ok());
@@ -469,7 +468,7 @@ mod tests {
 
     #[test]
     fn test_extract_filename_from_path() {
-        let user_path = "users/123/receipts/456/timestamp-uuid-file.pdf";
+        let user_path = "users/abc123xyz456789012345/receipts/456/timestamp-uuid-file.pdf";
         let legacy_path = "receipts/789/timestamp-uuid-file.jpg";
 
         let result1 = UserPathManager::extract_filename_from_path(user_path);
@@ -485,8 +484,10 @@ mod tests {
     #[test]
     fn test_normalize_path() {
         assert_eq!(
-            UserPathManager::normalize_path("//users//123//receipts//456//file.pdf"),
-            "users/123/receipts/456/file.pdf"
+            UserPathManager::normalize_path(
+                "//users//abc123xyz456789012345//receipts//456//file.pdf"
+            ),
+            "users/abc123xyz456789012345/receipts/456/file.pdf"
         );
 
         assert_eq!(
@@ -497,9 +498,9 @@ mod tests {
 
     #[test]
     fn test_validate_admin_or_user_access() {
-        let user_id = 123;
-        let admin_user_id = 456;
-        let path = "users/123/receipts/789/file.pdf";
+        let user_id = "abc123xyz456789012345";
+        let admin_user_id = "xyz789def012345678901";
+        let path = "users/abc123xyz456789012345/receipts/789/file.pdf";
 
         // 管理者アクセス
         let result = UserPathManager::validate_admin_or_user_access(admin_user_id, true, path);

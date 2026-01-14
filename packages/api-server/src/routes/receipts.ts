@@ -74,7 +74,7 @@ export function createReceiptsRouter(r2Client: R2ClientInterface): Hono {
    * @param fileKey ファイルキー
    * @returns アクセス権限があるかどうか
    */
-  function hasFileAccess(userId: number, fileKey: string): boolean {
+  function hasFileAccess(userId: string, fileKey: string): boolean {
     // ファイルキーがユーザーのディレクトリ配下にあるかチェック
     return fileKey.startsWith(`users/${userId}/`) || fileKey.startsWith(`receipts/${userId}/`);
   }

@@ -40,7 +40,7 @@ export class TauriSubscriptionService {
    * @returns サブスクリプション一覧
    */
   async getSubscriptions(
-    userId: number,
+    userId: string,
     activeOnly: boolean = false,
   ): Promise<SubscriptionListResponse> {
     return withDatabaseRetry(async () => {
@@ -69,7 +69,10 @@ export class TauriSubscriptionService {
           monthlyTotal,
         };
       } catch (error) {
-        logger.error("サブスクリプション一覧の取得に失敗しました", { userId, error });
+        logger.error("サブスクリプション一覧の取得に失敗しました", {
+          userId,
+          error,
+        });
         throw new AppError(ErrorCode.DATABASE_ERROR, "サブスクリプション一覧の取得に失敗しました");
       }
     });
@@ -81,7 +84,7 @@ export class TauriSubscriptionService {
    * @param dto 作成データ
    * @returns 作成されたサブスクリプション
    */
-  async createSubscription(userId: number, dto: CreateSubscriptionDto): Promise<Subscription> {
+  async createSubscription(userId: string, dto: CreateSubscriptionDto): Promise<Subscription> {
     return withDatabaseRetry(async () => {
       try {
         // Tauriコマンドを実行してサブスクリプションを作成
@@ -99,7 +102,11 @@ export class TauriSubscriptionService {
 
         return subscription;
       } catch (error) {
-        logger.error("サブスクリプションの作成に失敗しました", { userId, dto, error });
+        logger.error("サブスクリプションの作成に失敗しました", {
+          userId,
+          dto,
+          error,
+        });
         throw new AppError(ErrorCode.DATABASE_ERROR, "サブスクリプションの作成に失敗しました");
       }
     });
@@ -113,7 +120,7 @@ export class TauriSubscriptionService {
    * @returns 更新されたサブスクリプション
    */
   async updateSubscription(
-    userId: number,
+    userId: string,
     subscriptionId: number,
     dto: UpdateSubscriptionDto,
   ): Promise<Subscription> {
@@ -151,7 +158,7 @@ export class TauriSubscriptionService {
    * @param subscriptionId サブスクリプションID
    * @returns 更新されたサブスクリプション
    */
-  async toggleSubscriptionStatus(userId: number, subscriptionId: number): Promise<Subscription> {
+  async toggleSubscriptionStatus(userId: string, subscriptionId: number): Promise<Subscription> {
     return withDatabaseRetry(async () => {
       try {
         // Tauriコマンドを実行してステータスを切り替え
@@ -189,7 +196,7 @@ export class TauriSubscriptionService {
    * @param userId ユーザーID
    * @param subscriptionId サブスクリプションID
    */
-  async deleteSubscription(userId: number, subscriptionId: number): Promise<void> {
+  async deleteSubscription(userId: string, subscriptionId: number): Promise<void> {
     return withDatabaseRetry(async () => {
       try {
         // Tauriコマンドを実行してサブスクリプションを削除
@@ -218,7 +225,7 @@ export class TauriSubscriptionService {
    * @param userId ユーザーID
    * @returns 月額合計情報
    */
-  async getMonthlyTotal(userId: number): Promise<MonthlyTotalResponse> {
+  async getMonthlyTotal(userId: string): Promise<MonthlyTotalResponse> {
     return withDatabaseRetry(async () => {
       try {
         // Tauriコマンドを実行して月額合計を取得
@@ -246,7 +253,10 @@ export class TauriSubscriptionService {
           activeSubscriptions: subscriptions.length,
         };
       } catch (error) {
-        logger.error("月額サブスクリプション合計の取得に失敗しました", { userId, error });
+        logger.error("月額サブスクリプション合計の取得に失敗しました", {
+          userId,
+          error,
+        });
         throw new AppError(
           ErrorCode.DATABASE_ERROR,
           "月額サブスクリプション合計の取得に失敗しました",
@@ -278,7 +288,7 @@ export class TauriSubscriptionService {
    * @param userId ユーザーID
    * @returns セッショントークン
    */
-  private getSessionTokenForUser(userId: number): string {
+  private getSessionTokenForUser(userId: string): string {
     // TODO: 実際の実装では、適切な認証トークンを生成または取得する
     // 現在は開発用の固定トークンを返す
     return `dev-token-user-${userId}`;
@@ -289,7 +299,7 @@ export class TauriSubscriptionService {
  * モックTauriコマンド実行器（開発・テスト用）
  */
 export class MockTauriCommandExecutor implements TauriCommandExecutor {
-  private mockData: Map<number, Subscription[]> = new Map();
+  private mockData: Map<string, Subscription[]> = new Map();
   private nextId = 1;
 
   constructor() {
@@ -322,7 +332,7 @@ export class MockTauriCommandExecutor implements TauriCommandExecutor {
     const mockSubscriptions: Subscription[] = [
       {
         id: 1,
-        userId: 1,
+        userId: "1",
         name: "Netflix",
         amount: 1490,
         billing_cycle: "monthly",
@@ -335,7 +345,7 @@ export class MockTauriCommandExecutor implements TauriCommandExecutor {
       },
       {
         id: 2,
-        userId: 1,
+        userId: "1",
         name: "Adobe Creative Cloud",
         amount: 65760,
         billing_cycle: "annual",
@@ -348,7 +358,7 @@ export class MockTauriCommandExecutor implements TauriCommandExecutor {
       },
       {
         id: 3,
-        userId: 1,
+        userId: "1",
         name: "Spotify",
         amount: 980,
         billing_cycle: "monthly",
@@ -361,7 +371,7 @@ export class MockTauriCommandExecutor implements TauriCommandExecutor {
       },
     ];
 
-    this.mockData.set(1, mockSubscriptions);
+    this.mockData.set("1", mockSubscriptions);
     this.nextId = 4;
   }
 
@@ -487,10 +497,20 @@ export class MockTauriCommandExecutor implements TauriCommandExecutor {
       }, 0);
   }
 
-  private extractUserIdFromToken(token: string): number {
-    // dev-token-user-{userId} の形式からユーザーIDを抽出
-    const match = token.match(/dev-token-user-(\d+)/);
-    return match ? parseInt(match[1], 10) : 1;
+  private extractUserIdFromToken(token: string): string {
+    // トークンからユーザーIDを抽出（nanoIdまたは数値文字列）
+    // dev-token-user-{userId} の形式、または直接userIdを使用
+    const match = token.match(/dev-token-user-(.+)/);
+    if (match) {
+      return match[1];
+    }
+    // トークンが数値の場合は文字列として返す
+    const numericMatch = token.match(/^\d+$/);
+    if (numericMatch) {
+      return token;
+    }
+    // それ以外の場合はトークンをそのままuserIdとして使用
+    return token || "1";
   }
 }
 

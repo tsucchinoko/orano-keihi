@@ -18,6 +18,9 @@ pub mod service;
 mod commands_test;
 
 #[cfg(test)]
+mod test_nanoid_migration;
+
+#[cfg(test)]
 mod integration_tests;
 
 #[cfg(test)]

@@ -311,12 +311,12 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket, accountI
   if (config.nodeEnv === "development") {
     app.get("/api/v1/subscriptions/dev", async (c) => {
       try {
-        // 開発環境では固定のユーザーID（1）を使用
+        // 開発環境では固定のユーザーID（"1"）を使用
         const activeOnly = c.req.query("activeOnly") === "true";
-        const result = await subscriptionService.getSubscriptions(1, activeOnly);
+        const result = await subscriptionService.getSubscriptions("1", activeOnly);
 
         logger.info("開発用サブスクリプション一覧を取得しました", {
-          userId: 1,
+          userId: "1",
           activeOnly,
           total: result.total,
           activeCount: result.activeCount,
@@ -853,7 +853,7 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket, accountI
         });
 
         // ユーザーIDの一致をチェック（セキュリティ）
-        if (parseInt(userId) !== user.id) {
+        if (userId !== user.id) {
           logSecurityEvent(c, "UNAUTHORIZED_FILE_ACCESS", {
             userId: user.id,
             requestedUserId: userId,
@@ -918,7 +918,7 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket, accountI
       }
 
       // パスからファイルキーを抽出
-      const pathMatch = fullPath.match(/\/api\/v1\/receipts\/(users\/\d+\/.*?)\/data$/);
+      const pathMatch = fullPath.match(/\/api\/v1\/receipts\/(users\/[^/]+\/.*?)\/data$/);
       if (!pathMatch) {
         logger.debug("ファイルキーの抽出に失敗しました", { fullPath });
         throw createValidationError(
@@ -939,7 +939,7 @@ export function createApp(config: ApiServerConfig, r2Bucket?: R2Bucket, accountI
       });
 
       // ユーザーIDの一致をチェック（セキュリティ）
-      if (parseInt(userId) !== user.id) {
+      if (userId !== user.id) {
         logSecurityEvent(c, "UNAUTHORIZED_FILE_ACCESS", {
           userId: user.id,
           requestedUserId: userId,

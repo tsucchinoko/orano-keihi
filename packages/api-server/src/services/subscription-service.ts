@@ -36,7 +36,7 @@ export class SubscriptionService {
     const mockSubscriptions: Subscription[] = [
       {
         id: 1,
-        userId: 1,
+        userId: "1",
         name: "Netflix",
         amount: 1490,
         billing_cycle: "monthly",
@@ -48,7 +48,7 @@ export class SubscriptionService {
       },
       {
         id: 2,
-        userId: 1,
+        userId: "1",
         name: "Adobe Creative Cloud",
         amount: 65760,
         billing_cycle: "annual",
@@ -60,7 +60,7 @@ export class SubscriptionService {
       },
       {
         id: 3,
-        userId: 1,
+        userId: "1",
         name: "Spotify",
         amount: 980,
         billing_cycle: "monthly",
@@ -85,7 +85,7 @@ export class SubscriptionService {
    * @returns サブスクリプション一覧
    */
   async getSubscriptions(
-    userId: number,
+    userId: string,
     activeOnly: boolean = false,
   ): Promise<SubscriptionListResponse> {
     return withDatabaseRetry(async () => {
@@ -126,7 +126,7 @@ export class SubscriptionService {
    * @param dto 作成データ
    * @returns 作成されたサブスクリプション
    */
-  async createSubscription(userId: number, dto: CreateSubscriptionDto): Promise<Subscription> {
+  async createSubscription(userId: string, dto: CreateSubscriptionDto): Promise<Subscription> {
     return withDatabaseRetry(async () => {
       try {
         // バリデーション
@@ -175,7 +175,7 @@ export class SubscriptionService {
    * @returns 更新されたサブスクリプション
    */
   async updateSubscription(
-    userId: number,
+    userId: string,
     subscriptionId: number,
     dto: UpdateSubscriptionDto,
   ): Promise<Subscription> {
@@ -252,7 +252,7 @@ export class SubscriptionService {
    * @param subscriptionId サブスクリプションID
    * @returns 更新されたサブスクリプション
    */
-  async toggleSubscriptionStatus(userId: number, subscriptionId: number): Promise<Subscription> {
+  async toggleSubscriptionStatus(userId: string, subscriptionId: number): Promise<Subscription> {
     return withDatabaseRetry(async () => {
       try {
         const subscription = this.subscriptions.get(subscriptionId);
@@ -306,7 +306,7 @@ export class SubscriptionService {
    * @param userId ユーザーID
    * @param subscriptionId サブスクリプションID
    */
-  async deleteSubscription(userId: number, subscriptionId: number): Promise<void> {
+  async deleteSubscription(userId: string, subscriptionId: number): Promise<void> {
     return withDatabaseRetry(async () => {
       try {
         const subscription = this.subscriptions.get(subscriptionId);
@@ -348,7 +348,7 @@ export class SubscriptionService {
    * @param userId ユーザーID
    * @returns 月額合計情報
    */
-  async getMonthlyTotal(userId: number): Promise<MonthlyTotalResponse> {
+  async getMonthlyTotal(userId: string): Promise<MonthlyTotalResponse> {
     return withDatabaseRetry(async () => {
       try {
         const activeSubscriptions = Array.from(this.subscriptions.values()).filter(

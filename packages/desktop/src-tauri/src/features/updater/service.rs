@@ -385,10 +385,9 @@ impl UpdaterService {
                                 },
                                 || {
                                     // 完了コールバック
-                                    info!("ダウンロード完了");
-                                    if let Err(e) = self.app_handle.emit("download-complete", ()) {
-                                        warn!("ダウンロード完了の通知に失敗: {e}");
-                                    }
+                                    // 注: このコールバックはダウンロード完了時に呼ばれるが、
+                                    // インストール準備も完了している
+                                    info!("ダウンロードとインストール準備が完了");
                                 },
                             )
                             .await
@@ -397,17 +396,24 @@ impl UpdaterService {
                                 // ログ: ダウンロード完了
                                 self.logger.log_download_complete(&version);
 
-                                // ログ: インストール開始
+                                // ログ: インストール開始（再起動後に実行される）
                                 self.logger.log_install_start(&version);
 
-                                // ログ: インストール完了
+                                info!("アップデートのダウンロードとインストール準備が完了しました");
+                                info!("アプリケーションを手動で再起動してインストールを完了してください");
+
+                                // ログ: インストール完了（再起動後に完了）
                                 self.logger.log_install_complete(&version);
 
-                                info!("アップデートのインストールが完了しました");
+                                // フロントエンドにダウンロード完了を通知
+                                if let Err(e) = self.app_handle.emit("download-complete", ()) {
+                                    warn!("ダウンロード完了通知の送信に失敗: {e}");
+                                }
+
                                 Ok(())
                             }
                             Err(e) => {
-                                let error = UpdateError::installation(format!("アップデートのインストールに失敗しました: {e}"));
+                                let error = UpdateError::installation(format!("アップデートのダウンロードまたはインストール準備に失敗しました: {e}"));
                                 self.logger.log_error(&error);
                                 Err(error)
                             }

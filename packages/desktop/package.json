@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.0",
+  "version": "0.1.7",
   "description": "サブスクリプション管理デスクトップアプリケーション",
   "license": "MIT",
   "type": "module",
@@ -26,7 +26,8 @@
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check",
     "lint": "oxlint --tsconfig ./tsconfig.json --type-aware ./src",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsgo --noEmit",
+    "update-version": "node scripts/update-version.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.0.0",

@@ -2,6 +2,8 @@ use crate::shared::errors::{AppError, AppResult};
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use chrono_tz::Asia::Tokyo;
 
+pub mod nanoid;
+
 /// 日付文字列のバリデーション
 ///
 /// # 引数

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 /// ユーザー情報を表す構造体
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
-    /// ユーザーID
-    pub id: i64,
+    /// ユーザーID（nanoId形式）
+    pub id: String,
     /// GoogleユーザーID
     pub google_id: String,
     /// メールアドレス
@@ -40,8 +40,8 @@ pub struct GoogleUser {
 pub struct Session {
     /// セッションID
     pub id: String,
-    /// ユーザーID
-    pub user_id: i64,
+    /// ユーザーID（nanoId形式）
+    pub user_id: String,
     /// 有効期限
     pub expires_at: DateTime<Utc>,
     /// 作成日時

@@ -8,7 +8,7 @@ use log::info;
 use rusqlite::{params, Connection};
 
 /// デフォルトユーザーID（既存データ用）
-const DEFAULT_USER_ID: i64 = 1;
+const DEFAULT_USER_ID: &str = "1";
 
 /// 経費を作成する
 ///
@@ -19,7 +19,7 @@ const DEFAULT_USER_ID: i64 = 1;
 ///
 /// # 戻り値
 /// 作成された経費、または失敗時はエラー
-pub fn create(conn: &Connection, dto: CreateExpenseDto, user_id: i64) -> AppResult<Expense> {
+pub fn create(conn: &Connection, dto: CreateExpenseDto, user_id: &str) -> AppResult<Expense> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
 
@@ -42,7 +42,7 @@ pub fn create(conn: &Connection, dto: CreateExpenseDto, user_id: i64) -> AppResu
 ///
 /// # 戻り値
 /// 経費、または失敗時はエラー
-pub fn find_by_id(conn: &Connection, id: i64, user_id: i64) -> AppResult<Expense> {
+pub fn find_by_id(conn: &Connection, id: i64, user_id: &str) -> AppResult<Expense> {
     conn.query_row(
         "SELECT id, date, amount, category, description, receipt_url, created_at, updated_at
          FROM expenses WHERE id = ?1 AND user_id = ?2",
@@ -78,7 +78,7 @@ pub fn find_by_id(conn: &Connection, id: i64, user_id: i64) -> AppResult<Expense
 /// 経費のリスト、または失敗時はエラー
 pub fn find_all(
     conn: &Connection,
-    user_id: i64,
+    user_id: &str,
     month: Option<&str>,
     category: Option<&str>,
 ) -> AppResult<Vec<Expense>> {
@@ -88,7 +88,7 @@ pub fn find_all(
     );
 
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    params.push(Box::new(user_id));
+    params.push(Box::new(user_id.to_string()));
 
     // 月フィルター
     if let Some(m) = month {
@@ -139,7 +139,7 @@ pub fn update(
     conn: &Connection,
     id: i64,
     dto: UpdateExpenseDto,
-    user_id: i64,
+    user_id: &str,
 ) -> AppResult<Expense> {
     info!("リポジトリ: 経費更新開始 - expense_id={id}, user_id={user_id}, dto={dto:?}");
 
@@ -180,7 +180,7 @@ pub fn update(
 ///
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラー
-pub fn delete(conn: &Connection, id: i64, user_id: i64) -> AppResult<()> {
+pub fn delete(conn: &Connection, id: i64, user_id: &str) -> AppResult<()> {
     let affected_rows = conn.execute(
         "DELETE FROM expenses WHERE id = ?1 AND user_id = ?2",
         params![id, user_id],
@@ -207,7 +207,7 @@ pub fn set_receipt_url(
     conn: &Connection,
     id: i64,
     receipt_url: String,
-    user_id: i64,
+    user_id: &str,
 ) -> AppResult<Expense> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
@@ -246,7 +246,7 @@ pub fn set_receipt_url(
 ///
 /// # 戻り値
 /// 領収書URL（存在する場合）、または失敗時はエラー
-pub fn get_receipt_url(conn: &Connection, id: i64, user_id: i64) -> AppResult<Option<String>> {
+pub fn get_receipt_url(conn: &Connection, id: i64, user_id: &str) -> AppResult<Option<String>> {
     conn.query_row(
         "SELECT receipt_url FROM expenses WHERE id = ?1 AND user_id = ?2",
         params![id, user_id],
@@ -278,7 +278,7 @@ pub fn save_receipt_cache(
     receipt_url: &str,
     local_path: &str,
     file_size: i64,
-    user_id: i64,
+    user_id: &str,
 ) -> AppResult<()> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
@@ -305,7 +305,7 @@ pub fn save_receipt_cache(
 pub fn get_receipt_cache(
     conn: &Connection,
     receipt_url: &str,
-    user_id: i64,
+    user_id: &str,
 ) -> AppResult<Option<ReceiptCache>> {
     match conn.query_row(
         "SELECT id, receipt_url, local_path, cached_at, file_size, last_accessed
@@ -340,7 +340,7 @@ pub fn get_receipt_cache(
 pub fn update_cache_access_time(
     conn: &Connection,
     receipt_url: &str,
-    user_id: i64,
+    user_id: &str,
 ) -> AppResult<()> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo).to_rfc3339();
@@ -365,7 +365,7 @@ pub fn update_cache_access_time(
 pub fn cleanup_old_cache(
     conn: &Connection,
     max_age_days: i64,
-    user_id: Option<i64>,
+    user_id: Option<&str>,
 ) -> AppResult<usize> {
     // JSTで現在時刻を取得
     let now = Utc::now().with_timezone(&Tokyo);
@@ -396,7 +396,7 @@ pub fn cleanup_old_cache(
 ///
 /// # 戻り値
 /// 成功時はOk(())、失敗時はエラー
-pub fn delete_receipt_cache(conn: &Connection, receipt_url: &str, user_id: i64) -> AppResult<()> {
+pub fn delete_receipt_cache(conn: &Connection, receipt_url: &str, user_id: &str) -> AppResult<()> {
     conn.execute(
         "DELETE FROM receipt_cache WHERE receipt_url = ?1 AND user_id = ?2",
         params![receipt_url, user_id],
@@ -420,10 +420,7 @@ pub fn assign_default_user_to_existing_data(conn: &Connection) -> AppResult<()> 
     )?;
 
     if affected_expenses > 0 {
-        info!(
-            "既存の経費 {} 件にデフォルトユーザーIDを設定しました",
-            affected_expenses
-        );
+        info!("既存の経費 {affected_expenses} 件にデフォルトユーザーIDを設定しました");
     }
 
     Ok(())
@@ -463,7 +460,7 @@ mod tests {
                 category TEXT NOT NULL,
                 description TEXT,
                 receipt_url TEXT CHECK(receipt_url IS NULL OR receipt_url LIKE 'https://%'),
-                user_id INTEGER NOT NULL DEFAULT 1,
+                user_id TEXT NOT NULL DEFAULT '1',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )",
@@ -479,7 +476,7 @@ mod tests {
                 cached_at TEXT NOT NULL,
                 file_size INTEGER NOT NULL,
                 last_accessed TEXT NOT NULL,
-                user_id INTEGER NOT NULL DEFAULT 1
+                user_id TEXT NOT NULL DEFAULT '1'
             )",
             [],
         )
@@ -491,7 +488,7 @@ mod tests {
     #[test]
     fn test_expense_crud_operations() {
         let conn = create_test_db();
-        let user_id = 1;
+        let user_id = "1";
 
         // 経費作成のテスト
         let dto = CreateExpenseDto {
@@ -535,7 +532,7 @@ mod tests {
     #[test]
     fn test_receipt_url_operations() {
         let conn = create_test_db();
-        let user_id = 1;
+        let user_id = "1";
 
         // 経費を作成
         let dto = CreateExpenseDto {
@@ -565,7 +562,7 @@ mod tests {
     #[test]
     fn test_receipt_url_validation() {
         let conn = create_test_db();
-        let user_id = 1;
+        let user_id = "1";
 
         // 経費を作成
         let dto = CreateExpenseDto {
@@ -592,7 +589,7 @@ mod tests {
     #[test]
     fn test_receipt_cache_operations() {
         let conn = create_test_db();
-        let user_id = 1;
+        let user_id = "1";
 
         let receipt_url = "https://example.com/receipt.pdf";
         let local_path = "/tmp/cached_receipt.pdf";
@@ -621,7 +618,7 @@ mod tests {
     #[test]
     fn test_expense_filtering() {
         let conn = create_test_db();
-        let user_id = 1;
+        let user_id = "1";
 
         // テスト用の経費を複数作成
         let expenses = vec![
@@ -672,7 +669,7 @@ mod tests {
     #[test]
     fn test_not_found_errors() {
         let conn = create_test_db();
-        let user_id = 1;
+        let user_id = "1";
 
         // 存在しない経費の取得テスト
         let result = find_by_id(&conn, 999, user_id);
@@ -700,8 +697,8 @@ mod tests {
     #[test]
     fn test_user_data_isolation() {
         let conn = create_test_db();
-        let user1_id = 1;
-        let user2_id = 2;
+        let user1_id = "1";
+        let user2_id = "2";
 
         // ユーザー1の経費を作成
         let dto1 = CreateExpenseDto {
@@ -748,16 +745,15 @@ mod tests {
     fn test_default_user_assignment() {
         let conn = create_test_db();
 
-        // user_idが0の経費を手動で挿入（既存データをシミュレート）
-        // NOT NULL制約があるため、0を使用してデフォルトユーザー未割り当てをシミュレート
+        // user_idが"0"の経費を手動で挿入（既存データをシミュレート）
         conn.execute(
             "INSERT INTO expenses (date, amount, category, description, user_id, created_at, updated_at)
-             VALUES ('2024-01-01', 1000.0, '食費', '既存データ', 0, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+             VALUES ('2024-01-01', 1000.0, '食費', '既存データ', '0', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
             [],
         ).unwrap();
 
-        // user_id = 0の経費をuser_id = 1に更新（デフォルトユーザー割り当てをシミュレート）
-        conn.execute("UPDATE expenses SET user_id = 1 WHERE user_id = 0", [])
+        // user_id = "0"の経費をuser_id = "1"に更新（デフォルトユーザー割り当てをシミュレート）
+        conn.execute("UPDATE expenses SET user_id = '1' WHERE user_id = '0'", [])
             .unwrap();
 
         // デフォルトユーザーで経費を取得できることを確認

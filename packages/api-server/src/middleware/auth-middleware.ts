@@ -14,7 +14,7 @@ import { logSecurityEvent } from "./logging-middleware.js";
 declare module "hono" {
   interface ContextVariableMap {
     user: {
-      id: number;
+      id: string; // nanoIdに変更
       googleId: string;
       email: string;
       name: string;

@@ -8,17 +8,27 @@ use tauri::{AppHandle, Manager, State};
 ///
 /// # 引数
 /// * `receipt_url` - 領収書のHTTPS URL
+/// * `session_token` - セッショントークン
 /// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// キャッシュされたファイルデータ（Base64エンコード）、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn get_receipt_offline(
     receipt_url: String,
+    session_token: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, crate::features::auth::middleware::AuthMiddleware>,
 ) -> Result<String, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/receipts/offline")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
     // URLの検証
     if !receipt_url.starts_with("https://") {
         return Err("無効なreceipt_URLです（HTTPS URLである必要があります）".to_string());
@@ -39,7 +49,7 @@ pub async fn get_receipt_offline(
             .db
             .lock()
             .map_err(|e| format!("データベースロックエラー: {e}"))?;
-        cache_manager.get_offline_cached_file(&receipt_url, &db, 1i64)
+        cache_manager.get_offline_cached_file(&receipt_url, &db, &user.id)
     };
 
     match cached_result {
@@ -59,16 +69,25 @@ pub async fn get_receipt_offline(
 /// オンライン復帰時にキャッシュを同期する
 ///
 /// # 引数
+/// * `session_token` - セッショントークン
 /// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// 同期されたキャッシュ数、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn sync_cache_on_online(
+    session_token: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, crate::features::auth::middleware::AuthMiddleware>,
 ) -> Result<usize, String> {
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/receipts/sync")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
     // キャッシュマネージャーを初期化
     let app_data_dir = app
         .path()
@@ -87,12 +106,12 @@ pub async fn sync_cache_on_online(
 
         // 古いキャッシュをクリーンアップ
         let cleaned_count = cache_manager
-            .cleanup_old_cache(&db, Some(1i64))
+            .cleanup_old_cache(&db, Some(&user.id))
             .map_err(|e| format!("キャッシュクリーンアップエラー: {e}"))?;
 
         // キャッシュサイズを管理
         cache_manager
-            .manage_cache_size(&db, Some(1i64))
+            .manage_cache_size(&db, Some(&user.id))
             .map_err(|e| format!("キャッシュサイズ管理エラー: {e}"))?;
 
         println!("キャッシュ同期完了: {cleaned_count}個のファイルをクリーンアップしました");
@@ -109,16 +128,25 @@ pub async fn sync_cache_on_online(
 /// キャッシュ統計情報を取得する
 ///
 /// # 引数
+/// * `session_token` - セッショントークン
 /// * `app` - Tauriアプリハンドル
 /// * `state` - アプリケーション状態
+/// * `auth_middleware` - 認証ミドルウェア
 ///
 /// # 戻り値
 /// キャッシュ統計情報、または失敗時はエラーメッセージ
 #[tauri::command]
 pub async fn get_cache_stats(
+    session_token: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
+    auth_middleware: State<'_, crate::features::auth::middleware::AuthMiddleware>,
 ) -> Result<CacheStats, String> {
+    // 認証チェック
+    let _user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/receipts/stats")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
     // キャッシュマネージャーを初期化
     let app_data_dir = app
         .path()

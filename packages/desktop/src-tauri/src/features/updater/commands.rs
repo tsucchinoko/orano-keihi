@@ -99,3 +99,13 @@ pub fn stop_auto_update_check(app_handle: AppHandle) -> Result<(), String> {
 
     Ok(())
 }
+
+/// アプリケーションを再起動してアップデートをインストールするコマンド
+#[tauri::command]
+pub fn restart_application(app_handle: AppHandle) -> Result<(), String> {
+    info!("アプリケーション再起動コマンドが呼び出されました");
+
+    // アプリケーションを再起動
+    // 注: restart()は実行されるとプロセスが終了するため、この後のコードは実行されない
+    app_handle.restart();
+}

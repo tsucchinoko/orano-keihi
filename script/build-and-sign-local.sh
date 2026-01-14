@@ -73,6 +73,27 @@ if [ ! -f "$SIGNING_KEY" ]; then
 fi
 
 echo -e "${BLUE}🔑 署名鍵: $SIGNING_KEY${NC}"
+
+# Apple Developer証明書の環境変数をチェック（macOSビルド用）
+if [[ "$PLATFORM" == "macos" || "$PLATFORM" == "all" ]]; then
+    if [ -z "$APPLE_CERTIFICATE" ]; then
+        echo -e "${YELLOW}⚠️  警告: APPLE_CERTIFICATE環境変数が設定されていません${NC}"
+        echo -e "${YELLOW}   Apple Developer証明書による署名をスキップします${NC}"
+        echo ""
+    else
+        echo -e "${BLUE}🍎 Apple Developer証明書: 検出されました${NC}"
+
+        # 証明書パスワードのチェック
+        if [ -z "$APPLE_CERTIFICATE_PASSWORD" ]; then
+            echo -e "${RED}エラー: APPLE_CERTIFICATE_PASSWORD環境変数が設定されていません${NC}"
+            exit 1
+        fi
+
+        # キーチェーンパスワードのデフォルト値を設定
+        KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-build-keychain-password}"
+    fi
+fi
+
 echo ""
 
 # 依存関係のインストール
@@ -83,14 +104,94 @@ pnpm install
 echo -e "${YELLOW}🏗️  フロントエンドをビルド中...${NC}"
 pnpm build
 
+# Apple Developer証明書のセットアップ（macOS用）
+setup_macos_signing() {
+    echo -e "${YELLOW}🔐 Apple Developer証明書をセットアップ中...${NC}"
+
+    # 新しいキーチェーンを作成
+    security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain 2>/dev/null || true
+    security default-keychain -s build.keychain
+    security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+    security set-keychain-settings -t 3600 -u build.keychain
+
+    # loginキーチェーンもキーチェーン検索パスに追加（証明書チェーン用）
+    # 注: loginキーチェーンは通常既にアンロックされています
+    security list-keychains -d user -s build.keychain login.keychain
+
+    echo -e "${BLUE}💳 login.keychainから証明書を使用します${NC}"
+
+    # Apple中間証明書とルート証明書をダウンロードしてインポート
+    echo -e "${BLUE}📥 Apple中間証明書をダウンロード中...${NC}"
+    curl -s https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o DeveloperIDG2CA.cer
+    curl -s https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o AppleWWDRCAG3.cer
+
+    security import DeveloperIDG2CA.cer -k build.keychain -T /usr/bin/codesign -A
+    security import AppleWWDRCAG3.cer -k build.keychain -T /usr/bin/codesign -A
+
+    # 一時ファイルを削除
+    rm DeveloperIDG2CA.cer AppleWWDRCAG3.cer 2>/dev/null || true
+
+    # build.keychainの中間証明書にアクセス許可を設定
+    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain 2>/dev/null || true
+
+    # 利用可能な証明書を確認
+    echo -e "${BLUE}📋 利用可能な証明書:${NC}"
+    security find-identity -v -p codesigning
+
+    echo -e "${GREEN}✅ Apple Developer証明書のセットアップが完了しました${NC}"
+    echo ""
+
+    # 証明書情報を取得（全キーチェーンから）
+    echo -e "${YELLOW}🔍 証明書情報を確認中...${NC}"
+    CERT_INFO=$(security find-identity -v -p codesigning | grep "Developer ID Application")
+
+    if [ -z "$CERT_INFO" ]; then
+        echo -e "${RED}❌ 有効な証明書が見つかりません${NC}"
+        return 1
+    fi
+
+    # 証明書IDを抽出
+    export CERT_ID=$(echo "$CERT_INFO" | head -n 1 | awk -F'"' '{print $2}')
+    export APPLE_SIGNING_IDENTITY="$CERT_ID"
+    echo -e "${GREEN}✅ 証明書が確認されました: $CERT_ID${NC}"
+    echo ""
+}
+
+# Apple Developer証明書のクリーンアップ
+cleanup_macos_signing() {
+    if [ -n "$APPLE_CERTIFICATE" ]; then
+        echo -e "${YELLOW}🧹 署名環境をクリーンアップ中...${NC}"
+
+        # build.keychainを削除
+        security delete-keychain build.keychain 2>/dev/null || true
+
+        # デフォルトキーチェーンを復元
+        security default-keychain -s login.keychain 2>/dev/null || true
+
+        echo -e "${GREEN}✅ クリーンアップ完了${NC}"
+    fi
+}
+
 # プラットフォーム別ビルド
 build_macos() {
     echo -e "${YELLOW}🍎 macOSアプリケーションをビルド中...${NC}"
 
+    # 証明書のセットアップ
+    setup_macos_signing
+
     cd packages/desktop
 
     # 環境変数を設定してビルド
-    ENVIRONMENT=production pnpm tauri:build:dmg:signed
+    if [ -n "$CERT_ID" ]; then
+        echo -e "${BLUE}🔏 Apple Developer証明書で署名してビルド: $CERT_ID${NC}"
+        echo -e "${BLUE}   APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY${NC}"
+        ENVIRONMENT=production \
+        APPLE_SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY" \
+        pnpm tauri:build:dmg:signed
+    else
+        echo -e "${YELLOW}⚠️  Apple Developer証明書なしでビルド${NC}"
+        ENVIRONMENT=production pnpm tauri:build:dmg:signed
+    fi
 
     cd ../..
 
@@ -193,26 +294,39 @@ build_windows() {
     return 0
 }
 
+# エラー時のクリーンアップを確実に実行するためのtrap設定
+trap cleanup_macos_signing EXIT
+
 # プラットフォーム別実行
 case "$PLATFORM" in
     "macos")
         build_macos
+        BUILD_RESULT=$?
         ;;
     # "windows")
         # build_windows
+        # BUILD_RESULT=$?
         # ;;
     "all")
         echo -e "${BLUE}🔄 全プラットフォームをビルド中...${NC}"
         build_macos
+        BUILD_RESULT=$?
         echo ""
         # build_windows
         ;;
     *)
         echo -e "${RED}エラー: 不明なプラットフォーム: $PLATFORM${NC}"
         echo "サポートされているプラットフォーム: macos, windows, all"
+        cleanup_macos_signing
         exit 1
         ;;
 esac
+
+# ビルドが失敗した場合は終了
+if [ $BUILD_RESULT -ne 0 ]; then
+    echo -e "${RED}❌ ビルドが失敗しました${NC}"
+    exit $BUILD_RESULT
+fi
 
 echo ""
 

@@ -55,7 +55,7 @@ export interface ApiServerConfig {
  */
 
 export interface User {
-  id: number;
+  id: string; // nanoIdに変更
   googleId: string;
   email: string;
   name: string;
@@ -66,7 +66,7 @@ export interface User {
 
 export interface Session {
   id: string;
-  userId: number;
+  userId: string; // nanoIdに変更
   expiresAt: string;
   createdAt: string;
 }
@@ -89,7 +89,7 @@ export interface ValidationResult {
 
 export interface UploadMetadata {
   expenseId: number;
-  userId: number;
+  userId: string; // nanoIdに変更
   description?: string;
   category?: string;
 }
@@ -97,7 +97,7 @@ export interface UploadMetadata {
 export interface UploadRequest {
   file: File;
   expenseId: number;
-  userId: number;
+  userId: string; // nanoIdに変更
   metadata?: {
     description?: string;
     category?: string;
@@ -148,7 +148,7 @@ export interface ErrorResponse {
 
 export interface Subscription {
   id: number;
-  userId: number;
+  userId: string; // nanoIdに変更
   name: string;
   amount: number;
   billing_cycle: "monthly" | "annual";

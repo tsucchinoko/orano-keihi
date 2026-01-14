@@ -2,19 +2,23 @@ name: クロスプラットフォームリリース
 
 on:
   push:
-    branches: [ release ]
+    branches:
+      - release
+      - "release/**"
     paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE'
-  # pull_request:
-  #   branches: [ release ]
-  #   paths-ignore:
-  #     - '**.md'
-  #     - 'docs/**'
-  #     - '.gitignore'
-  #     - 'LICENSE'
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - "LICENSE"
+  pull_request:
+    branches:
+      - release
+      - "release/**"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - "LICENSE"
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,522 +33,881 @@ jobs:
       RELEASE_TAG: ${{ steps.version.outputs.RELEASE_TAG }}
       COMMIT_SHORT: ${{ steps.version.outputs.COMMIT_SHORT }}
       TIMESTAMP: ${{ steps.version.outputs.TIMESTAMP }}
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: バージョン情報の生成
-      id: version
-      run: |
-        # package.jsonからバージョンを取得
-        VERSION=$(node -p "require('./package.json').version")
-        
-        # 日本時間でのタイムスタンプ生成
-        TIMESTAMP=$(TZ=Asia/Tokyo date '+%Y%m%d-%H%M%S')
-        
-        # リリースタグの生成
-        RELEASE_TAG="v${VERSION}-${TIMESTAMP}"
-        
-        # コミットハッシュ（短縮版）
-        COMMIT_SHORT=$(git rev-parse --short HEAD)
-        
-        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-        echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_OUTPUT
-        echo "COMMIT_SHORT=${COMMIT_SHORT}" >> $GITHUB_OUTPUT
-        echo "TIMESTAMP=${TIMESTAMP}" >> $GITHUB_OUTPUT
-        
-        echo "📋 生成されたバージョン情報:"
-        echo "  - バージョン: ${VERSION}"
-        echo "  - リリースタグ: ${RELEASE_TAG}"
-        echo "  - コミット: ${COMMIT_SHORT}"
-        echo "  - タイムスタンプ: ${TIMESTAMP}"
 
-  # MacOSビルド
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: バージョン情報の生成
+        id: version
+        run: |
+          # package.jsonからバージョンを取得
+          VERSION=$(node -p "require('./packages/desktop/package.json').version")
+
+          # 日本時間でのタイムスタンプ生成
+          TIMESTAMP=$(TZ=Asia/Tokyo date '+%Y%m%d-%H%M%S')
+
+          # リリースタグの生成
+          RELEASE_TAG="v${VERSION}-${TIMESTAMP}"
+
+          # コミットハッシュ（短縮版）
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+          echo "COMMIT_SHORT=${COMMIT_SHORT}" >> $GITHUB_OUTPUT
+          echo "TIMESTAMP=${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+          echo "📋 生成されたバージョン情報:"
+          echo "  - バージョン: ${VERSION}"
+          echo "  - リリースタグ: ${RELEASE_TAG}"
+          echo "  - コミット: ${COMMIT_SHORT}"
+          echo "  - タイムスタンプ: ${TIMESTAMP}"
+
+  # MacOSビルド（Apple Silicon のみ）
   build-macos:
     needs: version-tag
-    runs-on: macos-latest
+    runs-on: macos-latest  # Apple Silicon (ARM64)
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: pnpmのインストール
-      uses: pnpm/action-setup@v4
-      with:
-        version: 10
-    
-    - name: Node.js環境のセットアップ
-      uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-        cache: 'pnpm'
-    
-    - name: Rust環境のセットアップ
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Apple Developer証明書のインポート
-      env:
-        APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-      run: |
-        echo "🔐 Apple Developer証明書をインポート中..."
-        
-        # 証明書をデコードして一時ファイルに保存
-        echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
-        
-        # 新しいキーチェーンを作成
-        security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-        security default-keychain -s build.keychain
-        security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-        security set-keychain-settings -t 3600 -u build.keychain
-        
-        # 証明書をキーチェーンにインポート
-        security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-        
-        # インポートされた証明書を確認
-        security find-identity -v -p codesigning build.keychain
-        
-        # 一時ファイルを削除
-        rm certificate.p12
-        
-        echo "✅ Apple Developer証明書のインポートが完了しました"
-    
-    - name: 証明書の検証と署名IDの設定
-      run: |
-        echo "🔍 証明書情報を確認中..."
-        
-        # 証明書情報を取得
-        CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Apple Development\|Developer ID Application")
-        
-        if [ -z "$CERT_INFO" ]; then
-          echo "❌ 有効な証明書が見つかりません"
-          exit 1
-        fi
-        
-        # 証明書IDを抽出
-        CERT_ID=$(echo "$CERT_INFO" | head -n 1 | awk -F'"' '{print $2}')
-        echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
-        
-        echo "✅ 証明書が確認されました: $CERT_ID"
-    
-    - name: 依存関係のインストール
-      run: pnpm install
-    
-    - name: フロントエンドビルド
-      run: pnpm build
-    
-    - name: MacOSアプリケーションのビルド
-      run: pnpm tauri build
-      env:
-        # Apple署名関連（動的に取得した証明書IDを使用）
-        APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-        APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
-        APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        # Tauri署名関連
-        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        # アプリケーション環境設定
-        ENVIRONMENT: production
-        DEBUG: false
-        LOG_LEVEL: info
-        # Cloudflare R2設定（本番環境用）
-        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-    
-    - name: Tauri署名ファイルの生成
-      run: |
-        echo "🔐 Tauri署名ファイルを生成中..."
-        
-        # DMGファイルを検索
-        DMG_FILE=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -n 1)
-        
-        if [ -z "$DMG_FILE" ]; then
-          echo "❌ DMGファイルが見つかりません"
-          exit 1
-        fi
-        
-        echo "📦 署名対象ファイル: $DMG_FILE"
-        
-        # Tauri署名を生成
-        cd packages/desktop
-        if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-          pnpm tauri signer sign "../../$DMG_FILE" --private-key-path <(echo "$TAURI_SIGNING_PRIVATE_KEY") -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-        else
-          pnpm tauri signer sign "../../$DMG_FILE" --private-key-path <(echo "$TAURI_SIGNING_PRIVATE_KEY")
-        fi
-        cd ../..
-        
-        # 署名ファイルの確認
-        SIG_FILE="${DMG_FILE}.sig"
-        if [ -f "$SIG_FILE" ]; then
-          echo "✅ 署名ファイルが生成されました: $SIG_FILE"
-          echo "📋 署名内容:"
-          cat "$SIG_FILE"
-        else
-          echo "❌ 署名ファイルの生成に失敗しました"
-          exit 1
-        fi
-      env:
-        TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-    
-    - name: ビルド結果の確認
-      run: |
-        echo "🎯 MacOSビルド完了"
-        echo "📦 生成されたファイル:"
-        find src-tauri/target/release/bundle/dmg -name "*.dmg" -exec ls -lh {} \; || echo "dmgファイルが見つかりません"
-        
-        if [ "${{ github.event_name }}" = "pull_request" ]; then
-          echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
-        else
-          echo "🚀 mainブランチへのpush - リリース作成準備完了"
-        fi
-    
-    - name: MacOS成果物のアップロード
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-artifacts
-        path: |
-          src-tauri/target/release/bundle/dmg/*.dmg
-          src-tauri/target/release/bundle/dmg/*.dmg.sig
-        retention-days: 7
-    
-    - name: MacOS署名環境のクリーンアップ
-      if: always()
-      run: |
-        echo "🧹 MacOS署名環境をクリーンアップ中..."
-        
-        # キーチェーンを削除
-        security delete-keychain build.keychain 2>/dev/null || true
-        
-        # 環境変数をクリア
-        unset APPLE_CERTIFICATE
-        unset APPLE_CERTIFICATE_PASSWORD
-        unset APPLE_ID
-        unset APPLE_ID_PASSWORD
-        unset APPLE_TEAM_ID
-        
-        echo "✅ MacOS署名環境のクリーンアップが完了しました"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pnpmのインストール
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Node.js環境のセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Rust環境のセットアップ
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Apple Developer証明書のインポート
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "🔐 Apple Developer証明書をインポート中..."
+
+          # 証明書をデコードして一時ファイルに保存
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+
+          # 新しいキーチェーンを作成
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+
+          # 証明書をキーチェーンにインポート
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          # インポートされた証明書を確認
+          security find-identity -v -p codesigning build.keychain
+
+          # 一時ファイルを削除
+          rm certificate.p12
+
+          echo "✅ Apple Developer証明書のインポートが完了しました"
+
+      - name: 証明書の検証と署名IDの設定
+        run: |
+          echo "🔍 証明書情報を確認中..."
+
+          # 証明書情報を取得
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Apple Development\|Developer ID Application")
+
+          if [ -z "$CERT_INFO" ]; then
+            echo "❌ 有効な証明書が見つかりません"
+            exit 1
+          fi
+
+          # 証明書IDを抽出
+          CERT_ID=$(echo "$CERT_INFO" | head -n 1 | awk -F'"' '{print $2}')
+          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_ENV
+
+          echo "✅ 証明書が確認されました: $CERT_ID"
+
+      - name: 依存関係のインストール
+        run: pnpm install
+
+      - name: フロントエンドビルド
+        run: pnpm build
+
+      - name: MacOSアプリケーションのビルド
+        run: pnpm tauri build
+        env:
+          # Apple署名関連
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Tauri署名関連
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # アプリケーション環境設定
+          ENVIRONMENT: production
+          DEBUG: false
+          LOG_LEVEL: info
+          # APIサーバー設定（本番環境）
+          API_SERVER_URL: https://orano-keihi.tsucchinoko.workers.dev
+          API_TIMEOUT_SECONDS: 30
+          API_MAX_RETRIES: 3
+          # Google OAuth 2.0設定
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI: http://127.0.0.1/callback
+          # セッション暗号化キー
+          SESSION_ENCRYPTION_KEY: ${{ secrets.SESSION_ENCRYPTION_KEY }}
+
+      - name: Tauri署名ファイルの生成
+        run: |
+          echo "🔐 Tauri署名ファイルを生成中..."
+
+          # アップデーター用の.app.tar.gzファイルを検索
+          APP_TAR_GZ=$(find . -type f -name "*.app.tar.gz" -path "*/target/release/bundle/macos/*" | head -n 1)
+
+          if [ -z "$APP_TAR_GZ" ]; then
+            echo "❌ .app.tar.gzファイルが見つかりません"
+            echo "ディレクトリ構造を確認中..."
+            find . -type d -name "macos" -path "*/target/release/bundle/*"
+            find . -type f -name "*.app.tar.gz" -o -name "*.tar.gz"
+            exit 1
+          fi
+
+          # 絶対パスに変換
+          APP_TAR_GZ_ABS=$(realpath "$APP_TAR_GZ")
+          echo "📦 元のファイル: $APP_TAR_GZ_ABS"
+          echo "📊 ファイルサイズ:"
+          ls -lh "$APP_TAR_GZ_ABS"
+
+          # Apple Silicon (ARM64) のみ
+          ARCH="aarch64"
+          echo "🏗️ ビルドアーキテクチャ: $ARCH"
+
+          # バージョン情報を取得
+          VERSION="${{ needs.version-tag.outputs.VERSION }}"
+
+          # 新しいファイル名を生成（バージョンとアーキテクチャを含む）
+          DIR=$(dirname "$APP_TAR_GZ_ABS")
+          NEW_FILE_NAME="orano-keihi_${VERSION}_${ARCH}.app.tar.gz"
+          NEW_APP_TAR_GZ="${DIR}/${NEW_FILE_NAME}"
+
+          # ファイルをリネーム
+          echo "📝 ファイルをリネーム中: $NEW_FILE_NAME"
+          mv "$APP_TAR_GZ_ABS" "$NEW_APP_TAR_GZ"
+
+          # 秘密鍵を一時ファイルに保存（改行を削除）
+          TEMP_KEY_FILE=$(mktemp)
+          echo "$TAURI_SIGNING_PRIVATE_KEY" | tr -d '\n' > "$TEMP_KEY_FILE"
+          chmod 600 "$TEMP_KEY_FILE"
+
+          # Tauri署名を生成
+          cd packages/desktop
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            pnpm tauri signer sign "$NEW_APP_TAR_GZ" --private-key-path "$TEMP_KEY_FILE" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          else
+            pnpm tauri signer sign "$NEW_APP_TAR_GZ" --private-key-path "$TEMP_KEY_FILE"
+          fi
+          cd ../..
+
+          # 一時ファイルを削除
+          rm -f "$TEMP_KEY_FILE"
+
+          # 署名ファイルの確認
+          SIG_FILE="${NEW_APP_TAR_GZ}.sig"
+          if [ -f "$SIG_FILE" ]; then
+            echo "✅ 署名ファイルが生成されました: $SIG_FILE"
+            echo "📋 署名内容:"
+            cat "$SIG_FILE"
+          else
+            echo "❌ 署名ファイルの生成に失敗しました"
+            exit 1
+          fi
+
+          echo "✅ リネームと署名が完了: $NEW_FILE_NAME"
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: ビルド結果の確認
+        run: |
+          echo "🎯 MacOSビルド完了"
+          echo "📦 生成されたファイル:"
+
+          # .app.tar.gzファイルを再帰的に検索
+          echo "🔍 アップデーター用ファイル (.app.tar.gz):"
+          find . -type f -name "*.app.tar.gz" -path "*/target/release/bundle/macos/*" -exec ls -lh {} \; 2>/dev/null || {
+            echo "⚠️ .app.tar.gzファイルが見つかりません"
+          }
+
+          # 署名ファイルを確認
+          echo "🔍 署名ファイル (.app.tar.gz.sig):"
+          find . -type f -name "*.app.tar.gz.sig" -path "*/target/release/bundle/macos/*" -exec ls -lh {} \; 2>/dev/null || {
+            echo "⚠️ 署名ファイルが見つかりません"
+          }
+
+          # DMGファイルも確認（ユーザー配布用）
+          echo "🔍 ユーザー配布用DMG:"
+          find . -type f -name "*.dmg" -path "*/target/release/bundle/dmg/*" -exec ls -lh {} \; 2>/dev/null || {
+            echo "⚠️ DMGファイルが見つかりません"
+          }
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
+          else
+            echo "🚀 mainブランチへのpush - リリース作成準備完了"
+          fi
+
+      - name: MacOS成果物の整理とアップロード準備
+        run: |
+          echo "📦 MacOS成果物を整理中..."
+          mkdir -p ./macos-artifacts
+
+          # .app.tar.gzファイルをコピー
+          echo "🔍 .app.tar.gzファイルを検索中..."
+          find packages/desktop/src-tauri/target/release/bundle/macos -name "*.app.tar.gz" -type f ! -name "*.sig" -exec cp {} ./macos-artifacts/ \; 2>/dev/null && {
+            echo "✅ .app.tar.gzファイルをコピーしました"
+          } || {
+            echo "⚠️ .app.tar.gzファイルが見つかりません"
+          }
+
+          # .app.tar.gz.sigファイルをコピー
+          echo "🔍 .app.tar.gz.sigファイルを検索中..."
+          find packages/desktop/src-tauri/target/release/bundle/macos -name "*.app.tar.gz.sig" -type f -exec cp {} ./macos-artifacts/ \; 2>/dev/null && {
+            echo "✅ .app.tar.gz.sigファイルをコピーしました"
+          } || {
+            echo "❌ .app.tar.gz.sigファイルが見つかりません - これは必須ファイルです"
+            exit 1
+          }
+
+          # DMGファイルをコピー
+          echo "🔍 DMGファイルを検索中..."
+          find packages/desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" -type f -exec cp {} ./macos-artifacts/ \; 2>/dev/null && {
+            echo "✅ DMGファイルをコピーしました"
+          } || {
+            echo "⚠️ DMGファイルが見つかりません"
+          }
+
+          echo "📁 整理された成果物:"
+          ls -lh ./macos-artifacts/
+          
+          # 署名ファイルの存在を確認
+          if [ ! -f ./macos-artifacts/*.app.tar.gz.sig ]; then
+            echo "❌ エラー: 署名ファイルが成果物に含まれていません"
+            exit 1
+          fi
+
+      - name: MacOS成果物のアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: ./macos-artifacts/
+          retention-days: 7
+
+      - name: MacOS署名環境のクリーンアップ
+        if: always()
+        run: |
+          echo "🧹 MacOS署名環境をクリーンアップ中..."
+
+          # キーチェーンを削除
+          security delete-keychain build.keychain 2>/dev/null || true
+
+          # 環境変数をクリア
+          unset APPLE_CERTIFICATE
+          unset APPLE_CERTIFICATE_PASSWORD
+          unset APPLE_ID
+          unset APPLE_ID_PASSWORD
+          unset APPLE_TEAM_ID
+
+          echo "✅ MacOS署名環境のクリーンアップが完了しました"
 
   # Windowsビルド
   build-windows:
     needs: version-tag
     runs-on: windows-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: pnpmのインストール
-      uses: pnpm/action-setup@v4
-      with:
-        version: 10
-    
-    - name: Node.js環境のセットアップ
-      uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-        cache: 'pnpm'
-    
-    - name: Rust環境のセットアップ
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: 依存関係のインストール
-      run: pnpm install
-    
-    - name: フロントエンドビルド
-      run: pnpm build
-    
-    - name: Windowsアプリケーションのビルド
-      run: pnpm tauri build
-      env:
-        # アプリケーション環境設定
-        ENVIRONMENT: production
-        DEBUG: false
-        LOG_LEVEL: info
-        # Cloudflare R2設定（本番環境用）
-        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-    
-    - name: ビルド結果の確認
-      run: |
-        echo "🎯 Windowsビルド完了"
-        echo "📦 生成されたファイル:"
-        Get-ChildItem -Path "src-tauri/target/release/bundle/msi" -Filter "*.msi" | ForEach-Object { 
-          Write-Host "  - $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)"
-        }
-        
-        if ("${{ github.event_name }}" -eq "pull_request") {
-          echo "✅ PR用ビルドテスト完了 - リリースは作成されません"
-        } else {
-          echo "🚀 mainブランチへのpush - リリース作成準備完了"
-        }
-      shell: pwsh
-    
-    - name: Windows成果物のアップロード
-      uses: actions/upload-artifact@v4
-      with:
-        name: windows-artifacts
-        path: src-tauri/target/release/bundle/msi/*.msi
-        retention-days: 7
+      - uses: actions/checkout@v4
+
+      - name: pnpmのインストール
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Node.js環境のセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Rust環境のセットアップ
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 依存関係のインストール
+        run: pnpm install
+
+      - name: フロントエンドビルド
+        run: pnpm build
+
+      - name: Windowsアプリケーションのビルド
+        run: pnpm tauri build
+        env:
+          # Tauri署名関連
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # アプリケーション環境設定
+          ENVIRONMENT: production
+          DEBUG: false
+          LOG_LEVEL: info
+          # APIサーバー設定（本番環境）
+          API_SERVER_URL: https://orano-keihi.tsucchinoko.workers.dev
+          API_TIMEOUT_SECONDS: 30
+          API_MAX_RETRIES: 3
+          # Google OAuth 2.0設定
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI: http://127.0.0.1/callback
+          # セッション暗号化キー
+          SESSION_ENCRYPTION_KEY: ${{ secrets.SESSION_ENCRYPTION_KEY }}
+          # Windows署名設定
+          WINDOWS_TIMESTAMP_URL: http://timestamp.digicert.com
+
+      - name: Tauri署名ファイルの生成（Windows）
+        run: |
+          Write-Host "🔐 Windows用Tauri署名ファイルを生成中..."
+
+          # .msiファイルを検索
+          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" -and $_.FullName -notlike "*.msi.zip" }
+
+          if ($msiFiles.Count -eq 0) {
+            Write-Host "❌ .msiファイルが見つかりません"
+            Write-Host "ディレクトリ構造を確認中..."
+            Get-ChildItem -Path . -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" } | Select-Object FullName
+            exit 1
+          }
+
+          $msiFile = $msiFiles[0].FullName
+          Write-Host "📦 MSIファイル: $msiFile"
+          Write-Host "📊 ファイルサイズ: $([math]::Round((Get-Item $msiFile).Length/1MB, 2)) MB"
+
+          # .msi.zipファイルを作成（アップデーター用）
+          $msiZipFile = "$msiFile.zip"
+          Write-Host "📦 アップデーター用ZIPファイルを作成中: $msiZipFile"
+
+          # PowerShellの圧縮を使用
+          Compress-Archive -Path $msiFile -DestinationPath $msiZipFile -Force
+
+          Write-Host "✅ ZIPファイルが作成されました"
+          Write-Host "📊 ZIPファイルサイズ: $([math]::Round((Get-Item $msiZipFile).Length/1MB, 2)) MB"
+
+          # 秘密鍵を一時ファイルに保存（改行を削除）
+          $tempKeyFile = [System.IO.Path]::GetTempFileName()
+          $env:TAURI_SIGNING_PRIVATE_KEY -replace "`n", "" -replace "`r", "" | Out-File -FilePath $tempKeyFile -Encoding ASCII -NoNewline
+
+          try {
+            # Tauri署名を生成
+            Write-Host "🔏 ZIPファイルに署名中..."
+            Set-Location "packages/desktop"
+
+            if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+              pnpm tauri signer sign "$msiZipFile" --private-key-path "$tempKeyFile" -p "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            } else {
+              pnpm tauri signer sign "$msiZipFile" --private-key-path "$tempKeyFile"
+            }
+
+            Set-Location "../.."
+
+            # 署名ファイルの確認
+            $sigFile = "$msiZipFile.sig"
+            if (Test-Path $sigFile) {
+              Write-Host "✅ 署名ファイルが生成されました: $sigFile"
+              Write-Host "📋 署名内容:"
+              Get-Content $sigFile
+            } else {
+              Write-Host "❌ 署名ファイルの生成に失敗しました"
+              exit 1
+            }
+          } finally {
+            # 一時ファイルを削除
+            if (Test-Path $tempKeyFile) {
+              Remove-Item $tempKeyFile -Force
+            }
+          }
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: ビルド結果の確認
+        run: |
+          Write-Host "🎯 Windowsビルド完了"
+          Write-Host "📦 生成されたファイル:"
+
+          # アップデーター用ファイル (.msi.zip) を検索
+          Write-Host "🔍 アップデーター用ファイル (.msi.zip):"
+          $msiZipFiles = Get-ChildItem -Path . -Filter "*.msi.zip" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
+
+          if ($msiZipFiles) {
+            foreach ($file in $msiZipFiles) {
+              Write-Host "  - $($file.Name) ($([math]::Round($file.Length/1MB, 2)) MB)"
+              Write-Host "    場所: $($file.DirectoryName)"
+            }
+          } else {
+            Write-Host "⚠️ .msi.zipファイルが見つかりません"
+          }
+
+          # 署名ファイルを確認
+          Write-Host "🔍 署名ファイル (.msi.zip.sig):"
+          $sigFiles = Get-ChildItem -Path . -Filter "*.msi.zip.sig" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" }
+
+          if ($sigFiles) {
+            foreach ($file in $sigFiles) {
+              Write-Host "  - $($file.Name)"
+            }
+          } else {
+            Write-Host "⚠️ 署名ファイルが見つかりません"
+          }
+
+          # ユーザー配布用MSIファイルも確認
+          Write-Host "🔍 ユーザー配布用MSI:"
+          $msiFiles = Get-ChildItem -Path . -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*target*release*bundle*msi*" -and $_.FullName -notlike "*.msi.zip" }
+
+          if ($msiFiles) {
+            foreach ($file in $msiFiles) {
+              Write-Host "  - $($file.Name) ($([math]::Round($file.Length/1MB, 2)) MB)"
+            }
+          } else {
+            Write-Host "⚠️ MSIファイルが見つかりません"
+          }
+
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            Write-Host "✅ PR用ビルドテスト完了 - リリースは作成されません"
+          } else {
+            Write-Host "🚀 mainブランチへのpush - リリース作成準備完了"
+          }
+        shell: pwsh
+
+      - name: Windows成果物の整理とアップロード準備
+        run: |
+          Write-Host "📦 Windows成果物を整理中..."
+          New-Item -ItemType Directory -Force -Path ./windows-artifacts | Out-Null
+
+          # MSI.zipファイルをコピー
+          $msiZipFiles = Get-ChildItem -Path packages/desktop/src-tauri/target/release/bundle/msi -Filter "*.msi.zip" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*.sig" }
+          if ($msiZipFiles) {
+            foreach ($file in $msiZipFiles) {
+              Copy-Item $file.FullName -Destination ./windows-artifacts/
+              Write-Host "✅ $($file.Name)をコピーしました"
+            }
+          }
+
+          # MSI.zip.sigファイルをコピー
+          $msiZipSigFiles = Get-ChildItem -Path packages/desktop/src-tauri/target/release/bundle/msi -Filter "*.msi.zip.sig" -ErrorAction SilentlyContinue
+          if ($msiZipSigFiles) {
+            foreach ($file in $msiZipSigFiles) {
+              Copy-Item $file.FullName -Destination ./windows-artifacts/
+              Write-Host "✅ $($file.Name)をコピーしました"
+            }
+          }
+
+          # MSIファイルをコピー（.msi.zipではないもの）
+          $msiFiles = Get-ChildItem -Path packages/desktop/src-tauri/target/release/bundle/msi -Filter "*.msi" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*.zip*" }
+          if ($msiFiles) {
+            foreach ($file in $msiFiles) {
+              Copy-Item $file.FullName -Destination ./windows-artifacts/
+              Write-Host "✅ $($file.Name)をコピーしました"
+            }
+          }
+
+          Write-Host "📁 整理された成果物:"
+          Get-ChildItem ./windows-artifacts/ | Format-Table Name, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB, 2)}}
+        shell: pwsh
+
+      - name: Windows成果物のアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: ./windows-artifacts/
+          retention-days: 7
 
   # リリース作成
   create-release:
     needs: [version-tag, build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: success() && github.event_name == 'push' && github.ref == 'refs/heads/release'
-    
+    if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release')
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Node.js環境のセットアップ
-      uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-    
-    - name: 成果物のダウンロード
-      uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts
-    
-    - name: 静的JSONファイルの生成
-      run: |
-        echo "🔧 Tauri自動アップデート用静的JSONファイルを生成中..."
-        
-        # 環境変数の設定
-        export VERSION="${{ needs.version-tag.outputs.VERSION }}"
-        export RELEASE_TAG="${{ needs.version-tag.outputs.RELEASE_TAG }}"
-        export RELEASE_NOTES="バージョン ${{ needs.version-tag.outputs.VERSION }} のリリース"
-        export GITHUB_REPOSITORY="${{ github.repository }}"
-        
-        # JSONファイル生成スクリプトの実行
-        node script/generate-update-manifest.cjs
-        
-        echo "✅ 静的JSONファイルの生成が完了しました"
-        
-        # 生成されたファイルの確認
-        echo "📁 生成されたマニフェストファイル:"
-        if [ -d "update-manifests" ]; then
-          ls -la update-manifests/
-        else
-          echo "❌ update-manifestsディレクトリが見つかりません"
-          exit 1
-        fi
-    
-    - name: リリースの作成とアップロード
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const fs = require('fs');
-          const path = require('path');
-          
-          const version = '${{ needs.version-tag.outputs.VERSION }}';
-          const releaseTag = '${{ needs.version-tag.outputs.RELEASE_TAG }}';
-          const commitShort = '${{ needs.version-tag.outputs.COMMIT_SHORT }}';
-          
-          console.log('🚀 リリース作成開始: ' + releaseTag);
-          
-          // 成果物ファイルの検索
-          const dmgFiles = fs.readdirSync('./artifacts/macos-artifacts').filter(f => f.endsWith('.dmg'));
-          const msiFiles = fs.readdirSync('./artifacts/windows-artifacts').filter(f => f.endsWith('.msi'));
-          
-          if (dmgFiles.length === 0 || msiFiles.length === 0) {
-            throw new Error('必要な成果物ファイルが見つかりません');
-          }
-          
-          const dmgPath = path.join('./artifacts/macos-artifacts', dmgFiles[0]);
-          const msiPath = path.join('./artifacts/windows-artifacts', msiFiles[0]);
-          
-          // ファイルサイズの取得
-          const dmgStats = fs.statSync(dmgPath);
-          const msiStats = fs.statSync(msiPath);
-          const dmgSizeMB = (dmgStats.size / 1024 / 1024).toFixed(2);
-          const msiSizeMB = (msiStats.size / 1024 / 1024).toFixed(2);
-          
-          console.log('📦 成果物ファイル:');
-          console.log('  - MacOS: ' + dmgFiles[0] + ' (' + dmgSizeMB + ' MB)');
-          console.log('  - Windows: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
-          
-          // リリースノートの生成
-          const releaseNotes = [
-            '## 🎉 新しいクロスプラットフォームリリース: ' + releaseTag,
-            '',
-            '### 📦 ダウンロード',
-            '| プラットフォーム | ファイル | サイズ |',
-            '|---|---|---|',
-            '| **MacOS** | ' + dmgFiles[0] + ' | ' + dmgSizeMB + ' MB |',
-            '| **Windows** | ' + msiFiles[0] + ' | ' + msiSizeMB + ' MB |',
-            '',
-            '### 🔄 自動アップデート',
-            'このリリースには、Tauri自動アップデート機能用の静的JSONマニフェストファイルが含まれています：',
-            '- `darwin-x86_64.json` - macOS Intel用',
-            '- `darwin-aarch64.json` - macOS Apple Silicon用',
-            '- `windows-x86_64.json` - Windows 64bit用',
-            '',
-            '既存のアプリケーションは自動的に新しいバージョンをチェックし、アップデートを通知します。',
-            '',
-            '### 📋 ビルド情報',
-            '- **バージョン**: ' + version,
-            '- **リリースタグ**: ' + releaseTag,
-            '- **コミット**: ' + context.sha + ' (' + commitShort + ')',
-            '- **ビルド日時**: ' + new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) + ' (JST)',
-            '- **ビルド者**: ' + context.actor,
-            '',
-            '### 🔧 インストール方法',
-            '',
-            '#### MacOS',
-            '1. dmgファイルをダウンロード',
-            '2. dmgファイルをダブルクリックしてマウント',
-            '3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ',
-            '',
-            '#### Windows',
-            '1. msiファイルをダウンロード',
-            '2. msiファイルを右クリックして「管理者として実行」を選択',
-            '3. インストールウィザードに従ってインストール'
-          ].join('\n');
-          
-          // リリースの作成
-          console.log('📝 GitHubリリースを作成中...');
-          const release = await github.rest.repos.createRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            tag_name: releaseTag,
-            name: 'オラの経費だゾ ' + releaseTag,
-            body: releaseNotes,
-            draft: false,
-            prerelease: false
-          });
-          
-          console.log('✅ リリースが作成されました: ' + release.data.html_url);
-          
-          // dmgファイルのアップロード
-          console.log('📤 MacOS dmgファイルをアップロード中...');
-          const dmgContent = fs.readFileSync(dmgPath);
-          await github.rest.repos.uploadReleaseAsset({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.data.id,
-            name: dmgFiles[0],
-            data: dmgContent
-          });
-          
-          // dmg署名ファイルのアップロード
-          const sigFiles = fs.readdirSync('./artifacts/macos-artifacts').filter(f => f.endsWith('.dmg.sig'));
-          if (sigFiles.length > 0) {
-            console.log('📤 MacOS署名ファイルをアップロード中...');
-            const sigPath = path.join('./artifacts/macos-artifacts', sigFiles[0]);
-            const sigContent = fs.readFileSync(sigPath);
-            await github.rest.repos.uploadReleaseAsset({
+      - uses: actions/checkout@v4
+
+      - name: Node.js環境のセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: 成果物のダウンロード
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: ダウンロードされた成果物の確認
+        run: |
+          echo "📁 ダウンロードされた成果物を確認中..."
+          echo "=== artifacts ディレクトリ構造 ==="
+          ls -la ./artifacts/ || echo "❌ artifactsディレクトリが見つかりません"
+
+          if [ -d "./artifacts/macos-artifacts" ]; then
+            echo ""
+            echo "=== MacOS成果物（Apple Silicon） ==="
+            ls -la ./artifacts/macos-artifacts/
+          else
+            echo "⚠️ MacOS成果物が見つかりません"
+          fi
+
+          if [ -d "./artifacts/windows-artifacts" ]; then
+            echo ""
+            echo "=== Windows成果物 ==="
+            ls -la ./artifacts/windows-artifacts/
+          else
+            echo "⚠️ Windows成果物が見つかりません"
+          fi
+
+      - name: 静的JSONファイルの生成
+        run: |
+          echo "🔧 Tauri自動アップデート用静的JSONファイルを生成中..."
+
+          # 環境変数の設定
+          export VERSION="${{ needs.version-tag.outputs.VERSION }}"
+          export RELEASE_TAG="${{ needs.version-tag.outputs.RELEASE_TAG }}"
+          export RELEASE_NOTES="バージョン ${{ needs.version-tag.outputs.VERSION }} のリリース"
+          export GITHUB_REPOSITORY="${{ github.repository }}"
+
+          # JSONファイル生成スクリプトの実行
+          node script/generate-update-manifest.cjs
+
+          echo "✅ 静的JSONファイルの生成が完了しました"
+
+          # 生成されたファイルの確認
+          echo "📁 生成されたマニフェストファイル:"
+          if [ -d "update-manifests" ]; then
+            ls -la update-manifests/
+          else
+            echo "❌ update-manifestsディレクトリが見つかりません"
+            exit 1
+          fi
+
+      - name: リリースの作成とアップロード
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const version = '${{ needs.version-tag.outputs.VERSION }}';
+            const releaseTag = '${{ needs.version-tag.outputs.RELEASE_TAG }}';
+            const commitShort = '${{ needs.version-tag.outputs.COMMIT_SHORT }}';
+
+            console.log('🚀 リリース作成開始: ' + releaseTag);
+
+            // 成果物ディレクトリの存在確認
+            const artifactsDir = './artifacts';
+            const macosArtifactsDir = path.join(artifactsDir, 'macos-artifacts');
+            const windowsArtifactsDir = path.join(artifactsDir, 'windows-artifacts');
+
+            console.log('📁 成果物ディレクトリの確認:');
+
+            if (!fs.existsSync(artifactsDir)) {
+              console.error('❌ artifactsディレクトリが見つかりません: ' + artifactsDir);
+              throw new Error('artifactsディレクトリが見つかりません');
+            }
+
+            // 利用可能なディレクトリを表示
+            const availableDirs = fs.readdirSync(artifactsDir);
+            console.log('   利用可能なディレクトリ: ' + availableDirs.join(', '));
+
+            if (!fs.existsSync(macosArtifactsDir)) {
+              console.error('❌ MacOS成果物ディレクトリが見つかりません: ' + macosArtifactsDir);
+              throw new Error('MacOS成果物ディレクトリが見つかりません');
+            }
+
+            if (!fs.existsSync(windowsArtifactsDir)) {
+              console.error('❌ Windows成果物ディレクトリが見つかりません: ' + windowsArtifactsDir);
+              throw new Error('Windows成果物ディレクトリが見つかりません');
+            }
+
+            // 成果物ファイルの検索（より柔軟な検索）
+            const macosFiles = fs.readdirSync(macosArtifactsDir);
+            const windowsFiles = fs.readdirSync(windowsArtifactsDir);
+
+            // ユーザー配布用ファイル
+            const dmgFiles = macosFiles.filter(f => f.endsWith('.dmg') && !f.endsWith('.dmg.sig'));
+            const msiFiles = windowsFiles.filter(f => f.endsWith('.msi') && !f.endsWith('.msi.sig') && !f.endsWith('.msi.zip') && !f.endsWith('.msi.zip.sig'));
+
+            // アップデーター用圧縮ファイル
+            const appTarGzFiles = macosFiles.filter(f => f.endsWith('.app.tar.gz') && !f.endsWith('.app.tar.gz.sig'));
+            const msiZipFiles = windowsFiles.filter(f => f.endsWith('.msi.zip') && !f.endsWith('.msi.zip.sig'));
+
+            // 署名ファイル
+            const appTarGzSigFiles = macosFiles.filter(f => f.endsWith('.app.tar.gz.sig'));
+            const msiZipSigFiles = windowsFiles.filter(f => f.endsWith('.msi.zip.sig'));
+
+            console.log('📦 検出された成果物:');
+            console.log('   MacOS DMG: ' + dmgFiles.length + '個 (' + dmgFiles.join(', ') + ')');
+            console.log('   MacOS アップデーター用: ' + appTarGzFiles.length + '個 (' + appTarGzFiles.join(', ') + ')');
+            console.log('   MacOS 圧縮ファイル署名: ' + appTarGzSigFiles.length + '個 (' + appTarGzSigFiles.join(', ') + ')');
+            console.log('   Windows MSI: ' + msiFiles.length + '個 (' + msiFiles.join(', ') + ')');
+            console.log('   Windows アップデーター用: ' + msiZipFiles.length + '個 (' + msiZipFiles.join(', ') + ')');
+            console.log('   Windows 圧縮ファイル署名: ' + msiZipSigFiles.length + '個 (' + msiZipSigFiles.join(', ') + ')');
+
+            if (dmgFiles.length === 0) {
+              console.error('❌ DMGファイルが見つかりません');
+              console.log('   MacOSディレクトリ内容: ' + macosFiles.join(', '));
+              console.log('   詳細なファイルタイプ分析:');
+              macosFiles.forEach(f => {
+                const fullPath = path.join(macosArtifactsDir, f);
+                const stats = fs.statSync(fullPath);
+                console.log('     - ' + f + ' (' + (stats.isDirectory() ? 'ディレクトリ' : 'ファイル ' + (stats.size / 1024 / 1024).toFixed(2) + ' MB') + ')');
+              });
+              throw new Error('DMGファイルが見つかりません');
+            }
+
+            if (appTarGzFiles.length === 0) {
+              console.error('❌ .app.tar.gzファイルが見つかりません');
+              console.log('   MacOSディレクトリ内容: ' + macosFiles.join(', '));
+              throw new Error('.app.tar.gzファイルが見つかりません');
+            }
+
+            if (msiFiles.length === 0) {
+              console.error('❌ MSIファイルが見つかりません');
+              console.log('   Windowsディレクトリ内容: ' + windowsFiles.join(', '));
+              throw new Error('MSIファイルが見つかりません');
+            }
+
+            if (msiZipFiles.length === 0) {
+              console.error('❌ .msi.zipファイルが見つかりません');
+              console.log('   Windowsディレクトリ内容: ' + windowsFiles.join(', '));
+              throw new Error('.msi.zipファイルが見つかりません');
+            }
+
+            // ファイルパスとサイズの取得
+            const msiPath = path.join(windowsArtifactsDir, msiFiles[0]);
+            const msiStats = fs.statSync(msiPath);
+            const msiSizeMB = (msiStats.size / 1024 / 1024).toFixed(2);
+
+            console.log('📊 ファイルサイズ:');
+            
+            // MacOS DMGファイルのサイズ情報
+            const dmgInfoList = dmgFiles.map(dmgFile => {
+              const dmgPath = path.join(macosArtifactsDir, dmgFile);
+              const dmgStats = fs.statSync(dmgPath);
+              const dmgSizeMB = (dmgStats.size / 1024 / 1024).toFixed(2);
+              console.log('   - MacOS DMG: ' + dmgFile + ' (' + dmgSizeMB + ' MB)');
+              return { file: dmgFile, size: dmgSizeMB };
+            });
+            
+            console.log('   - Windows MSI: ' + msiFiles[0] + ' (' + msiSizeMB + ' MB)');
+
+            // リリースノートの生成
+            const dmgTableRows = dmgInfoList.map(info => 
+              '| **MacOS (Apple Silicon)** | ' + info.file + ' | ' + info.size + ' MB |'
+            ).join('\n');
+            
+            const releaseNotes = [
+              '## 🎉 新しいクロスプラットフォームリリース: ' + releaseTag,
+              '',
+              '### 📦 ダウンロード',
+              '| プラットフォーム | ファイル | サイズ |',
+              '|---|---|---|',
+              dmgTableRows,
+              '| **Windows** | ' + msiFiles[0] + ' | ' + msiSizeMB + ' MB |',
+              '',
+              '### 🔄 自動アップデート',
+              'このリリースには、Tauri自動アップデート機能用の静的JSONマニフェストファイルが含まれています：',
+              '- `darwin-aarch64.json` - macOS Apple Silicon用',
+              '- `windows-x86_64.json` - Windows 64bit用',
+              '',
+              '既存のアプリケーションは自動的に新しいバージョンをチェックし、アップデートを通知します。',
+              '',
+              '### 📋 ビルド情報',
+              '- **バージョン**: ' + version,
+              '- **リリースタグ**: ' + releaseTag,
+              '- **コミット**: ' + context.sha + ' (' + commitShort + ')',
+              '- **ビルド日時**: ' + new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) + ' (JST)',
+              '- **ビルド者**: ' + context.actor,
+              '',
+              '### 🔧 インストール方法',
+              '',
+              '#### MacOS',
+              '1. dmgファイルをダウンロード（Apple Silicon専用）',
+              '2. dmgファイルをダブルクリックしてマウント',
+              '3. アプリケーションをApplicationsフォルダにドラッグ&ドロップ',
+              '',
+              '**注意**: このバージョンはApple Silicon (M1/M2/M3) Mac専用です。',
+              '',
+              '#### Windows',
+              '1. msiファイルをダウンロード',
+              '2. msiファイルを右クリックして「管理者として実行」を選択',
+              '3. インストールウィザードに従ってインストール'
+            ].join('\n');
+
+            // リリースの作成
+            console.log('📝 GitHubリリースを作成中...');
+            const release = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: release.data.id,
-              name: sigFiles[0],
-              data: sigContent
+              tag_name: releaseTag,
+              name: 'オラの経費だゾ ' + releaseTag,
+              body: releaseNotes,
+              draft: false,
+              prerelease: false
             });
-            console.log('✅ 署名ファイルをアップロードしました: ' + sigFiles[0]);
-          } else {
-            console.warn('⚠️  署名ファイルが見つかりません');
-          }
-          
-          // msiファイルのアップロード
-          console.log('📤 Windows msiファイルをアップロード中...');
-          const msiContent = fs.readFileSync(msiPath);
-          await github.rest.repos.uploadReleaseAsset({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.data.id,
-            name: msiFiles[0],
-            data: msiContent
-          });
-          
-          // 静的JSONファイルのアップロード
-          console.log('📤 静的JSONマニフェストファイルをアップロード中...');
-          const manifestDir = './update-manifests';
-          if (fs.existsSync(manifestDir)) {
-            const manifestFiles = fs.readdirSync(manifestDir).filter(f => f.endsWith('.json'));
-            
-            for (const manifestFile of manifestFiles) {
-              const manifestPath = path.join(manifestDir, manifestFile);
-              const manifestContent = fs.readFileSync(manifestPath);
-              
-              console.log('  - アップロード中: ' + manifestFile);
-              await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.data.id,
-                name: manifestFile,
-                data: manifestContent
-              });
-            }
-            
-            console.log('✅ ' + manifestFiles.length + '個のマニフェストファイルをアップロードしました');
-          } else {
-            console.warn('⚠️  マニフェストディレクトリが見つかりません: ' + manifestDir);
-          }
-          
-          console.log('🎉 クロスプラットフォームリリースが正常に作成されました！');
-          console.log('🔗 リリースURL: ' + release.data.html_url);
 
+            console.log('✅ リリースが作成されました: ' + release.data.html_url);
+
+            // ファイルアップロード関数
+            async function uploadFile(filePath, fileName, description) {
+              try {
+                console.log('📤 ' + description + 'をアップロード中: ' + fileName);
+                const fileContent = fs.readFileSync(filePath);
+                await github.rest.repos.uploadReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.data.id,
+                  name: fileName,
+                  data: fileContent
+                });
+                console.log('✅ アップロード完了: ' + fileName);
+              } catch (error) {
+                console.error('❌ アップロード失敗: ' + fileName + ' - ' + error.message);
+                throw error;
+              }
+            }
+
+            // MacOS DMGファイルのアップロード（ユーザー配布用 - 全アーキテクチャ）
+            for (const dmgFile of dmgFiles) {
+              const dmgPath = path.join(macosArtifactsDir, dmgFile);
+              await uploadFile(dmgPath, dmgFile, 'MacOS DMGファイル');
+            }
+
+            // MacOS アップデーター用圧縮ファイルのアップロード（全アーキテクチャ）
+            if (appTarGzFiles.length > 0) {
+              for (const appTarGzFile of appTarGzFiles) {
+                const appTarGzPath = path.join(macosArtifactsDir, appTarGzFile);
+                await uploadFile(appTarGzPath, appTarGzFile, 'MacOS アップデーター用ファイル (.app.tar.gz)');
+              }
+            } else {
+              console.error('❌ MacOS .app.tar.gzファイルが見つかりません');
+              throw new Error('MacOS .app.tar.gzファイルが見つかりません');
+            }
+
+            // MacOS 圧縮ファイル署名のアップロード（全アーキテクチャ）
+            if (appTarGzSigFiles.length > 0) {
+              for (const appTarGzSigFile of appTarGzSigFiles) {
+                const appTarGzSigPath = path.join(macosArtifactsDir, appTarGzSigFile);
+                await uploadFile(appTarGzSigPath, appTarGzSigFile, 'MacOS 圧縮ファイル署名');
+              }
+            } else {
+              console.error('❌ MacOS .app.tar.gz.sigファイルが見つかりません');
+              throw new Error('MacOS .app.tar.gz.sigファイルが見つかりません');
+            }
+
+            // Windows MSIファイルのアップロード（ユーザー配布用）
+            await uploadFile(msiPath, msiFiles[0], 'Windows MSIファイル');
+
+            // Windows アップデーター用圧縮ファイルのアップロード
+            if (msiZipFiles.length > 0) {
+              const msiZipPath = path.join(windowsArtifactsDir, msiZipFiles[0]);
+              await uploadFile(msiZipPath, msiZipFiles[0], 'Windows アップデーター用ファイル (.msi.zip)');
+            } else {
+              console.warn('⚠️  Windows .msi.zipファイルが見つかりません');
+            }
+
+            // Windows 圧縮ファイル署名のアップロード
+            if (msiZipSigFiles.length > 0) {
+              const msiZipSigPath = path.join(windowsArtifactsDir, msiZipSigFiles[0]);
+              await uploadFile(msiZipSigPath, msiZipSigFiles[0], 'Windows 圧縮ファイル署名');
+            } else {
+              console.warn('⚠️  Windows .msi.zip.sigファイルが見つかりません');
+            }
+
+            // 静的JSONファイルのアップロード
+            console.log('📤 静的JSONマニフェストファイルをアップロード中...');
+            const manifestDir = './update-manifests';
+            if (fs.existsSync(manifestDir)) {
+              const manifestFiles = fs.readdirSync(manifestDir).filter(f => f.endsWith('.json'));
+
+              for (const manifestFile of manifestFiles) {
+                const manifestPath = path.join(manifestDir, manifestFile);
+                await uploadFile(manifestPath, manifestFile, 'マニフェストファイル');
+              }
+
+              console.log('✅ ' + manifestFiles.length + '個のマニフェストファイルをアップロードしました');
+            } else {
+              console.warn('⚠️  マニフェストディレクトリが見つかりません: ' + manifestDir);
+            }
+
+            console.log('🎉 クロスプラットフォームリリースが正常に作成されました！');
+            console.log('🔗 リリースURL: ' + release.data.html_url);
 
   # ビルド結果のサマリー（PR用）
   build-summary:
     needs: [version-tag, build-macos, build-windows]
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
-    - name: ビルド結果のサマリー表示
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const version = '${{ needs.version-tag.outputs.VERSION }}';
-          const releaseTag = '${{ needs.version-tag.outputs.RELEASE_TAG }}';
-          const macosResult = '${{ needs.build-macos.result }}';
-          const windowsResult = '${{ needs.build-windows.result }}';
-          const eventName = '${{ github.event_name }}';
-          
-          console.log('='.repeat(60));
-          console.log('🎯 クロスプラットフォームビルド結果サマリー');
-          console.log('='.repeat(60));
-          console.log('');
-          console.log('📋 ビルド情報:');
-          console.log('  - バージョン: ' + version);
-          console.log('  - リリースタグ: ' + releaseTag);
-          console.log('  - イベント: ' + eventName);
-          console.log('');
-          console.log('📊 ビルド結果:');
-          console.log('  - MacOS: ' + (macosResult === 'success' ? '✅ 成功' : '❌ 失敗'));
-          console.log('  - Windows: ' + (windowsResult === 'success' ? '✅ 成功' : '❌ 失敗'));
-          console.log('');
-          
-          if (eventName === 'pull_request') {
-            console.log('📝 PR用ビルドテスト:');
-            console.log('  ✅ ビルドテストが完了しました');
-            console.log('  ℹ️  リリースは作成されません（PR用テスト）');
-            console.log('  💡 releaseブランチにマージ後、自動的にリリースが作成されます');
-          } else if (macosResult === 'success' && windowsResult === 'success') {
-            console.log('🚀 リリース作成:');
-            console.log('  ✅ すべてのビルドが成功しました');
-            console.log('  📦 リリース作成ジョブが実行されます');
-          } else {
-            console.log('⚠️  ビルド失敗:');
-            console.log('  ❌ 一部のビルドが失敗したため、リリースは作成されません');
-          }
-          
-          console.log('');
-          console.log('='.repeat(60));
+      - name: ビルド結果のサマリー表示
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const version = '${{ needs.version-tag.outputs.VERSION }}';
+            const releaseTag = '${{ needs.version-tag.outputs.RELEASE_TAG }}';
+            const macosResult = '${{ needs.build-macos.result }}';
+            const windowsResult = '${{ needs.build-windows.result }}';
+            const eventName = '${{ github.event_name }}';
+
+            console.log('='.repeat(60));
+            console.log('🎯 クロスプラットフォームビルド結果サマリー');
+            console.log('='.repeat(60));
+            console.log('');
+            console.log('📋 ビルド情報:');
+            console.log('  - バージョン: ' + version);
+            console.log('  - リリースタグ: ' + releaseTag);
+            console.log('  - イベント: ' + eventName);
+            console.log('');
+            console.log('📊 ビルド結果:');
+            console.log('  - MacOS: ' + (macosResult === 'success' ? '✅ 成功' : '❌ 失敗'));
+            console.log('  - Windows: ' + (windowsResult === 'success' ? '✅ 成功' : '❌ 失敗'));
+            console.log('');
+
+            if (eventName === 'pull_request') {
+              console.log('📝 PR用ビルドテスト:');
+              console.log('  ✅ ビルドテストが完了しました');
+              console.log('  ℹ️  リリースは作成されません（PR用テスト）');
+              console.log('  💡 releaseブランチにマージ後、自動的にリリースが作成されます');
+            } else if (macosResult === 'success' && windowsResult === 'success') {
+              console.log('🚀 リリース作成:');
+              console.log('  ✅ すべてのビルドが成功しました');
+              console.log('  📦 リリース作成ジョブが実行されます');
+            } else {
+              console.log('⚠️  ビルド失敗:');
+              console.log('  ❌ 一部のビルドが失敗したため、リリースは作成されません');
+            }
+
+            console.log('');
+            console.log('='.repeat(60));

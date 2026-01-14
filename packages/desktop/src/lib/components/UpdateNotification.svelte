@@ -7,6 +7,7 @@
 	let updateState = $state<UpdateNotificationState>({
 		show: false,
 		downloading: false,
+		downloadComplete: false,
 		progress: 0
 	});
 
@@ -26,6 +27,7 @@
 			...updateState,
 			show: false,
 			downloading: false,
+			downloadComplete: false,
 			progress: 0,
 			error: undefined
 		};
@@ -38,35 +40,35 @@
 		updateState = {
 			...updateState,
 			downloading: true,
+			downloadComplete: false,
 			progress: 0,
 			error: undefined
 		};
 
 		try {
-			// ダウンロード進捗のシミュレーション（実際のTauri updaterは進捗イベントを提供）
-			const progressInterval = setInterval(() => {
-				updateState = {
-					...updateState,
-					progress: Math.min(updateState.progress + 10, 90)
-				};
-			}, 500);
-
 			await UpdaterService.downloadAndInstall();
-			
-			clearInterval(progressInterval);
-			updateState = {
-				...updateState,
-				progress: 100
-			};
-			
-			// インストール成功後はアプリケーションが再起動されるため、ここには到達しない
+			// ダウンロード完了イベントで downloadComplete が true になる
 		} catch (error) {
 			console.error('アップデートインストールエラー:', error);
 			updateState = {
 				...updateState,
 				downloading: false,
+				downloadComplete: false,
 				progress: 0,
 				error: error instanceof Error ? error.message : 'アップデートに失敗しました'
+			};
+		}
+	}
+
+	// アプリケーションを再起動する関数
+	async function handleRestart() {
+		try {
+			await UpdaterService.restartApplication();
+		} catch (error) {
+			console.error('再起動エラー:', error);
+			updateState = {
+				...updateState,
+				error: error instanceof Error ? error.message : '再起動に失敗しました'
 			};
 		}
 	}
@@ -98,18 +100,40 @@
 			...updateState,
 			error: undefined,
 			downloading: false,
+			downloadComplete: false,
 			progress: 0
 		};
 	}
 
 	// コンポーネントマウント時の処理
 	onMount(() => {
-		let unlisten: (() => void) | undefined;
+		let unlistenUpdate: (() => void) | undefined;
+		let unlistenDownloadComplete: (() => void) | undefined;
+		let unlistenDownloadProgress: (() => void) | undefined;
 
 		const initializeUpdater = async () => {
 			try {
 				// アップデート通知イベントをリッスン
-				unlisten = await UpdaterService.listenForUpdates(showUpdateNotification);
+				unlistenUpdate = await UpdaterService.listenForUpdates(showUpdateNotification);
+
+				// ダウンロード完了イベントをリッスン
+				unlistenDownloadComplete = await UpdaterService.listenForDownloadComplete(() => {
+					// ダウンロード完了、再起動が必要
+					updateState = {
+						...updateState,
+						downloading: false,
+						downloadComplete: true,
+						progress: 100
+					};
+				});
+
+				// ダウンロード進捗イベントをリッスン
+				unlistenDownloadProgress = await UpdaterService.listenForDownloadProgress((progress) => {
+					updateState = {
+						...updateState,
+						progress
+					};
+				});
 
 				// 自動アップデートチェックを開始
 				await UpdaterService.startAutoUpdateCheck();
@@ -128,8 +152,14 @@
 
 		// クリーンアップ関数を返す
 		return () => {
-			if (unlisten) {
-				unlisten();
+			if (unlistenUpdate) {
+				unlistenUpdate();
+			}
+			if (unlistenDownloadComplete) {
+				unlistenDownloadComplete();
+			}
+			if (unlistenDownloadProgress) {
+				unlistenDownloadProgress();
 			}
 		};
 	});
@@ -204,10 +234,16 @@
 			{/if}
 
 			<!-- ダウンロード進捗 -->
-			{#if updateState.downloading}
+			{#if updateState.downloading || updateState.downloadComplete}
 				<div class="mb-4">
 					<div class="flex justify-between text-sm mb-2">
-						<span class="text-gray-600">ダウンロード中...</span>
+						<span class="text-gray-600">
+							{#if updateState.downloadComplete}
+								ダウンロード完了
+							{:else}
+								ダウンロード中...
+							{/if}
+						</span>
 						<span class="font-medium">{updateState.progress.toFixed(1)}%</span>
 					</div>
 					<div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
@@ -217,14 +253,33 @@
 						></div>
 					</div>
 					<p class="text-xs text-gray-500 mt-1.5">
-						ダウンロード完了後、アプリケーションが自動的に再起動されます
+						{#if updateState.downloadComplete}
+							アプリケーションを再起動してインストールを完了してください
+						{:else}
+							ダウンロード完了後、手動で再起動してインストールを完了します
+						{/if}
 					</p>
 				</div>
 			{/if}
 
 			<!-- アクションボタン -->
 			<div class="flex flex-col space-y-2">
-				{#if !updateState.downloading}
+				{#if updateState.downloadComplete}
+					<!-- ダウンロード完了後：再起動ボタンを表示 -->
+					<button
+						onclick={handleRestart}
+						class="w-full bg-green-600 text-white px-4 py-2.5 rounded-lg hover:bg-green-700 transition-colors font-medium"
+					>
+						今すぐ再起動
+					</button>
+					<button
+						onclick={hideUpdateNotification}
+						class="w-full bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+					>
+						後で再起動
+					</button>
+				{:else if !updateState.downloading}
+					<!-- ダウンロード前：アップデートボタンを表示 -->
 					<button
 						onclick={handleUpdateInstall}
 						disabled={!!updateState.error}
@@ -247,6 +302,7 @@
 						</button>
 					</div>
 				{:else}
+					<!-- ダウンロード中：無効化されたボタンを表示 -->
 					<button
 						disabled
 						class="w-full bg-gray-400 text-white px-4 py-2.5 rounded-lg cursor-not-allowed font-medium"

@@ -9,6 +9,10 @@
 	<!-- ネットワークアクセス権限（将来の機能拡張用） -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+
+	<!-- ネットワークサーバー権限（OAuth認証ループバック用） -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	
 	<!-- アプリケーションサンドボックス -->
 	<key>com.apple.security.app-sandbox</key>

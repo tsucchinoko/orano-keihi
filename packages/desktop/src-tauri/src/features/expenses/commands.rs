@@ -41,10 +41,10 @@ pub async fn create_expense(
 
     // 認証されたユーザーIDを使用して経費DTOを作成
     let mut user_dto = dto;
-    user_dto.user_id = Some(user.id);
+    user_dto.user_id = Some(user.id.clone());
 
     // 経費を作成
-    repository::create(&db, user_dto, user.id).map_err(|e| e.into())
+    repository::create(&db, user_dto, &user.id).map_err(|e| e.into())
 }
 
 /// 経費一覧を取得する（月とカテゴリでフィルタリング可能）
@@ -79,7 +79,7 @@ pub async fn get_expenses(
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
     // 認証されたユーザーの経費一覧を取得
-    repository::find_all(&db, user.id, month.as_deref(), category.as_deref()).map_err(|e| e.into())
+    repository::find_all(&db, &user.id, month.as_deref(), category.as_deref()).map_err(|e| e.into())
 }
 
 /// 経費を更新する
@@ -121,7 +121,7 @@ pub async fn update_expense(
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
     // 認証されたユーザーの経費を更新
-    let result = repository::update(&db, id, dto, user.id).map_err(|e| e.into());
+    let result = repository::update(&db, id, dto, &user.id).map_err(|e| e.into());
 
     match &result {
         Ok(expense) => {
@@ -169,7 +169,7 @@ pub async fn delete_expense_receipt(
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
     // 経費の領収書URLを削除（空文字列でNULLに設定）
-    let result = repository::set_receipt_url(&db, expense_id, "".to_string(), user.id);
+    let result = repository::set_receipt_url(&db, expense_id, "".to_string(), &user.id);
 
     match result {
         Ok(_) => {
@@ -208,7 +208,7 @@ pub async fn delete_expense(
             .lock()
             .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-        repository::get_receipt_url(&db, id, user.id).map_err(|e| e.user_message().to_string())?
+        repository::get_receipt_url(&db, id, &user.id).map_err(|e| e.user_message().to_string())?
     };
 
     // 領収書がR2に存在する場合はAPI経由で削除
@@ -239,7 +239,7 @@ pub async fn delete_expense(
                         AppError::concurrency(format!("データベースロック取得失敗: {e}"))
                     })?;
 
-                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db, user.id) {
+                    if let Err(e) = cache_manager.delete_cache_file(&receipt_url, &db, &user.id) {
                         eprintln!("キャッシュ削除エラー: {e}");
                     } else {
                         println!("キャッシュ削除成功: expense_id={id}, receipt_url={receipt_url}");
@@ -275,7 +275,7 @@ pub async fn delete_expense(
         .lock()
         .map_err(|e| AppError::concurrency(format!("データベースロック取得失敗: {e}")))?;
 
-    let delete_result = repository::delete(&db, id, user.id);
+    let delete_result = repository::delete(&db, id, &user.id);
 
     match &delete_result {
         Ok(_) => println!(

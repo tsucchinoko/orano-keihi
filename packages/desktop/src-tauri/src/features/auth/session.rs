@@ -41,11 +41,11 @@ impl SessionManager {
     /// セッションを作成する
     ///
     /// # 引数
-    /// * `user_id` - ユーザーID
+    /// * `user_id` - ユーザーID（nanoId形式）
     ///
     /// # 戻り値
     /// 作成されたセッション情報
-    pub fn create_session(&self, user_id: i64) -> Result<Session, SessionError> {
+    pub fn create_session(&self, user_id: &str) -> Result<Session, SessionError> {
         let conn = self.db_connection.lock().unwrap();
 
         // sessionsテーブルが存在するかチェック
@@ -62,7 +62,7 @@ impl SessionManager {
 
         let session = Session {
             id: session_id.clone(),
-            user_id,
+            user_id: user_id.to_string(),
             expires_at,
             created_at: now,
         };
@@ -282,11 +282,11 @@ impl SessionManager {
     /// ユーザーのすべてのセッションを無効化する
     ///
     /// # 引数
-    /// * `user_id` - ユーザーID
+    /// * `user_id` - ユーザーID（nanoId形式）
     ///
     /// # 戻り値
     /// 削除されたセッション数
-    pub fn invalidate_user_sessions(&self, user_id: i64) -> Result<usize, SessionError> {
+    pub fn invalidate_user_sessions(&self, user_id: &str) -> Result<usize, SessionError> {
         let conn = self.db_connection.lock().unwrap();
 
         let affected_rows =
@@ -329,7 +329,7 @@ mod tests {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )",
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn test_create_session() {
         let session_manager = setup_test_session_manager();
-        let user_id = 1;
+        let user_id = "test_user_id_123456789";
 
         let session = session_manager.create_session(user_id).unwrap();
 
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn test_validate_session() {
         let session_manager = setup_test_session_manager();
-        let user_id = 1;
+        let user_id = "test_user_id_123456789";
 
         // セッションを作成
         let session = session_manager.create_session(user_id).unwrap();
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn test_invalidate_session() {
         let session_manager = setup_test_session_manager();
-        let user_id = 1;
+        let user_id = "test_user_id_123456789";
 
         // セッションを作成
         let session = session_manager.create_session(user_id).unwrap();

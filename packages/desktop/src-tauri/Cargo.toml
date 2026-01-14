@@ -1,6 +1,6 @@
 [package]
 name = "orano-keihi"
-version = "0.1.0"
+version = "0.1.7"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -46,6 +46,9 @@ http-body-util = "0.1"
 
 # UUID生成
 uuid = { version = "1.0", features = ["v4"] }
+
+# NanoID生成
+nanoid = "0.4.0"
 
 # 環境変数読み込み
 dotenv = "0.15"

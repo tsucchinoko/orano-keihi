@@ -29,8 +29,8 @@ export interface ApiErrorResponse {
 }
 
 export interface MultipleFileUploadInput {
-  expense_id: number;
-  file_path: string;
+  expenseId: number;
+  filePath: string;
 }
 
 export interface SingleUploadResult {
@@ -87,9 +87,9 @@ export async function uploadReceiptViaApi(
   const sessionToken = authStore.getSessionToken();
 
   return invoke('upload_receipt_via_api', {
-    expense_id: expenseId,
-    file_path: filePath,
-    session_token: sessionToken,
+    expenseId: expenseId,
+    filePath: filePath,
+    sessionToken: sessionToken,
   });
 }
 
@@ -105,11 +105,11 @@ export async function uploadMultipleReceiptsViaApi(
   const sessionToken = authStore.getSessionToken();
 
   // ファイルパスのリストに変換
-  const filePaths = files.map((file) => file.file_path);
+  const filePaths = files.map((file) => file.filePath);
 
   return invoke('upload_multiple_receipts_via_api', {
-    file_paths: filePaths,
-    session_token: sessionToken,
+    filePaths: filePaths,
+    sessionToken: sessionToken,
   });
 }
 
@@ -148,7 +148,7 @@ export async function deleteReceiptViaApi(
   const sessionToken = authStore.getSessionToken();
 
   return invoke('delete_receipt_via_api', {
-    receipt_url: receiptUrl,
-    session_token: sessionToken,
+    receiptUrl: receiptUrl,
+    sessionToken: sessionToken,
   });
 }
