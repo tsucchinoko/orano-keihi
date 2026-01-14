@@ -124,6 +124,20 @@ export class UpdaterService {
   }
 
   /**
+   * アプリケーションを再起動してアップデートをインストール
+   */
+  static async restartApplication(): Promise<void> {
+    try {
+      await invoke<void>('restart_application');
+    } catch (error) {
+      console.error('アプリケーション再起動エラー:', error);
+      throw new Error(
+        `アプリケーションの再起動に失敗しました: ${String(error)}`
+      );
+    }
+  }
+
+  /**
    * アップデート通知イベントをリッスン
    * @param callback アップデートが利用可能になったときのコールバック
    */
@@ -158,6 +172,47 @@ export class UpdaterService {
     } catch (error) {
       console.error('再起動通知リスナー設定エラー:', error);
       throw new Error(`再起動通知の設定に失敗しました: ${String(error)}`);
+    }
+  }
+
+  /**
+   * ダウンロード完了通知イベントをリッスン
+   * @param callback ダウンロードが完了したときのコールバック
+   */
+  static async listenForDownloadComplete(
+    callback: () => void
+  ): Promise<() => void> {
+    try {
+      const unlisten = await listen('download-complete', () => {
+        console.info('ダウンロードが完了しました');
+        callback();
+      });
+      return unlisten;
+    } catch (error) {
+      console.error('ダウンロード完了通知リスナー設定エラー:', error);
+      throw new Error(
+        `ダウンロード完了通知の設定に失敗しました: ${String(error)}`
+      );
+    }
+  }
+
+  /**
+   * ダウンロード進捗イベントをリッスン
+   * @param callback ダウンロード進捗が更新されたときのコールバック
+   */
+  static async listenForDownloadProgress(
+    callback: (progress: number) => void
+  ): Promise<() => void> {
+    try {
+      const unlisten = await listen<number>('download-progress', (event) => {
+        callback(event.payload);
+      });
+      return unlisten;
+    } catch (error) {
+      console.error('ダウンロード進捗リスナー設定エラー:', error);
+      throw new Error(
+        `ダウンロード進捗通知の設定に失敗しました: ${String(error)}`
+      );
     }
   }
 

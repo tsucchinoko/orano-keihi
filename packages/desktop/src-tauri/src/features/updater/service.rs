@@ -365,7 +365,7 @@ impl UpdaterService {
                         let app_handle = self.app_handle.clone();
 
                         match update
-                            .download_and_install(
+                            .download(
                                 move |chunk_length, content_length| {
                                     // プログレスコールバック
                                     if let Some(total) = content_length {
@@ -386,9 +386,6 @@ impl UpdaterService {
                                 || {
                                     // 完了コールバック
                                     info!("ダウンロード完了");
-                                    if let Err(e) = self.app_handle.emit("download-complete", ()) {
-                                        warn!("ダウンロード完了の通知に失敗: {e}");
-                                    }
                                 },
                             )
                             .await
@@ -397,23 +394,18 @@ impl UpdaterService {
                                 // ログ: ダウンロード完了
                                 self.logger.log_download_complete(&version);
 
-                                // ログ: インストール開始
-                                self.logger.log_install_start(&version);
-
                                 info!("アップデートのダウンロードが完了しました");
-                                info!("アプリケーションを再起動してインストールを完了してください");
-                                // ログ: インストール完了（再起動後に完了）
-                                self.logger.log_install_complete(&version);
+                                info!("アプリケーションを手動で再起動してインストールを完了してください");
 
                                 // フロントエンドに再起動が必要であることを通知
-                                if let Err(e) = self.app_handle.emit("restart-required", ()) {
-                                    warn!("再起動通知の送信に失敗: {e}");
+                                if let Err(e) = self.app_handle.emit("download-complete", ()) {
+                                    warn!("ダウンロード完了通知の送信に失敗: {e}");
                                 }
 
                                 Ok(())
                             }
                             Err(e) => {
-                                let error = UpdateError::installation(format!("アップデートのインストールに失敗しました: {e}"));
+                                let error = UpdateError::installation(format!("アップデートのダウンロードに失敗しました: {e}"));
                                 self.logger.log_error(&error);
                                 Err(error)
                             }
