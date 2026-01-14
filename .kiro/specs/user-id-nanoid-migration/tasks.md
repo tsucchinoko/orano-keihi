@@ -45,20 +45,20 @@
     - `CreateExpenseDto`の`user_id: Option<i64>`を`user_id: Option<String>`に変更
     - _要件: 4.3_
 
-- [ ] 3. UserRepositoryの更新
-  - [ ] 3.1 UserRepositoryのメソッドシグネチャを更新
+- [x] 3. UserRepositoryの更新
+  - [x] 3.1 UserRepositoryのメソッドシグネチャを更新
     - `get_user_by_id(&self, user_id: &str)`に変更
     - `delete_user(&self, user_id: &str)`に変更
     - `get_user_by_id_internal(&self, conn: &Connection, user_id: &str)`に変更
     - _要件: 4.3_
 
-  - [ ] 3.2 create_new_user関数でnanoIdを使用
+  - [x] 3.2 create_new_user関数でnanoIdを使用
     - `crate::shared::utils::nanoid::generate_user_id()`を呼び出してIDを生成
     - `INSERT`文で生成したIDを使用
     - `last_insert_rowid()`の代わりに生成したIDでユーザーを取得
     - _要件: 1.2, 5.4_
 
-  - [ ] 3.3 row_to_user関数の型変換を更新
+  - [x] 3.3 row_to_user関数の型変換を更新
     - `id: row.get(0)?`がString型を返すことを確認
     - _要件: 4.1_
 
