@@ -35,7 +35,9 @@ import {
 import { updaterApp } from "./routes/updater.js";
 import { createReceiptsRouter } from "./routes/receipts.js";
 import { createUsersRouter } from "./routes/users.js";
+import { createExpensesRouter } from "./routes/expenses.js";
 import { UserRepository } from "./repositories/user-repository.js";
+import { ExpenseRepository } from "./repositories/expense-repository.js";
 
 /**
  * ファイルキーからContent-Typeを推定する
@@ -150,6 +152,13 @@ export function createApp(
     const usersRouter = createUsersRouter(userRepository);
     app.use("/api/v1/users/*", authMiddleware);
     app.route("/api/v1/users", usersRouter);
+
+    // 経費関連エンドポイント（認証が必要）
+    const expenseRepository = new ExpenseRepository(db);
+    const expensesRouter = createExpensesRouter(expenseRepository);
+    // 認証ミドルウェアを経費ルーター全体に適用
+    app.use("/api/v1/expenses*", authMiddleware);
+    app.route("/api/v1/expenses", expensesRouter);
   }
 
   // 領収書関連エンドポイント（認証が必要）
