@@ -58,8 +58,8 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - **検証: 要件 3.4**
     - _要件: 10.2_
 
-- [ ] 5. SubscriptionRepositoryの実装
-  - [ ] 5.1 SubscriptionRepositoryクラスを作成
+- [x] 5. SubscriptionRepositoryの実装
+  - [x] 5.1 SubscriptionRepositoryクラスを作成
     - D1Databaseをコンストラクタで受け取る
     - createメソッドを実装
     - findByIdメソッドを実装
