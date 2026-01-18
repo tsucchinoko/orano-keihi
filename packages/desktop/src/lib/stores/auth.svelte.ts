@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-shell';
 import type { User, AuthState } from '../types';
 import {
@@ -7,6 +8,15 @@ import {
   logout as logoutCommand,
 } from '../utils/tauri';
 import { toastStore } from './toast.svelte';
+
+/**
+ * セキュアストレージに保存される認証情報の型
+ */
+interface StoredAuthInfo {
+  session_token: string;
+  user_id: string;
+  last_login: string;
+}
 
 /**
  * 認証状態管理ストア
@@ -25,14 +35,11 @@ class AuthStore {
   // エラーメッセージ
   error = $state<string | null>(null);
 
-  // セッショントークン（ローカルストレージに保存）
+  // セッショントークン（セキュアストレージに保存）
   private sessionToken = $state<string | null>(null);
 
   // 初期化フラグ
   private initialized = $state<boolean>(false);
-
-  // セッショントークンのローカルストレージキー
-  private readonly SESSION_TOKEN_KEY = 'auth_session_token';
 
   /**
    * 認証状態の初期化
@@ -50,20 +57,19 @@ class AuthStore {
     this.error = null;
 
     try {
-      // ローカルストレージからセッショントークンを取得
-      const storedToken = localStorage.getItem(this.SESSION_TOKEN_KEY);
-      console.info(
-        '保存されたセッショントークン:',
-        storedToken ? '存在' : 'なし'
+      // セキュアストレージから認証情報を取得
+      const storedAuthInfo = await invoke<StoredAuthInfo | null>(
+        'get_stored_auth_info'
       );
+      console.info('保存された認証情報:', storedAuthInfo ? '存在' : 'なし');
 
-      if (storedToken) {
-        this.sessionToken = storedToken;
+      if (storedAuthInfo) {
+        this.sessionToken = storedAuthInfo.session_token;
         // セッションを検証
         await this.checkSession();
       } else {
-        // セッショントークンがない場合は未認証状態
-        console.info('セッショントークンがないため、未認証状態に設定します');
+        // 認証情報がない場合は未認証状態
+        console.info('認証情報がないため、未認証状態に設定します');
         this.setUnauthenticatedState();
       }
 
@@ -142,10 +148,9 @@ class AuthStore {
             this.user = user;
             this.sessionToken = session_token;
 
-            // セッショントークンをローカルストレージに保存
-            localStorage.setItem(this.SESSION_TOKEN_KEY, session_token);
+            // セッショントークンはバックエンドのセキュアストレージに既に保存済み
             console.info(
-              '🔐 ローカルストレージにセッショントークンを保存しました'
+              '🔐 セキュアストレージにセッショントークンが保存されました'
             );
 
             // 最後に認証状態をtrueに設定（リアクティブな更新をトリガー）
@@ -185,7 +190,8 @@ class AuthStore {
                 const { user, session_token } = authResult.data;
                 this.user = user;
                 this.sessionToken = session_token;
-                localStorage.setItem(this.SESSION_TOKEN_KEY, session_token);
+
+                // セッショントークンはバックエンドのセキュアストレージに既に保存済み
 
                 // 最後に認証状態をtrueに設定
                 this.isAuthenticated = true;
@@ -219,7 +225,7 @@ class AuthStore {
 
     try {
       if (this.sessionToken) {
-        // バックエンドでセッションを無効化
+        // バックエンドでセッションを無効化（セキュアストレージからも削除される）
         const result = await logoutCommand(this.sessionToken);
 
         if (result.error) {
@@ -231,15 +237,11 @@ class AuthStore {
       // クライアント側の認証状態をクリア
       this.setUnauthenticatedState();
 
-      // ローカルストレージからセッショントークンを削除
-      localStorage.removeItem(this.SESSION_TOKEN_KEY);
-
       toastStore.success('ログアウトしました');
     } catch (err) {
       console.error('ログアウトエラー:', err);
       // エラーが発生してもクライアント側の状態はクリア
       this.setUnauthenticatedState();
-      localStorage.removeItem(this.SESSION_TOKEN_KEY);
 
       this.error = `ログアウト処理でエラーが発生しましたが、ローカルの認証状態はクリアされました: ${String(err)}`;
       toastStore.warning('ログアウトしました（一部エラーが発生）');
@@ -255,11 +257,17 @@ class AuthStore {
   async checkSession(): Promise<void> {
     console.info('セッション状態を確認します');
 
-    // localStorageから最新のセッショントークンを取得
-    const storedToken = localStorage.getItem(this.SESSION_TOKEN_KEY);
-    if (storedToken) {
-      this.sessionToken = storedToken;
-      console.info('localStorageからセッショントークンを復元しました');
+    // セキュアストレージから最新の認証情報を取得
+    try {
+      const storedAuthInfo = await invoke<StoredAuthInfo | null>(
+        'get_stored_auth_info'
+      );
+      if (storedAuthInfo) {
+        this.sessionToken = storedAuthInfo.session_token;
+        console.info('セキュアストレージからセッショントークンを復元しました');
+      }
+    } catch (err) {
+      console.warn('セキュアストレージからの認証情報取得エラー:', err);
     }
 
     if (!this.sessionToken) {
@@ -275,7 +283,6 @@ class AuthStore {
       if (result.error) {
         console.warn('セッション検証エラー:', result.error);
         this.setUnauthenticatedState();
-        localStorage.removeItem(this.SESSION_TOKEN_KEY);
         return;
       }
 
@@ -288,12 +295,10 @@ class AuthStore {
         // セッションが無効な場合
         console.info('セッションが無効です。未認証状態に設定します');
         this.setUnauthenticatedState();
-        localStorage.removeItem(this.SESSION_TOKEN_KEY);
       }
     } catch (err) {
       console.error('セッション確認エラー:', err);
       this.setUnauthenticatedState();
-      localStorage.removeItem(this.SESSION_TOKEN_KEY);
     }
   }
 

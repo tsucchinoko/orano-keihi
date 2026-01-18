@@ -1,8 +1,10 @@
 use crate::features::auth::models::{AuthState, User};
+use crate::features::auth::secure_storage::{SecureStorage, StoredAuthInfo};
 use crate::features::auth::service::AuthService;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, State};
 use tokio::sync::oneshot;
 
 /// 認証開始のレスポンス（ループバック方式）
@@ -86,12 +88,14 @@ pub async fn start_oauth_flow(
 ///
 /// # 引数
 /// * `auth_service` - 認証サービス
+/// * `app_handle` - Tauriアプリハンドル
 ///
 /// # 戻り値
 /// 認証結果（ユーザー情報とセッショントークン）
 #[tauri::command]
 pub async fn wait_for_auth_completion(
     auth_service: State<'_, AuthService>,
+    app_handle: AppHandle,
 ) -> Result<WaitForAuthResponse, String> {
     log::info!("認証完了待機コマンドを実行（APIサーバー経由）");
 
@@ -134,6 +138,19 @@ pub async fn wait_for_auth_completion(
             log::error!("セッショントークン生成エラー: {e}");
             format!("セッショントークンの生成に失敗しました: {e}")
         })?;
+
+    // セキュアストレージに認証情報を保存
+    let secure_storage = SecureStorage::new(app_handle);
+    let auth_info = StoredAuthInfo {
+        session_token: session_token.clone(),
+        user_id: user.id.clone(),
+        last_login: Utc::now().to_rfc3339(),
+    };
+
+    secure_storage.save_auth_info(&auth_info).map_err(|e| {
+        log::error!("認証情報の保存エラー: {e}");
+        format!("認証情報の保存に失敗しました: {e}")
+    })?;
 
     let response = WaitForAuthResponse {
         user,
@@ -179,6 +196,7 @@ pub async fn validate_session(
 /// # 引数
 /// * `session_token` - セッショントークン
 /// * `auth_service` - 認証サービス
+/// * `app_handle` - Tauriアプリハンドル
 ///
 /// # 戻り値
 /// ログアウト結果
@@ -186,6 +204,7 @@ pub async fn validate_session(
 pub async fn logout(
     session_token: String,
     auth_service: State<'_, AuthService>,
+    app_handle: AppHandle,
 ) -> Result<(), String> {
     log::info!("ログアウトコマンドを実行");
 
@@ -196,14 +215,22 @@ pub async fn logout(
             // 注意: 実際のセッションIDを取得するためにはSessionManagerを直接使用する必要がある
             // ここでは簡略化のため、セッショントークンからセッションIDを抽出する処理を省略
             log::info!("ログアウト処理が完了しました");
-            Ok(())
         }
         Err(e) => {
             log::warn!("ログアウト時のセッション検証エラー: {e}");
             // セッションが無効でもログアウト成功として扱う
-            Ok(())
         }
     }
+
+    // セキュアストレージから認証情報を削除
+    let secure_storage = SecureStorage::new(app_handle);
+    secure_storage.clear_auth_info().map_err(|e| {
+        log::error!("認証情報の削除エラー: {e}");
+        format!("認証情報の削除に失敗しました: {e}")
+    })?;
+
+    log::info!("セキュアストレージから認証情報を削除しました");
+    Ok(())
 }
 
 /// 現在の認証状態を取得する
@@ -211,6 +238,7 @@ pub async fn logout(
 /// # 引数
 /// * `session_token` - セッショントークン（オプション）
 /// * `auth_service` - 認証サービス
+/// * `app_handle` - Tauriアプリハンドル
 ///
 /// # 戻り値
 /// 認証状態
@@ -218,10 +246,20 @@ pub async fn logout(
 pub async fn get_auth_state(
     session_token: Option<String>,
     auth_service: State<'_, AuthService>,
+    app_handle: AppHandle,
 ) -> Result<AuthState, String> {
     log::debug!("認証状態取得コマンドを実行");
 
-    match session_token {
+    // セッショントークンが指定されていない場合、セキュアストレージから取得を試みる
+    let token = match session_token {
+        Some(t) => Some(t),
+        None => {
+            let secure_storage = SecureStorage::new(app_handle);
+            secure_storage.get_session_token().ok().flatten()
+        }
+    };
+
+    match token {
         Some(token) => match auth_service.validate_session(token).await {
             Ok(user) => {
                 log::debug!("認証済み状態: user_id={}", user.id);
@@ -241,6 +279,32 @@ pub async fn get_auth_state(
             Ok(AuthState::default())
         }
     }
+}
+
+/// セキュアストレージから認証情報を取得する
+///
+/// # 引数
+/// * `app_handle` - Tauriアプリハンドル
+///
+/// # 戻り値
+/// 保存された認証情報（存在しない場合はNone）
+#[tauri::command]
+pub async fn get_stored_auth_info(app_handle: AppHandle) -> Result<Option<StoredAuthInfo>, String> {
+    log::debug!("保存された認証情報取得コマンドを実行");
+
+    let secure_storage = SecureStorage::new(app_handle);
+    let auth_info = secure_storage.get_auth_info().map_err(|e| {
+        log::error!("認証情報の取得エラー: {e}");
+        format!("認証情報の取得に失敗しました: {e}")
+    })?;
+
+    if auth_info.is_some() {
+        log::debug!("保存された認証情報を取得しました");
+    } else {
+        log::debug!("保存された認証情報が見つかりません");
+    }
+
+    Ok(auth_info)
 }
 
 /// 期限切れセッションをクリーンアップする（管理用コマンド）

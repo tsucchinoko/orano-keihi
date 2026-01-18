@@ -81,6 +81,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .setup(|app| {
             // 詳細なデバッグログを追加
             eprintln!("=== アプリケーション初期化開始 ===");
@@ -334,6 +335,7 @@ pub fn run() {
             auth_commands::validate_session,
             auth_commands::logout,
             auth_commands::get_auth_state,
+            auth_commands::get_stored_auth_info,
             auth_commands::cleanup_expired_sessions,
             // 経費コマンド（API Server経由）
             expense_commands::create_expense,
