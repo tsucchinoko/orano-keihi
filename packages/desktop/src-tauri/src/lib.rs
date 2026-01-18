@@ -4,7 +4,6 @@ pub mod shared;
 
 // 新しい機能モジュールからコマンドをインポート
 use features::auth::middleware::AuthMiddleware;
-use features::auth::service::AuthService;
 use features::security::models::SecurityConfig;
 use features::security::service::SecurityManager;
 use features::{
@@ -17,9 +16,7 @@ use features::{
 };
 use log::info;
 use rusqlite::Connection;
-use shared::config::environment::{
-    initialize_logging_system, load_environment_variables, GoogleOAuthConfig,
-};
+use shared::config::environment::{initialize_logging_system, load_environment_variables};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
@@ -244,41 +241,28 @@ pub fn run() {
                 }
             };
 
-            // Google OAuth設定を読み込み
-            eprintln!("Google OAuth設定を読み込み中...");
-            let google_config = match GoogleOAuthConfig::from_env() {
-                Some(config) => {
-                    eprintln!("Google OAuth設定を読み込みました");
-                    // 設定を検証
-                    if let Err(e) = config.validate() {
-                        eprintln!("Google OAuth設定の検証に失敗: {e}");
-                        eprintln!("デフォルト設定を使用します");
-                        GoogleOAuthConfig {
-                            client_id: "dummy_client_id".to_string(),
-                            client_secret: "dummy_client_secret".to_string(),
-                            redirect_uri: "http://localhost:8080/auth/callback".to_string(),
-                            session_encryption_key: "default_32_byte_encryption_key_123"
-                                .to_string(),
-                        }
-                    } else {
-                        config
-                    }
-                }
-                None => {
-                    eprintln!("Google OAuth設定が見つかりません - デフォルト設定を使用します");
-                    GoogleOAuthConfig {
-                        client_id: "dummy_client_id".to_string(),
-                        client_secret: "dummy_client_secret".to_string(),
-                        redirect_uri: "http://localhost:8080/auth/callback".to_string(),
-                        session_encryption_key: "default_32_byte_encryption_key_123".to_string(),
-                    }
-                }
-            };
+            // APIサーバーURLとセッション暗号化キーを取得
+            eprintln!("APIサーバー設定を読み込み中...");
+            let api_server_url = std::env::var("API_SERVER_URL").unwrap_or_else(|_| {
+                eprintln!("API_SERVER_URL が設定されていません。デフォルト値を使用します");
+                "http://localhost:8787".to_string()
+            });
 
-            // 認証サービスを初期化
+            let session_encryption_key =
+                std::env::var("SESSION_ENCRYPTION_KEY").unwrap_or_else(|_| {
+                    eprintln!(
+                        "SESSION_ENCRYPTION_KEY が設定されていません。デフォルト値を使用します"
+                    );
+                    "default_32_byte_encryption_key_123".to_string()
+                });
+
+            // 認証サービスを初期化（APIサーバー経由）
             eprintln!("認証サービスを初期化中...");
-            let auth_service = match AuthService::new(google_config, Arc::new(Mutex::new(db_conn)))
-            {
+            let auth_service = match features::auth::AuthService::new(
+                api_server_url.clone(),
+                Arc::new(Mutex::new(db_conn)),
+                session_encryption_key,
+            ) {
                 Ok(service) => {
                     eprintln!("認証サービスの初期化完了");
                     service

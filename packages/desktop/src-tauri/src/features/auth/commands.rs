@@ -34,11 +34,17 @@ pub struct ValidateSessionResponse {
 
 // グローバルなコールバック受信用のストレージ
 // 実際のプロダクションでは、より適切な状態管理を使用すべき
-static CALLBACK_RECEIVER: Mutex<
-    Option<oneshot::Receiver<crate::features::auth::loopback::OAuthCallback>>,
-> = Mutex::new(None);
+#[derive(Default)]
+struct CallbackStorage {
+    receiver: Option<oneshot::Receiver<crate::features::auth::loopback::OAuthCallback>>,
+    state: Option<String>,
+    code_verifier: Option<String>,
+    redirect_uri: Option<String>,
+}
 
-/// OAuth認証フローを開始する（ループバック方式）
+static CALLBACK_STORAGE: Mutex<Option<CallbackStorage>> = Mutex::new(None);
+
+/// OAuth認証フローを開始する（APIサーバー経由・ループバック方式）
 ///
 /// # 引数
 /// * `auth_service` - 認証サービス
@@ -49,17 +55,22 @@ static CALLBACK_RECEIVER: Mutex<
 pub async fn start_oauth_flow(
     auth_service: State<'_, AuthService>,
 ) -> Result<StartAuthResponse, String> {
-    log::info!("OAuth認証フロー開始コマンドを実行");
+    log::info!("OAuth認証フロー開始コマンドを実行（APIサーバー経由）");
 
     let oauth_info = auth_service.start_oauth_flow().await.map_err(|e| {
         log::error!("OAuth認証フロー開始エラー: {e}");
         format!("認証フローの開始に失敗しました: {e}")
     })?;
 
-    // コールバック受信用のReceiverをグローバルストレージに保存
+    // コールバック受信用の情報をグローバルストレージに保存
     if let Some(receiver) = oauth_info.callback_receiver {
-        let mut global_receiver = CALLBACK_RECEIVER.lock().unwrap();
-        *global_receiver = Some(receiver);
+        let mut global_storage = CALLBACK_STORAGE.lock().unwrap();
+        *global_storage = Some(CallbackStorage {
+            receiver: Some(receiver),
+            state: Some(oauth_info.state),
+            code_verifier: Some(oauth_info.code_verifier),
+            redirect_uri: None, // 後で設定
+        });
     }
 
     let response = StartAuthResponse {
@@ -71,7 +82,7 @@ pub async fn start_oauth_flow(
     Ok(response)
 }
 
-/// 認証完了を待機する（ループバック方式）
+/// 認証完了を待機する（APIサーバー経由・ループバック方式）
 ///
 /// # 引数
 /// * `auth_service` - 認証サービス
@@ -82,21 +93,34 @@ pub async fn start_oauth_flow(
 pub async fn wait_for_auth_completion(
     auth_service: State<'_, AuthService>,
 ) -> Result<WaitForAuthResponse, String> {
-    log::info!("認証完了待機コマンドを実行");
+    log::info!("認証完了待機コマンドを実行（APIサーバー経由）");
 
-    // グローバルストレージからコールバック受信用のReceiverを取得
-    let receiver = {
-        let mut global_receiver = CALLBACK_RECEIVER.lock().unwrap();
-        global_receiver.take()
+    // グローバルストレージからコールバック受信用の情報を取得
+    let (receiver, state, code_verifier, redirect_uri) = {
+        let mut global_storage = CALLBACK_STORAGE.lock().unwrap();
+        let storage = global_storage.take().ok_or_else(|| {
+            log::error!("コールバック受信用の情報が見つかりません");
+            "認証フローが開始されていません。先にstart_oauth_flowを呼び出してください。".to_string()
+        })?;
+
+        (
+            storage
+                .receiver
+                .ok_or_else(|| "Receiverが見つかりません".to_string())?,
+            storage
+                .state
+                .ok_or_else(|| "stateが見つかりません".to_string())?,
+            storage
+                .code_verifier
+                .ok_or_else(|| "code_verifierが見つかりません".to_string())?,
+            storage
+                .redirect_uri
+                .unwrap_or_else(|| "http://127.0.0.1/callback".to_string()),
+        )
     };
 
-    let receiver = receiver.ok_or_else(|| {
-        log::error!("コールバック受信用のReceiverが見つかりません");
-        "認証フローが開始されていません。先にstart_oauth_flowを呼び出してください。".to_string()
-    })?;
-
     let (user, session) = auth_service
-        .handle_loopback_callback(receiver)
+        .handle_loopback_callback(receiver, state, code_verifier, redirect_uri)
         .await
         .map_err(|e| {
             log::error!("認証コールバック処理エラー: {e}");

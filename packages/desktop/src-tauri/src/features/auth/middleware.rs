@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// すべてのAPIリクエストに認証トークンを含めて、不正アクセスを検出・処理する
 #[derive(Clone)]
 pub struct AuthMiddleware {
-    /// 認証サービス
+    /// 認証サービス（APIサーバー経由）
     auth_service: Arc<AuthService>,
     /// セキュリティサービス
     security_service: Arc<SecurityService>,
@@ -17,7 +17,7 @@ impl AuthMiddleware {
     /// 新しいAuthMiddlewareを作成する
     ///
     /// # 引数
-    /// * `auth_service` - 認証サービス
+    /// * `auth_service` - 認証サービス（APIサーバー経由）
     /// * `security_service` - セキュリティサービス
     ///
     /// # 戻り値
@@ -315,19 +315,11 @@ pub mod auth_helpers {
 mod tests {
     use super::*;
     use crate::features::security::models::SecurityConfig;
-    use crate::shared::config::environment::GoogleOAuthConfig;
     use crate::shared::database::connection::create_in_memory_connection;
     use std::sync::{Arc, Mutex};
 
     async fn setup_test_middleware() -> AuthMiddleware {
         let conn = create_in_memory_connection().unwrap();
-
-        let oauth_config = GoogleOAuthConfig {
-            client_id: "test_client_id".to_string(),
-            client_secret: "test_client_secret".to_string(),
-            redirect_uri: "http://localhost:3000/auth/callback".to_string(),
-            session_encryption_key: "test_encryption_key_32_bytes_long".to_string(),
-        };
 
         let security_config = SecurityConfig {
             encryption_key: "test_encryption_key_32_bytes_long".to_string(),
@@ -335,8 +327,14 @@ mod tests {
             enable_audit_logging: true,
         };
 
-        let auth_service =
-            Arc::new(AuthService::new(oauth_config, Arc::new(Mutex::new(conn))).unwrap());
+        let auth_service = Arc::new(
+            AuthService::new(
+                "http://localhost:8787".to_string(),
+                Arc::new(Mutex::new(conn)),
+                "test_encryption_key_32_bytes_long".to_string(),
+            )
+            .unwrap(),
+        );
         let security_service = Arc::new(SecurityService::new(security_config).unwrap());
 
         AuthMiddleware::new(auth_service, security_service)

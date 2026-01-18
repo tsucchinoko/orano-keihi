@@ -26,6 +26,10 @@ export interface Env {
   R2_BUCKET_NAME?: string;
   R2_REGION?: string;
 
+  // Google OAuth設定（機密情報）
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+
   // 認証設定（機密情報）
   JWT_SECRET?: string;
   SESSION_ENCRYPTION_KEY?: string;

@@ -36,6 +36,7 @@ import { createReceiptsRouter } from "./routes/receipts.js";
 import { createUsersRouter } from "./routes/users.js";
 import { createExpensesRouter } from "./routes/expenses.js";
 import { createSubscriptionsRouter } from "./routes/subscriptions.js";
+import authRouter from "./routes/auth.js";
 import { UserRepository } from "./repositories/user-repository.js";
 import { ExpenseRepository } from "./repositories/expense-repository.js";
 import { SubscriptionRepository } from "./repositories/subscription-repository.js";
@@ -148,6 +149,9 @@ export function createApp(
 
   // アップデーター関連エンドポイント
   app.route("/api/updater", updaterApp);
+
+  // 認証関連エンドポイント（認証不要）
+  app.route("/api/v1/auth", authRouter);
 
   // ユーザー関連エンドポイント（認証が必要）
   const usersRouter = createUsersRouter(userRepository);
