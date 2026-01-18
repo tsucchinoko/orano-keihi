@@ -102,6 +102,10 @@ pub enum AuthError {
     #[error("セキュリティエラー: {0}")]
     SecurityError(String),
 
+    /// ストレージエラー
+    #[error("ストレージエラー: {0}")]
+    StorageError(String),
+
     /// 権限が不足しています
     #[error("権限が不足しています")]
     InsufficientPermissions,

@@ -315,11 +315,10 @@ pub mod auth_helpers {
 mod tests {
     use super::*;
     use crate::features::security::models::SecurityConfig;
-    use crate::shared::database::connection::create_in_memory_connection;
     use std::sync::{Arc, Mutex};
 
     async fn setup_test_middleware() -> AuthMiddleware {
-        let conn = create_in_memory_connection().unwrap();
+        use crate::shared::database::connection::create_in_memory_connection;
 
         let security_config = SecurityConfig {
             encryption_key: "test_encryption_key_32_bytes_long".to_string(),
@@ -327,11 +326,12 @@ mod tests {
             enable_audit_logging: true,
         };
 
+        let conn = create_in_memory_connection().unwrap();
+
         let auth_service = Arc::new(
             AuthService::new(
                 "http://localhost:8787".to_string(),
                 Arc::new(Mutex::new(conn)),
-                "test_encryption_key_32_bytes_long".to_string(),
             )
             .unwrap(),
         );

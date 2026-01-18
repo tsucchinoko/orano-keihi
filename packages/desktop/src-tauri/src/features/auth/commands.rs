@@ -21,8 +21,12 @@ pub struct StartAuthResponse {
 pub struct WaitForAuthResponse {
     /// ユーザー情報
     pub user: User,
-    /// セッショントークン
-    pub session_token: String,
+    /// JWTアクセストークン
+    pub access_token: String,
+    /// トークンタイプ
+    pub token_type: String,
+    /// トークンの有効期限（秒）
+    pub expires_in: u64,
 }
 
 /// セッション検証のレスポンス
@@ -91,7 +95,7 @@ pub async fn start_oauth_flow(
 /// * `app_handle` - Tauriアプリハンドル
 ///
 /// # 戻り値
-/// 認証結果（ユーザー情報とセッショントークン）
+/// 認証結果（ユーザー情報とJWTトークン）
 #[tauri::command]
 pub async fn wait_for_auth_completion(
     auth_service: State<'_, AuthService>,
@@ -123,7 +127,7 @@ pub async fn wait_for_auth_completion(
         )
     };
 
-    let (user, session) = auth_service
+    let auth_result = auth_service
         .handle_loopback_callback(receiver, state, code_verifier, redirect_uri)
         .await
         .map_err(|e| {
@@ -131,19 +135,11 @@ pub async fn wait_for_auth_completion(
             format!("認証処理に失敗しました: {e}")
         })?;
 
-    // セッショントークンを生成
-    let session_token = auth_service
-        .create_session_token(&session.id)
-        .map_err(|e| {
-            log::error!("セッショントークン生成エラー: {e}");
-            format!("セッショントークンの生成に失敗しました: {e}")
-        })?;
-
     // セキュアストレージに認証情報を保存
     let secure_storage = SecureStorage::new(app_handle);
     let auth_info = StoredAuthInfo {
-        session_token: session_token.clone(),
-        user_id: user.id.clone(),
+        session_token: auth_result.access_token.clone(),
+        user_id: auth_result.user.id.clone(),
         last_login: Utc::now().to_rfc3339(),
     };
 
@@ -153,8 +149,10 @@ pub async fn wait_for_auth_completion(
     })?;
 
     let response = WaitForAuthResponse {
-        user,
-        session_token,
+        user: auth_result.user,
+        access_token: auth_result.access_token,
+        token_type: auth_result.token_type,
+        expires_in: auth_result.expires_in,
     };
 
     log::info!("認証完了待機コマンドが完了しました");
@@ -194,42 +192,21 @@ pub async fn validate_session(
 /// ログアウト処理を行う
 ///
 /// # 引数
-/// * `session_token` - セッショントークン
 /// * `auth_service` - 認証サービス
-/// * `app_handle` - Tauriアプリハンドル
 ///
 /// # 戻り値
 /// ログアウト結果
 #[tauri::command]
-pub async fn logout(
-    session_token: String,
-    auth_service: State<'_, AuthService>,
-    app_handle: AppHandle,
-) -> Result<(), String> {
+pub async fn logout(auth_service: State<'_, AuthService>) -> Result<(), String> {
     log::info!("ログアウトコマンドを実行");
 
-    // まずセッションを検証してセッションIDを取得
-    match auth_service.validate_session(session_token).await {
-        Ok(_) => {
-            // セッションが有効な場合、ログアウト処理を実行
-            // 注意: 実際のセッションIDを取得するためにはSessionManagerを直接使用する必要がある
-            // ここでは簡略化のため、セッショントークンからセッションIDを抽出する処理を省略
-            log::info!("ログアウト処理が完了しました");
-        }
-        Err(e) => {
-            log::warn!("ログアウト時のセッション検証エラー: {e}");
-            // セッションが無効でもログアウト成功として扱う
-        }
-    }
-
     // セキュアストレージから認証情報を削除
-    let secure_storage = SecureStorage::new(app_handle);
-    secure_storage.clear_auth_info().map_err(|e| {
-        log::error!("認証情報の削除エラー: {e}");
-        format!("認証情報の削除に失敗しました: {e}")
+    auth_service.logout().await.map_err(|e| {
+        log::error!("ログアウト処理エラー: {e}");
+        format!("ログアウト処理に失敗しました: {e}")
     })?;
 
-    log::info!("セキュアストレージから認証情報を削除しました");
+    log::info!("ログアウト処理が完了しました");
     Ok(())
 }
 
@@ -308,23 +285,19 @@ pub async fn get_stored_auth_info(app_handle: AppHandle) -> Result<Option<Stored
 }
 
 /// 期限切れセッションをクリーンアップする（管理用コマンド）
+/// 注意: APIサーバー経由の認証では、セッション管理はAPIサーバー側で行われるため、
+/// このコマンドは使用されません。
 ///
 /// # 引数
 /// * `auth_service` - 認証サービス
 ///
 /// # 戻り値
-/// 削除されたセッション数
+/// 常に0を返す（互換性のため）
 #[tauri::command]
 pub async fn cleanup_expired_sessions(
-    auth_service: State<'_, AuthService>,
+    _auth_service: State<'_, AuthService>,
 ) -> Result<usize, String> {
-    log::info!("期限切れセッションクリーンアップコマンドを実行");
-
-    let deleted_count = auth_service.cleanup_expired_sessions().await.map_err(|e| {
-        log::error!("セッションクリーンアップエラー: {e}");
-        format!("セッションクリーンアップに失敗しました: {e}")
-    })?;
-
-    log::info!("期限切れセッションクリーンアップが完了しました: 削除数={deleted_count}");
-    Ok(deleted_count)
+    log::info!("期限切れセッションクリーンアップコマンドを実行（スキップ）");
+    log::info!("APIサーバー経由の認証では、セッション管理はAPIサーバー側で行われます");
+    Ok(0)
 }

@@ -7,6 +7,104 @@ pub enum Environment {
     Production,
 }
 
+/// 環境変数取得エラー
+#[derive(Debug, Clone)]
+pub struct EnvVarError {
+    /// 変数名
+    pub var_name: String,
+    /// エラーメッセージ
+    pub message: String,
+}
+
+impl std::fmt::Display for EnvVarError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "環境変数 {} が見つかりません: {}",
+            self.var_name, self.message
+        )
+    }
+}
+
+impl std::error::Error for EnvVarError {}
+
+/// 環境変数を取得する（優先順位: 起動時 > コンパイル時 > エラー）
+///
+/// # 引数
+/// * `var_name` - 環境変数名
+///
+/// # 戻り値
+/// 環境変数の値、または見つからない場合はエラー
+///
+/// # 取得順序
+/// 1. 起動時の環境変数（`std::env::var`）
+/// 2. コンパイル時の環境変数（`option_env!`マクロ）
+/// 3. どちらも見つからない場合はエラー
+///
+/// # マクロの使用
+/// この関数はマクロとして実装されており、コンパイル時に展開されます。
+#[macro_export]
+macro_rules! get_env_var {
+    ($var_name:expr) => {{
+        // 1. 起動時の環境変数を確認
+        if let Ok(value) = std::env::var($var_name) {
+            log::debug!("環境変数 {} を起動時の環境変数から取得しました", $var_name);
+            Ok(value)
+        }
+        // 2. コンパイル時の環境変数を確認
+        else if let Some(value) = option_env!($var_name) {
+            log::debug!("環境変数 {} をコンパイル時の環境変数から取得しました", $var_name);
+            Ok(value.to_string())
+        }
+        // 3. どちらも見つからない場合はエラー
+        else {
+            Err($crate::shared::config::environment::EnvVarError {
+                var_name: $var_name.to_string(),
+                message: format!(
+                    "起動時の環境変数 {} もコンパイル時の環境変数も見つかりませんでした",
+                    $var_name
+                ),
+            })
+        }
+    }};
+}
+
+/// 環境変数を取得する（オプション版）
+///
+/// # 引数
+/// * `var_name` - 環境変数名
+///
+/// # 戻り値
+/// 環境変数の値、または見つからない場合はNone
+#[macro_export]
+macro_rules! get_env_var_optional {
+    ($var_name:expr) => {{
+        $crate::get_env_var!($var_name).ok()
+    }};
+}
+
+/// 環境変数を取得する（デフォルト値付き）
+///
+/// # 引数
+/// * `var_name` - 環境変数名
+/// * `default_value` - デフォルト値
+///
+/// # 戻り値
+/// 環境変数の値、または見つからない場合はデフォルト値
+#[macro_export]
+macro_rules! get_env_var_or_default {
+    ($var_name:expr, $default_value:expr) => {{
+        $crate::get_env_var!($var_name).unwrap_or_else(|_| {
+            log::debug!(
+                "環境変数 {} が見つからないため、デフォルト値を使用します: {}",
+                $var_name,
+                $default_value
+            );
+            $default_value.to_string()
+        })
+    }};
+}
+
 /// 環境設定を管理する構造体
 #[derive(Debug, Clone)]
 pub struct EnvironmentConfig {
@@ -91,24 +189,6 @@ pub fn get_environment() -> Environment {
     env
 }
 
-/// 環境に応じたデータベースファイル名を取得する
-///
-/// # 引数
-/// * `env` - 実行環境
-///
-/// # 戻り値
-/// データベースファイル名
-///
-/// # ファイル名の規則
-/// - 開発環境: "dev_expenses.db"
-/// - プロダクション環境: "expenses.db"
-pub fn get_database_filename(env: Environment) -> &'static str {
-    match env {
-        Environment::Development => "dev_expenses.db",
-        Environment::Production => "expenses.db",
-    }
-}
-
 /// 環境変数の読み込みを確認する
 ///
 /// # 処理内容
@@ -183,21 +263,6 @@ pub fn initialize_logging_system() {
     );
 }
 
-/// R2（Cloudflare R2）の設定を管理する構造体
-#[derive(Debug, Clone)]
-pub struct R2Config {
-    /// R2のアクセスキーID
-    pub access_key_id: String,
-    /// R2のシークレットアクセスキー
-    pub secret_access_key: String,
-    /// R2のバケット名
-    pub bucket_name: String,
-    /// R2のエンドポイントURL
-    pub endpoint_url: String,
-    /// R2のリージョン
-    pub region: String,
-}
-
 /// API設定を管理する構造体
 #[derive(Debug, Clone)]
 pub struct ApiConfig {
@@ -214,37 +279,35 @@ impl ApiConfig {
     ///
     /// # 戻り値
     /// API設定
+    ///
+    /// # エラー
+    /// 必須の環境変数が見つからない場合はパニック
     pub fn from_env() -> Self {
         log::debug!("ApiConfig::from_env() - 環境変数の読み込みを開始");
 
-        // 実行時環境変数を使用
-        let base_url = std::env::var("API_SERVER_URL")
-            .ok()
-            .map(|val| {
-                log::debug!("実行時API_SERVER_URL が見つかりました: {val}");
-                val
-            })
-            .unwrap_or_else(|| {
-                let default_url = "http://localhost:8787";
-                log::debug!(
-                    "API_SERVER_URL が設定されていないため、デフォルト値を使用: {default_url}"
-                );
-                default_url.to_string()
+        // API_SERVER_URLを取得（必須）
+        let base_url = crate::get_env_var!("API_SERVER_URL")
+            .unwrap_or_else(|e| {
+                log::error!("API_SERVER_URLの取得に失敗しました: {e}");
+                panic!("API_SERVER_URLが設定されていません。.envファイルまたは環境変数を確認してください。");
             });
 
-        let timeout_seconds = std::env::var("API_TIMEOUT_SECONDS")
-            .ok()
-            .and_then(|val| val.parse().ok())
-            .unwrap_or_else(|| {
-                log::debug!("API_TIMEOUT_SECONDS が設定されていないため、デフォルト値30秒を使用");
+        log::info!("API_SERVER_URL: {base_url}");
+
+        // オプション設定（デフォルト値あり）
+        let timeout_seconds = crate::get_env_var_or_default!("API_TIMEOUT_SECONDS", "30")
+            .parse()
+            .unwrap_or_else(|_| {
+                log::warn!(
+                    "API_TIMEOUT_SECONDSのパースに失敗しました。デフォルト値30秒を使用します"
+                );
                 30
             });
 
-        let max_retries = std::env::var("API_MAX_RETRIES")
-            .ok()
-            .and_then(|val| val.parse().ok())
-            .unwrap_or_else(|| {
-                log::debug!("API_MAX_RETRIES が設定されていないため、デフォルト値3回を使用");
+        let max_retries = crate::get_env_var_or_default!("API_MAX_RETRIES", "3")
+            .parse()
+            .unwrap_or_else(|_| {
+                log::warn!("API_MAX_RETRIESのパースに失敗しました。デフォルト値3回を使用します");
                 3
             });
 
@@ -312,21 +375,6 @@ impl ApiConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_get_database_filename() {
-        // 開発環境のデータベースファイル名をテスト
-        assert_eq!(
-            get_database_filename(Environment::Development),
-            "dev_expenses.db"
-        );
-
-        // プロダクション環境のデータベースファイル名をテスト
-        assert_eq!(
-            get_database_filename(Environment::Production),
-            "expenses.db"
-        );
-    }
 
     #[test]
     fn test_environment_equality() {

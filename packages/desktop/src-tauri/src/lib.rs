@@ -187,14 +187,6 @@ pub fn run() {
             initialize_logging_system();
             eprintln!("ログシステムの初期化完了");
 
-            // マイグレーションシステムを初期化
-            eprintln!("マイグレーションシステムを初期化中...");
-            if let Err(e) = features::migrations::initialize_migration_system() {
-                eprintln!("マイグレーションシステムの初期化に失敗しました: {e}");
-                return Err(format!("マイグレーションシステムの初期化に失敗しました: {e}").into());
-            }
-            eprintln!("マイグレーションシステムの初期化完了");
-
             info!("アプリケーション初期化を開始します...");
 
             // セキュリティマネージャーを初期化（.envファイル読み込み後）
@@ -229,40 +221,35 @@ pub fn run() {
 
             info!("システム診断情報を取得中...");
 
-            // データベースを初期化（マイグレーション含む）
-            eprintln!("データベースを初期化中...");
-            let db_conn = match shared::database::connection::initialize_database(app.handle()) {
+            // データベース接続を初期化
+            eprintln!("データベース接続を初期化中...");
+            let db_connection = match crate::shared::database::connection::initialize_database(app.handle()) {
                 Ok(conn) => {
-                    eprintln!("データベース初期化完了");
-                    conn
+                    eprintln!("データベース接続の初期化完了");
+                    Arc::new(Mutex::new(conn))
                 }
                 Err(e) => {
-                    eprintln!("データベース初期化失敗: {e}");
-                    return Err(format!("データベース初期化失敗: {e}").into());
+                    eprintln!("データベース接続初期化失敗: {e}");
+                    return Err(format!("データベース接続初期化失敗: {e}").into());
                 }
             };
 
-            // APIサーバーURLとセッション暗号化キーを取得
+            // APIサーバーURLを取得
             eprintln!("APIサーバー設定を読み込み中...");
-            let api_server_url = std::env::var("API_SERVER_URL").unwrap_or_else(|_| {
-                eprintln!("API_SERVER_URL が設定されていません。デフォルト値を使用します");
-                "http://localhost:8787".to_string()
-            });
-
-            let session_encryption_key =
-                std::env::var("SESSION_ENCRYPTION_KEY").unwrap_or_else(|_| {
-                    eprintln!(
-                        "SESSION_ENCRYPTION_KEY が設定されていません。デフォルト値を使用します"
-                    );
-                    "default_32_byte_encryption_key_123".to_string()
+            let api_server_url = crate::get_env_var!("API_SERVER_URL")
+                .unwrap_or_else(|e| {
+                    eprintln!("エラー: {e}");
+                    panic!("API_SERVER_URLが設定されていません。.envファイルまたは環境変数を確認してください。");
                 });
+
+            eprintln!("API_SERVER_URL: {api_server_url}");
 
             // 認証サービスを初期化（APIサーバー経由）
             eprintln!("認証サービスを初期化中...");
             let auth_service = match features::auth::AuthService::new(
                 api_server_url.clone(),
-                Arc::new(Mutex::new(db_conn)),
-                session_encryption_key,
+                Arc::clone(&db_connection),
+                app.handle().clone(),
             ) {
                 Ok(service) => {
                     eprintln!("認証サービスの初期化完了");
@@ -271,20 +258,6 @@ pub fn run() {
                 Err(e) => {
                     eprintln!("認証サービス初期化失敗: {e}");
                     return Err(format!("認証サービス初期化失敗: {e}").into());
-                }
-            };
-
-            // アプリケーション用のデータベース接続を作成
-            eprintln!("アプリケーション用データベース接続を作成中...");
-            let app_db_conn = match shared::database::connection::initialize_database(app.handle())
-            {
-                Ok(conn) => {
-                    eprintln!("アプリケーション用データベース接続作成完了");
-                    conn
-                }
-                Err(e) => {
-                    eprintln!("アプリケーション用データベース接続作成失敗: {e}");
-                    return Err(format!("アプリケーション用データベース接続作成失敗: {e}").into());
                 }
             };
 
@@ -301,11 +274,6 @@ pub fn run() {
                 AuthMiddleware::new(Arc::new(auth_service.clone()), security_service.clone());
             app.manage(auth_middleware);
 
-            app.manage(AppState {
-                db: Mutex::new(app_db_conn),
-                security_manager: security_manager.clone(),
-                r2_connection_cache: Arc::new(Mutex::new(R2ConnectionCache::new())),
-            });
 
             eprintln!("=== アプリケーション初期化完了 ===");
             info!("アプリケーション初期化が完了しました");

@@ -16,9 +16,8 @@ pub mod api_client;
 // 便利な再エクスポート
 pub use api_client::{ApiClient, ApiClientConfig, ErrorDetail, ErrorResponse};
 pub use config::{
-    get_database_filename, get_environment, initialize_application, initialize_logging_system,
-    load_environment_variables, log_initialization_complete, Environment, EnvironmentConfig,
-    InitializationResult,
+    get_environment, initialize_application, initialize_logging_system, load_environment_variables,
+    Environment, EnvironmentConfig, InitializationResult,
 };
 pub use database::{create_tables, get_database_path, initialize_database};
 pub use errors::{AppError, AppResult, ErrorSeverity};
