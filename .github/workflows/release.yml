@@ -49,7 +49,7 @@ jobs:
           TIMESTAMP=$(TZ=Asia/Tokyo date '+%Y%m%d-%H%M%S')
 
           # リリースタグの生成
-          RELEASE_TAG="v${VERSION}-${TIMESTAMP}"
+          RELEASE_TAG="v${VERSION}"
 
           # コミットハッシュ（短縮版）
           COMMIT_SHORT=$(git rev-parse --short HEAD)
