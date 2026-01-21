@@ -222,7 +222,8 @@ pub async fn delete_expense_receipt(
     // APIクライアントを作成
     let api_client = ApiClient::new().map_err(|e| format!("APIクライアント作成エラー: {e}"))?;
 
-    // 領収書URLを空にする更新リクエストを送信
+    // 領収書URLを空文字列にする更新リクエストを送信
+    // APIサーバー側で空文字列をNULLに変換する
     let dto = UpdateExpenseDto {
         date: None,
         amount: None,

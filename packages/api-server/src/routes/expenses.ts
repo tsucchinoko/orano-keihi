@@ -63,7 +63,11 @@ export function createExpensesRouter(expenseRepository: ExpenseRepository): Hono
         );
       }
 
-      if (body.description !== undefined && typeof body.description !== "string") {
+      if (
+        body.description !== undefined &&
+        body.description !== null &&
+        typeof body.description !== "string"
+      ) {
         throw createValidationError(
           "説明は文字列である必要があります",
           "description",
@@ -279,7 +283,11 @@ export function createExpensesRouter(expenseRepository: ExpenseRepository): Hono
         );
       }
 
-      if (body.description !== undefined && typeof body.description !== "string") {
+      if (
+        body.description !== undefined &&
+        body.description !== null &&
+        typeof body.description !== "string"
+      ) {
         throw createValidationError(
           "説明は文字列である必要があります",
           "description",

@@ -194,7 +194,8 @@ export class ExpenseRepository {
       }
       if (dto.receipt_url !== undefined) {
         updates.push("receipt_url = ?");
-        params.push(dto.receipt_url);
+        // 空文字列の場合はNULLに変換（CHECK制約対応）
+        params.push(dto.receipt_url === "" ? null : dto.receipt_url);
       }
 
       // 更新するフィールドがない場合はエラー
