@@ -38,7 +38,7 @@ impl std::error::Error for EnvVarError {}
 ///
 /// # 取得順序
 /// 1. 起動時の環境変数（`std::env::var`）
-/// 2. コンパイル時の環境変数（`option_env!`マクロ）
+/// 2. コンパイル時の環境変数（`env!`マクロ - build.rsで埋め込まれた値）
 /// 3. どちらも見つからない場合はエラー
 ///
 /// # マクロの使用
@@ -51,10 +51,23 @@ macro_rules! get_env_var {
             log::debug!("環境変数 {} を起動時の環境変数から取得しました", $var_name);
             Ok(value)
         }
-        // 2. コンパイル時の環境変数を確認
+        // 2. コンパイル時の環境変数を確認（build.rsで埋め込まれた値）
         else if let Some(value) = option_env!($var_name) {
-            log::debug!("環境変数 {} をコンパイル時の環境変数から取得しました", $var_name);
-            Ok(value.to_string())
+            if !value.is_empty() {
+                log::debug!(
+                    "環境変数 {} をコンパイル時の環境変数から取得しました",
+                    $var_name
+                );
+                Ok(value.to_string())
+            } else {
+                Err($crate::shared::config::environment::EnvVarError {
+                    var_name: $var_name.to_string(),
+                    message: format!(
+                        "環境変数 {} はコンパイル時に埋め込まれていますが、値が空です",
+                        $var_name
+                    ),
+                })
+            }
         }
         // 3. どちらも見つからない場合はエラー
         else {
@@ -193,11 +206,12 @@ pub fn get_environment() -> Environment {
 ///
 /// # 処理内容
 /// 1. 開発環境（pnpm tauri dev）の場合のみ.envファイルを読み込み
-/// 2. 本番ビルドでは環境変数は実行時に設定されることを前提とする
+/// 2. 本番ビルドでは環境変数はコンパイル時に埋め込まれることを前提とする
 ///
 /// # 注意
 /// - 本番環境では.envファイルは読み込まれません（秘匿情報がバイナリに埋め込まれるのを防ぐため）
-/// - 本番実行時は環境変数を設定してからアプリケーションを起動してください
+/// - 本番実行時は環境変数を設定してからアプリケーションを起動するか、コンパイル時に埋め込んでください
+/// - コンパイル時の環境変数埋め込みはbuild.rsで行われます
 pub fn load_environment_variables() {
     // 開発環境かどうかを判定（デバッグビルド）
     let is_development = cfg!(debug_assertions);
@@ -217,12 +231,14 @@ pub fn load_environment_variables() {
         }
     } else {
         // 本番環境では.envファイルを読み込まない
-        eprintln!("本番環境: 環境変数は実行時に設定されます");
+        eprintln!("本番環境: 環境変数はコンパイル時に埋め込まれているか、実行時に設定されます");
     }
 
     // 読み込み後の環境変数を確認
     if let Ok(env_var) = std::env::var("ENVIRONMENT") {
         eprintln!("ENVIRONMENT環境変数: {env_var}");
+    } else if let Some(env_var) = option_env!("ENVIRONMENT") {
+        eprintln!("ENVIRONMENT環境変数（コンパイル時）: {env_var}");
     } else {
         eprintln!("ENVIRONMENT環境変数が設定されていません（デフォルト値を使用）");
     }

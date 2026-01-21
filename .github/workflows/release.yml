@@ -158,20 +158,14 @@ jobs:
           # Tauri署名関連
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # アプリケーション環境設定
+          # アプリケーション環境設定（コンパイル時に埋め込まれる）
           ENVIRONMENT: production
-          DEBUG: false
           LOG_LEVEL: info
-          # APIサーバー設定（本番環境）
+          # APIサーバー設定（コンパイル時に埋め込まれる - 必須）
           API_SERVER_URL: https://orano-keihi.tsucchinoko.workers.dev
+          # APIサーバー設定（コンパイル時に埋め込まれる - オプション）
           API_TIMEOUT_SECONDS: 30
           API_MAX_RETRIES: 3
-          # Google OAuth 2.0設定
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REDIRECT_URI: http://127.0.0.1/callback
-          # セッション暗号化キー
-          SESSION_ENCRYPTION_KEY: ${{ secrets.SESSION_ENCRYPTION_KEY }}
 
       - name: Tauri署名ファイルの生成
         run: |
@@ -369,20 +363,14 @@ jobs:
           # Tauri署名関連
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # アプリケーション環境設定
+          # アプリケーション環境設定（コンパイル時に埋め込まれる）
           ENVIRONMENT: production
-          DEBUG: false
           LOG_LEVEL: info
-          # APIサーバー設定（本番環境）
+          # APIサーバー設定（コンパイル時に埋め込まれる - 必須）
           API_SERVER_URL: https://orano-keihi.tsucchinoko.workers.dev
+          # APIサーバー設定（コンパイル時に埋め込まれる - オプション）
           API_TIMEOUT_SECONDS: 30
           API_MAX_RETRIES: 3
-          # Google OAuth 2.0設定
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REDIRECT_URI: http://127.0.0.1/callback
-          # セッション暗号化キー
-          SESSION_ENCRYPTION_KEY: ${{ secrets.SESSION_ENCRYPTION_KEY }}
           # Windows署名設定
           WINDOWS_TIMESTAMP_URL: http://timestamp.digicert.com
 
