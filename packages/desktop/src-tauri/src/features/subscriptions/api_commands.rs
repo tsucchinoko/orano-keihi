@@ -265,6 +265,82 @@ pub async fn get_monthly_subscription_total(
     Ok(response.monthly_total)
 }
 
+/// サブスクリプションの領収書をアップロードする（API Server経由）
+///
+/// # 引数
+/// * `subscription_id` - サブスクリプションID
+/// * `file_path` - ファイルパス
+/// * `session_token` - セッショントークン
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// アップロードされた領収書のURL、または失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn upload_subscription_receipt_via_api(
+    subscription_id: i64,
+    file_path: String,
+    session_token: Option<String>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<String, String> {
+    info!(
+        "サブスクリプションの領収書アップロード処理開始: subscription_id={subscription_id}, file_path={file_path}"
+    );
+
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/subscriptions/upload-receipt")
+        .await
+        .map_err(|e| format!("認証エラー: {e}"))?;
+
+    // セッショントークンが必要
+    let token = session_token.ok_or_else(|| "セッショントークンが必要です".to_string())?;
+
+    // ファイルの存在確認
+    if !std::path::Path::new(&file_path).exists() {
+        return Err("指定されたファイルが存在しません".to_string());
+    }
+
+    // ファイルを読み込み
+    let file_data = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| format!("ファイル読み込みエラー: {e}"))?;
+
+    // ファイル名を取得
+    let filename = std::path::Path::new(&file_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "ファイル名を取得できません".to_string())?;
+
+    // APIクライアントを作成
+    use crate::features::receipts::api_client::{ApiClient as ReceiptApiClient, ApiClientConfig};
+    let config = ApiClientConfig::from_env();
+    let receipt_api_client =
+        ReceiptApiClient::new(config).map_err(|e| format!("APIクライアント作成エラー: {e}"))?;
+
+    // ファイルをアップロード（サブスクリプションIDを使用）
+    match receipt_api_client
+        .upload_file_with_type(
+            subscription_id,
+            &file_data,
+            filename,
+            &user.id,
+            &token,
+            "subscription",
+        )
+        .await
+    {
+        Ok(response) => {
+            let file_url = response.file_url.unwrap_or_else(|| "".to_string());
+            info!("サブスクリプションの領収書アップロード成功: file_url={file_url}");
+            Ok(file_url)
+        }
+        Err(e) => {
+            log::error!("サブスクリプションの領収書アップロードエラー: {e}");
+            Err(format!("ファイルアップロードエラー: {e}"))
+        }
+    }
+}
+
 /// サブスクリプションの領収書を削除する（API Server経由）
 ///
 /// # 引数
@@ -275,7 +351,7 @@ pub async fn get_monthly_subscription_total(
 /// # 戻り値
 /// 削除成功時はtrue、失敗時はエラーメッセージ
 #[tauri::command]
-pub async fn delete_subscription_receipt(
+pub async fn delete_subscription_receipt_via_api(
     subscription_id: i64,
     session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
@@ -299,6 +375,7 @@ pub async fn delete_subscription_receipt(
         billing_cycle: None,
         start_date: None,
         category: None,
+        receipt_path: Some("".to_string()),
     };
 
     let endpoint = format!("/api/v1/subscriptions/{subscription_id}");

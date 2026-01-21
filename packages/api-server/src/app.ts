@@ -329,6 +329,7 @@ export function createApp(
       const expenseId = parseInt(body.expenseId as string, 10);
       const description = body.description as string;
       const category = body.category as string;
+      const type = (body.type as string) || "expense"; // デフォルトは経費
 
       if (!file) {
         throw createValidationError(
@@ -348,12 +349,23 @@ export function createApp(
         );
       }
 
+      // typeの検証
+      if (type !== "expense" && type !== "subscription") {
+        throw createValidationError(
+          "typeは'expense'または'subscription'である必要があります",
+          "type",
+          type,
+          "expense or subscription",
+        );
+      }
+
       // メタデータを構築
       const metadata = {
         expenseId,
         userId: user.id,
         description,
         category,
+        type: type as "expense" | "subscription",
       };
 
       // ファイルアップロード実行

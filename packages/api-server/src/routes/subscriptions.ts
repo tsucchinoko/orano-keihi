@@ -299,7 +299,7 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
       });
 
       // バリデーション
-      if (body.name !== undefined && typeof body.name !== "string") {
+      if (body.name !== undefined && body.name !== null && typeof body.name !== "string") {
         throw createValidationError(
           "サービス名は文字列である必要があります",
           "name",
@@ -308,7 +308,7 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
         );
       }
 
-      if (body.amount !== undefined && typeof body.amount !== "number") {
+      if (body.amount !== undefined && body.amount !== null && typeof body.amount !== "number") {
         throw createValidationError(
           "金額は数値である必要があります",
           "amount",
@@ -317,7 +317,11 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
         );
       }
 
-      if (body.billing_cycle !== undefined && typeof body.billing_cycle !== "string") {
+      if (
+        body.billing_cycle !== undefined &&
+        body.billing_cycle !== null &&
+        typeof body.billing_cycle !== "string"
+      ) {
         throw createValidationError(
           "請求サイクルは文字列である必要があります",
           "billing_cycle",
@@ -329,6 +333,7 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
       // billing_cycleの値チェック（指定されている場合）
       if (
         body.billing_cycle !== undefined &&
+        body.billing_cycle !== null &&
         body.billing_cycle !== "monthly" &&
         body.billing_cycle !== "annual"
       ) {
@@ -340,7 +345,11 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
         );
       }
 
-      if (body.start_date !== undefined && typeof body.start_date !== "string") {
+      if (
+        body.start_date !== undefined &&
+        body.start_date !== null &&
+        typeof body.start_date !== "string"
+      ) {
         throw createValidationError(
           "開始日は文字列である必要があります",
           "start_date",
@@ -349,11 +358,28 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
         );
       }
 
-      if (body.category !== undefined && typeof body.category !== "string") {
+      if (
+        body.category !== undefined &&
+        body.category !== null &&
+        typeof body.category !== "string"
+      ) {
         throw createValidationError(
           "カテゴリは文字列である必要があります",
           "category",
           body.category,
+          "string required",
+        );
+      }
+
+      if (
+        body.receipt_path !== undefined &&
+        body.receipt_path !== null &&
+        typeof body.receipt_path !== "string"
+      ) {
+        throw createValidationError(
+          "領収書パスは文字列である必要があります",
+          "receipt_path",
+          body.receipt_path,
           "string required",
         );
       }

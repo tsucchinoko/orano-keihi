@@ -62,4 +62,5 @@ export interface UpdateSubscriptionDto {
   billing_cycle?: "monthly" | "annual"; // 請求サイクル
   start_date?: string; // YYYY-MM-DD形式
   category?: string; // カテゴリ
+  receipt_path?: string; // 領収書パス
 }

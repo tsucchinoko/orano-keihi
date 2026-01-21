@@ -327,7 +327,7 @@ export async function deleteSubscriptionReceipt(
 ): Promise<TauriResult<boolean>> {
   const sessionToken = getAuthToken();
   return handleTauriCommand(
-    invoke<boolean>('delete_subscription_receipt', {
+    invoke<boolean>('delete_subscription_receipt_via_api', {
       subscriptionId: subscriptionId,
       sessionToken: sessionToken,
     })

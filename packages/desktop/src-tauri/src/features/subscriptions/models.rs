@@ -33,4 +33,5 @@ pub struct UpdateSubscriptionDto {
     pub billing_cycle: Option<String>,
     pub start_date: Option<String>,
     pub category: Option<String>,
+    pub receipt_path: Option<String>,
 }

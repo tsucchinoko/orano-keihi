@@ -11,7 +11,7 @@ pub mod models;
 
 // 公開インターフェース
 pub use api_commands::{
-    create_subscription, delete_subscription, delete_subscription_receipt,
+    create_subscription, delete_subscription, delete_subscription_receipt_via_api,
     get_monthly_subscription_total, get_subscriptions, toggle_subscription_status,
     update_subscription,
 };

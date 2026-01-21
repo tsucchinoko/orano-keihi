@@ -3,7 +3,6 @@ import type { Subscription } from "$lib/types";
 import { expenseStore } from "$lib/stores/expenses.svelte";
 import { toastStore } from "$lib/stores/toast.svelte";
 import {
-	saveSubscriptionReceipt,
 	deleteSubscriptionReceipt,
 	getReceiptFromR2,
 	uploadSubscriptionReceiptToR2,
@@ -290,13 +289,16 @@ async function handleSubmit(event: Event) {
 			if (uploadResult.error) {
 				toastStore.error(`領収書のアップロードに失敗しました: ${uploadResult.error}`);
 			} else if (uploadResult.data) {
-				// アップロード成功時は、データベースにHTTPS URLを保存
-				const saveResult = await saveSubscriptionReceipt(
+				// アップロード成功時、サブスクリプションのreceipt_pathを更新
+				const updateResult = await expenseStore.modifySubscription(
 					savedSubscriptionId,
-					uploadResult.data,
+					{
+						receipt_path: uploadResult.data,
+					},
 				);
-				if (saveResult.error) {
-					toastStore.error(`領収書パスの保存に失敗しました: ${saveResult.error}`);
+				
+				if (!updateResult) {
+					toastStore.error(`領収書パスの保存に失敗しました`);
 				} else {
 					// 領収書アップロード成功時、subscriptionオブジェクトを更新
 					if (subscription) {

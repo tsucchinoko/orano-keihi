@@ -188,25 +188,29 @@ export class SubscriptionRepository {
       const updates: string[] = [];
       const params: (string | number)[] = [];
 
-      if (dto.name !== undefined) {
+      if (dto.name !== undefined && dto.name !== null) {
         updates.push("name = ?");
         params.push(dto.name);
       }
-      if (dto.amount !== undefined) {
+      if (dto.amount !== undefined && dto.amount !== null) {
         updates.push("amount = ?");
         params.push(dto.amount);
       }
-      if (dto.billing_cycle !== undefined) {
+      if (dto.billing_cycle !== undefined && dto.billing_cycle !== null) {
         updates.push("billing_cycle = ?");
         params.push(dto.billing_cycle);
       }
-      if (dto.start_date !== undefined) {
+      if (dto.start_date !== undefined && dto.start_date !== null) {
         updates.push("start_date = ?");
         params.push(dto.start_date);
       }
-      if (dto.category !== undefined) {
+      if (dto.category !== undefined && dto.category !== null) {
         updates.push("category = ?");
         params.push(dto.category);
+      }
+      if (dto.receipt_path !== undefined && dto.receipt_path !== null) {
+        updates.push("receipt_path = ?");
+        params.push(dto.receipt_path);
       }
 
       // 更新するフィールドがない場合はエラー

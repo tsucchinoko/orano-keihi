@@ -318,7 +318,8 @@ pub fn run() {
             subscription_commands::toggle_subscription_status,
             subscription_commands::delete_subscription,
             subscription_commands::get_monthly_subscription_total,
-            subscription_commands::delete_subscription_receipt,
+            subscription_commands::upload_subscription_receipt_via_api,
+            subscription_commands::delete_subscription_receipt_via_api,
             // 領収書コマンド（APIサーバー経由）
             receipt_api_commands::upload_receipt_via_api,
             receipt_api_commands::upload_multiple_receipts_via_api,

@@ -92,6 +92,7 @@ export interface UploadMetadata {
   userId: string; // nanoIdに変更
   description?: string;
   category?: string;
+  type?: "expense" | "subscription"; // アップロードタイプ（経費または定期支払い）
 }
 
 export interface UploadRequest {

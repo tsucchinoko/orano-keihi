@@ -58,6 +58,7 @@ export interface UpdateSubscriptionDto {
   billing_cycle?: 'monthly' | 'annual';
   start_date?: string;
   category?: string;
+  receipt_path?: string;
 }
 
 // APIサーバーからのレスポンス型
