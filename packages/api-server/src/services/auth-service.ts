@@ -3,11 +3,11 @@
  * トークン検証、ユーザー認証、権限チェック機能を提供
  */
 
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import type { AuthConfig, User, Session, AuthResult, ValidationResult } from "../types/config.js";
+import { jwtVerify } from "jose";
+import type { AuthConfig, User, AuthResult, ValidationResult } from "../types/config.js";
 import { logger } from "../utils/logger.js";
 import { withAuthRetry, withDatabaseRetry } from "../utils/retry.js";
-import { AppError, createAuthError } from "../utils/error-handler.js";
+import { AppError } from "../utils/error-handler.js";
 import type { UserRepository } from "../repositories/user-repository.js";
 
 /**
@@ -28,126 +28,53 @@ export class AuthError extends Error {
  * 認証サービスクラス
  */
 export class AuthService {
-  private readonly encryptionKey: Buffer;
-  private readonly algorithm = "aes-256-gcm";
-  private readonly sessionExpirationMs: number;
   private readonly userRepository: UserRepository;
+  private readonly jwtSecret: Uint8Array;
 
   constructor(config: AuthConfig, userRepository: UserRepository) {
     this.userRepository = userRepository;
-    // 暗号化キーを32バイトに調整
-    const keyBytes = Buffer.from(config.sessionEncryptionKey, "utf8");
-    this.encryptionKey = Buffer.alloc(32);
-    keyBytes.copy(this.encryptionKey, 0, 0, Math.min(keyBytes.length, 32));
-
-    // セッション有効期限をミリ秒に変換
-    this.sessionExpirationMs = config.sessionExpirationDays * 24 * 60 * 60 * 1000;
-
-    logger.info("認証サービスを初期化しました", {
-      sessionExpirationDays: config.sessionExpirationDays,
-    });
+    // JWT検証用のシークレットキーを設定
+    this.jwtSecret = new TextEncoder().encode(config.jwtSecret);
+    logger.info("認証サービスを初期化しました");
   }
 
   /**
    * セッショントークンを検証する
-   * @param token 暗号化されたセッショントークン
+   * JWTトークンをデコードしてユーザーIDを取得し、ユーザー情報を返す
+   * @param token JWTトークン
    * @returns 検証結果
    */
   async validateToken(token: string): Promise<ValidationResult> {
     return withAuthRetry(async () => {
       try {
-        // 開発環境では簡易的なトークン検証を行う
-        if (process.env.NODE_ENV === "development") {
-          return this.validateDevelopmentToken(token);
-        }
-
-        // 本番環境でのトークン検証
-        try {
-          // トークンを復号化してセッションIDを取得
-          const sessionId = this.decryptToken(token);
-
-          // TODO: 実際の実装では、データベースからセッション情報を取得する
-          // 現在はモックデータを使用
-          const session = await this.getSessionFromDatabase(sessionId);
-
-          if (!session) {
-            logger.warn("セッションが見つかりません", { sessionId });
-            return {
-              isValid: false,
-              error: "セッションが見つかりません",
-            };
-          }
-
-          // セッションの有効期限をチェック
-          const expiresAt = new Date(session.expiresAt);
-          if (expiresAt < new Date()) {
-            logger.warn("セッションが期限切れです", { sessionId, expiresAt });
-            return {
-              isValid: false,
-              error: "セッションが期限切れです",
-            };
-          }
-
-          // ユーザー情報を取得
-          const user = await this.getUserById(session.userId);
-          if (!user) {
-            logger.error("ユーザーが見つかりません", {
-              userId: session.userId,
-            });
-            return {
-              isValid: false,
-              error: "ユーザーが見つかりません",
-            };
-          }
-
-          logger.debug("トークン検証が成功しました", {
-            userId: user.id,
-            sessionId,
-          });
-
-          return {
-            isValid: true,
-            user,
-          };
-        } catch (decryptError) {
-          // 復号化に失敗した場合は開発環境モードにフォールバック
-          logger.warn("トークン復号化に失敗、開発環境モードにフォールバック", {
-            error: decryptError instanceof Error ? decryptError.message : String(decryptError),
-          });
-          return this.validateDevelopmentToken(token);
-        }
-      } catch (error) {
-        logger.error("トークン検証でエラーが発生しました", {
-          error: error instanceof Error ? error.message : String(error),
+        logger.debug("JWTトークン検証を実行", {
+          tokenLength: token.length,
         });
 
-        if (error instanceof AppError) {
-          throw error;
+        // JWTトークンを検証してデコード
+        const { payload } = await jwtVerify(token, this.jwtSecret);
+
+        logger.debug("JWTトークンのデコードに成功", {
+          sub: payload.sub,
+          email: payload.email,
+        });
+
+        // subフィールドからユーザーIDを取得（Google IDの場合）
+        const googleId = payload.sub;
+        if (!googleId || typeof googleId !== "string") {
+          logger.warn("JWTトークンにsubフィールドがありません");
+          return {
+            isValid: false,
+            error: "トークンが無効です（subフィールドなし）",
+          };
         }
 
-        throw createAuthError("トークン検証に失敗しました");
-      }
-    }, "トークン検証");
-  }
-
-  /**
-   * 開発環境用の簡易トークン検証
-   * @param token トークン
-   * @returns 検証結果
-   */
-  private async validateDevelopmentToken(token: string): Promise<ValidationResult> {
-    try {
-      logger.debug("開発環境用トークン検証を実行", {
-        tokenLength: token.length,
-      });
-
-      // 開発環境では任意のトークンを受け入れる
-      if (token && token.length > 0) {
-        // まずトークンをユーザーIDとして試行
-        let user = await this.getUserById(token);
+        // Google IDからユーザーを検索
+        const user = await this.getUserByGoogleId(googleId);
         if (user) {
-          logger.debug("開発環境用トークン検証が成功しました（トークン=ユーザーID）", {
+          logger.debug("トークン検証が成功しました", {
             userId: user.id,
+            googleId: user.googleId,
             email: user.email,
           });
           return {
@@ -156,56 +83,36 @@ export class AuthService {
           };
         }
 
-        // トークンがユーザーIDとして無効な場合、データベースから最初のユーザーを取得
-        try {
-          const allUsers = await this.userRepository.getAllUsers();
-          if (allUsers && allUsers.length > 0) {
-            const firstDbUser = allUsers[0];
-            const firstUser = {
-              id: firstDbUser.id,
-              googleId: firstDbUser.google_id,
-              email: firstDbUser.email,
-              name: firstDbUser.name,
-              pictureUrl: firstDbUser.picture_url || undefined,
-              createdAt: firstDbUser.created_at,
-              updatedAt: firstDbUser.updated_at,
-            };
+        logger.warn("トークン検証が失敗しました（ユーザーが見つかりません）", {
+          googleId,
+        });
+        return {
+          isValid: false,
+          error: "ユーザーが見つかりません",
+        };
+      } catch (error) {
+        logger.error("トークン検証でエラーが発生しました", {
+          error: error instanceof Error ? error.message : String(error),
+        });
 
-            logger.debug("開発環境用トークン検証が成功しました（DBから最初のユーザー）", {
-              userId: firstUser.id,
-              email: firstUser.email,
-            });
-
-            return {
-              isValid: true,
-              user: firstUser,
-            };
-          }
-        } catch (dbError) {
-          logger.error("データベースからのユーザー取得に失敗しました", {
-            error: dbError instanceof Error ? dbError.message : String(dbError),
-          });
-          // エラーの場合は失敗を返す
+        // JWT検証エラーの場合
+        if (error instanceof Error && error.name === "JWTExpired") {
+          return {
+            isValid: false,
+            error: "トークンの有効期限が切れています",
+          };
         }
+
+        if (error instanceof AppError) {
+          throw error;
+        }
+
+        return {
+          isValid: false,
+          error: "トークン検証に失敗しました",
+        };
       }
-
-      logger.warn("開発環境用トークン検証が失敗しました", {
-        token: token.substring(0, 10) + "...",
-      });
-      return {
-        isValid: false,
-        error: "開発環境用トークンが無効です",
-      };
-    } catch (error) {
-      logger.error("開発環境用トークン検証でエラーが発生しました", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      return {
-        isValid: false,
-        error: "開発環境用トークン検証でエラーが発生しました",
-      };
-    }
+    }, "トークン検証");
   }
 
   /**
@@ -284,90 +191,6 @@ export class AuthService {
   }
 
   /**
-   * セッションIDを暗号化してトークンを生成する
-   * @param sessionId セッションID
-   * @returns 暗号化されたトークン
-   */
-  encryptSessionId(sessionId: string): string {
-    try {
-      const iv = randomBytes(12); // GCMモードでは12バイトのIVを使用
-      const cipher = createCipheriv(this.algorithm, this.encryptionKey, iv);
-
-      let encrypted = cipher.update(sessionId, "utf8", "base64");
-      encrypted += cipher.final("base64");
-
-      const authTag = cipher.getAuthTag();
-
-      // IV、認証タグ、暗号文を結合してBase64エンコード
-      const combined = Buffer.concat([iv, authTag, Buffer.from(encrypted, "base64")]);
-      return combined.toString("base64");
-    } catch (error) {
-      logger.error("セッションID暗号化でエラーが発生しました", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new AuthError("セッションID暗号化に失敗しました", "ENCRYPTION_ERROR", 500);
-    }
-  }
-
-  /**
-   * トークンを復号化してセッションIDを取得する
-   * @param token 暗号化されたトークン
-   * @returns セッションID
-   */
-  private decryptToken(token: string): string {
-    try {
-      const combined = Buffer.from(token, "base64");
-
-      if (combined.length < 28) {
-        // IV(12) + AuthTag(16) = 28バイト最小
-        throw new AuthError("トークンが短すぎます", "INVALID_TOKEN");
-      }
-
-      // IV、認証タグ、暗号文を分離
-      const iv = combined.subarray(0, 12);
-      const authTag = combined.subarray(12, 28);
-      const encrypted = combined.subarray(28);
-
-      const decipher = createDecipheriv(this.algorithm, this.encryptionKey, iv);
-      decipher.setAuthTag(authTag);
-
-      let decrypted = decipher.update(encrypted, undefined, "utf8");
-      decrypted += decipher.final("utf8");
-
-      return decrypted;
-    } catch (error) {
-      logger.warn("トークン復号化に失敗しました", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new AuthError("無効なトークンです", "INVALID_TOKEN");
-    }
-  }
-
-  /**
-   * データベースからセッション情報を取得する（モック実装）
-   * @param sessionId セッションID
-   * @returns セッション情報
-   */
-  private async getSessionFromDatabase(sessionId: string): Promise<Session | null> {
-    return withDatabaseRetry(async () => {
-      // TODO: 実際の実装では、データベースからセッション情報を取得する
-      // 現在はモックデータを返す
-
-      // テスト用のモックセッション
-      if (sessionId === "test-session-id") {
-        return {
-          id: sessionId,
-          userId: "1",
-          expiresAt: new Date(Date.now() + this.sessionExpirationMs).toISOString(),
-          createdAt: new Date().toISOString(),
-        };
-      }
-
-      return null;
-    }, `セッション取得: ${sessionId}`);
-  }
-
-  /**
    * ユーザーIDからユーザー情報を取得する
    * @param userId ユーザーID
    * @returns ユーザー情報
@@ -397,6 +220,38 @@ export class AuthService {
         throw error;
       }
     }, `ユーザー取得: ${userId}`);
+  }
+
+  /**
+   * Google IDからユーザー情報を取得する
+   * @param googleId Google ID
+   * @returns ユーザー情報
+   */
+  private async getUserByGoogleId(googleId: string): Promise<User | null> {
+    return withDatabaseRetry(async () => {
+      try {
+        const dbUser = await this.userRepository.getUserByGoogleId(googleId);
+        if (dbUser) {
+          // D1のUser型をconfig.jsのUser型に変換
+          return {
+            id: dbUser.id,
+            googleId: dbUser.google_id,
+            email: dbUser.email,
+            name: dbUser.name,
+            pictureUrl: dbUser.picture_url || undefined,
+            createdAt: dbUser.created_at,
+            updatedAt: dbUser.updated_at,
+          };
+        }
+        return null;
+      } catch (error) {
+        logger.error("データベースからのユーザー取得に失敗しました（Google ID）", {
+          googleId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }, `ユーザー取得（Google ID）: ${googleId}`);
   }
 }
 

@@ -195,7 +195,6 @@ let isLoginPage = $derived(currentPath.startsWith("/login"));
 												class="user-avatar"
 											/>
 										{/if}
-										<span class="user-name">{user.name}</span>
 									</div>
 								{/if}
 								<button 

@@ -118,13 +118,6 @@ function clearError() {
 				{/if}
 			</button>
 		</div>
-
-		<!-- 説明文 -->
-		<div class="login-description">
-			<p>
-				Googleアカウントでログインすることで、あなたの経費とサブスクリプションデータを安全に管理できます。
-			</p>
-		</div>
 	</div>
 </div>
 
