@@ -8,13 +8,18 @@ import { logger } from "../utils/logger.js";
 import { handleError, createValidationError, createNotFoundError } from "../utils/error-handler.js";
 import type { ExpenseRepository } from "../repositories/expense-repository.js";
 import type { CreateExpenseDto, UpdateExpenseDto } from "../types/d1-dtos.js";
+import type { R2ClientInterface } from "../services/r2-client.js";
 
 /**
  * 経費ルーターを作成
  * @param expenseRepository 経費リポジトリ
+ * @param r2Client R2クライアント（オプション）
  * @returns 経費ルーター
  */
-export function createExpensesRouter(expenseRepository: ExpenseRepository): Hono {
+export function createExpensesRouter(
+  expenseRepository: ExpenseRepository,
+  r2Client?: R2ClientInterface,
+): Hono {
   const expensesApp = new Hono();
 
   // POST /api/v1/expenses - 経費を作成
@@ -379,12 +384,103 @@ export function createExpensesRouter(expenseRepository: ExpenseRepository): Hono
         expenseId,
       });
 
+      // 経費を削除する前に領収書URLを取得
+      const receiptUrl = await expenseRepository.getReceiptUrl(expenseId, user.id);
+
       // 経費を削除（アクセス制御：自分の経費のみ）
       await expenseRepository.delete(expenseId, user.id);
+
+      // 領収書がある場合はR2から削除
+      if (receiptUrl && r2Client) {
+        try {
+          logger.debug("領収書URL解析開始", {
+            userId: user.id,
+            expenseId,
+            receiptUrl,
+          });
+
+          // URLからR2キーを抽出
+          // 想定される形式:
+          // 1. https://orano-keihi-dev.account.r2.cloudflarestorage.com/users/xxx/receipts/yyy/file.jpg
+          // 2. https://account.r2.cloudflarestorage.com/bucket/users/xxx/receipts/yyy/file.jpg
+          let key: string | null = null;
+
+          try {
+            const url = new URL(receiptUrl);
+            // パス部分を取得（先頭の/を除く）
+            const pathname = url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname;
+
+            // バケット名が含まれている場合は除外
+            // 例: bucket/users/xxx/... -> users/xxx/...
+            const pathParts = pathname.split("/");
+
+            // "users/"で始まるパスを探す
+            const usersIndex = pathParts.findIndex((part) => part === "users");
+            if (usersIndex !== -1) {
+              key = pathParts.slice(usersIndex).join("/");
+            } else {
+              // バケット名の次からがキーの可能性
+              key = pathname;
+            }
+          } catch (urlError) {
+            logger.warn("URL解析に失敗しました。文字列分割で試行します", {
+              userId: user.id,
+              expenseId,
+              receiptUrl,
+              error: urlError instanceof Error ? urlError.message : String(urlError),
+            });
+
+            // フォールバック: 文字列分割
+            const urlParts = receiptUrl.split("/");
+            const usersIndex = urlParts.findIndex((part) => part === "users");
+            if (usersIndex !== -1) {
+              key = urlParts.slice(usersIndex).join("/");
+            }
+          }
+
+          if (key) {
+            logger.debug("R2から領収書を削除します", {
+              userId: user.id,
+              expenseId,
+              receiptUrl,
+              key,
+            });
+
+            await r2Client.deleteObject(key);
+
+            logger.info("R2から領収書を削除しました", {
+              userId: user.id,
+              expenseId,
+              key,
+            });
+          } else {
+            logger.warn("領収書URLからR2キーを抽出できませんでした", {
+              userId: user.id,
+              expenseId,
+              receiptUrl,
+            });
+          }
+        } catch (r2Error) {
+          // R2削除エラーはログに記録するが、経費削除は成功とする
+          logger.error("R2から領収書の削除に失敗しましたが、経費は削除されました", {
+            userId: user.id,
+            expenseId,
+            receiptUrl,
+            error: r2Error instanceof Error ? r2Error.message : String(r2Error),
+          });
+        }
+      } else if (receiptUrl && !r2Client) {
+        logger.warn("R2クライアントが利用できないため、領収書を削除できませんでした", {
+          userId: user.id,
+          expenseId,
+          receiptUrl,
+        });
+      }
 
       logger.info("経費を削除しました", {
         userId: user.id,
         expenseId,
+        hadReceipt: !!receiptUrl,
       });
 
       return c.json({

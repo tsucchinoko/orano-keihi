@@ -159,7 +159,7 @@ export function createApp(
   app.route("/api/v1/users", usersRouter);
 
   // 経費関連エンドポイント（認証が必要）
-  const expensesRouter = createExpensesRouter(expenseRepository);
+  const expensesRouter = createExpensesRouter(expenseRepository, r2Client);
   app.use("/api/v1/expenses", authMiddleware);
   app.use("/api/v1/expenses/*", authMiddleware);
   app.route("/api/v1/expenses", expensesRouter);
