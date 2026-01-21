@@ -85,10 +85,13 @@ export class FileUploadService implements FileUploadServiceInterface {
         return errorResponse;
       }
 
-      // ファイルキーを生成（users/ユーザーID/receipts/経費ID/タイムスタンプ_ファイル名）
+      // ファイルキーを生成
+      // 経費: users/ユーザーID/receipts/経費ID/タイムスタンプ_ファイル名
+      // 定期支払い: users/ユーザーID/subscriptions/定期支払いID/タイムスタンプ_ファイル名
       const timestamp = Date.now();
       const sanitizedFileName = this.sanitizeFileName(file.name);
-      const fileKey = `users/${metadata.userId}/receipts/${metadata.expenseId}/${timestamp}_${sanitizedFileName}`;
+      const directory = metadata.type === "subscription" ? "subscriptions" : "receipts";
+      const fileKey = `users/${metadata.userId}/${directory}/${metadata.expenseId}/${timestamp}_${sanitizedFileName}`;
 
       // ファイルデータを読み込み
       const fileData = Buffer.from(await file.arrayBuffer());

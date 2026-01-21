@@ -25,6 +25,7 @@ export interface UpdateExpenseDto {
   amount?: number;
   category?: string;
   description?: string;
+  receipt_url?: string;
 }
 
 // サブスクリプションデータモデル
@@ -57,6 +58,7 @@ export interface UpdateSubscriptionDto {
   billing_cycle?: 'monthly' | 'annual';
   start_date?: string;
   category?: string;
+  receipt_path?: string;
 }
 
 // APIサーバーからのレスポンス型
@@ -361,7 +363,9 @@ export interface StartAuthResponse {
 // 認証完了待機レスポンス型（ループバック方式）
 export interface WaitForAuthResponse {
   user: User;
-  session_token: string;
+  access_token: string;
+  token_type: string;
+  expires_in: number;
 }
 
 // セッション検証レスポンス型

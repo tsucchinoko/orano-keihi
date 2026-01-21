@@ -6,21 +6,21 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
 
 ## タスク
 
-- [ ] 1. D1データベースのセットアップ
+- [x] 1. D1データベースのセットアップ
   - wrangler.tomlにD1バインディング設定を追加
   - D1データベースを作成（開発環境と本番環境）
   - データベーススキーマを定義するSQLファイルを作成
   - マイグレーションスクリプトを実行してテーブルを作成
   - _要件: 1.1, 1.2, 1.3_
 
-- [ ] 2. TypeScript型定義とDTOの作成
+- [x] 2. TypeScript型定義とDTOの作成
   - User, Expense, Subscription型を定義
   - CreateExpenseDto, UpdateExpenseDto, CreateSubscriptionDto, UpdateSubscriptionDto型を定義
   - エラーコードとエラーレスポンス型を定義
   - _要件: 2.1, 3.1, 4.1_
 
-- [ ] 3. UserRepositoryの実装
-  - [ ] 3.1 UserRepositoryクラスを作成
+- [x] 3. UserRepositoryの実装
+  - [x] 3.1 UserRepositoryクラスを作成
     - D1Databaseをコンストラクタで受け取る
     - findOrCreateUserメソッドを実装
     - getUserByIdメソッドを実装
@@ -35,8 +35,8 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - エラーケースのテスト（存在しないユーザーなど）
     - _要件: 10.1_
 
-- [ ] 4. ExpenseRepositoryの実装
-  - [ ] 4.1 ExpenseRepositoryクラスを作成
+- [x] 4. ExpenseRepositoryの実装
+  - [x] 4.1 ExpenseRepositoryクラスを作成
     - D1Databaseをコンストラクタで受け取る
     - createメソッドを実装
     - findByIdメソッドを実装
@@ -58,8 +58,8 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - **検証: 要件 3.4**
     - _要件: 10.2_
 
-- [ ] 5. SubscriptionRepositoryの実装
-  - [ ] 5.1 SubscriptionRepositoryクラスを作成
+- [x] 5. SubscriptionRepositoryの実装
+  - [x] 5.1 SubscriptionRepositoryクラスを作成
     - D1Databaseをコンストラクタで受け取る
     - createメソッドを実装
     - findByIdメソッドを実装
@@ -89,22 +89,22 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - **検証: 要件 4.7**
     - _要件: 10.2_
 
-- [ ] 6. チェックポイント - リポジトリ層のテスト
+- [x] 6. チェックポイント - リポジトリ層のテスト
   - すべてのリポジトリのユニットテストが通ることを確認
   - 質問があればユーザーに確認
 
-- [ ] 7. ユーザー関連APIエンドポイントの実装
-  - [ ] 7.1 GET /api/v1/users/meエンドポイントを実装
+- [x] 7. ユーザー関連APIエンドポイントの実装
+  - [x] 7.1 GET /api/v1/users/meエンドポイントを実装
     - 認証ミドルウェアを適用
     - 現在のユーザー情報を返す
     - _要件: 5.1_
 
-  - [ ] 7.2 PUT /api/v1/users/meエンドポイントを実装
+  - [x] 7.2 PUT /api/v1/users/meエンドポイントを実装
     - 認証ミドルウェアを適用
     - ユーザー情報を更新
     - _要件: 5.1_
 
-  - [ ] 7.3 DELETE /api/v1/users/meエンドポイントを実装
+  - [x] 7.3 DELETE /api/v1/users/meエンドポイントを実装
     - 認証ミドルウェアを適用
     - ユーザーを削除
     - _要件: 5.1_
@@ -115,31 +115,31 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - エラーハンドリングのテスト
     - _要件: 10.3_
 
-- [ ] 8. 経費関連APIエンドポイントの実装
-  - [ ] 8.1 POST /api/v1/expensesエンドポイントを実装
+- [x] 8. 経費関連APIエンドポイントの実装
+  - [x] 8.1 POST /api/v1/expensesエンドポイントを実装
     - 認証ミドルウェアを適用
     - 経費を作成
     - _要件: 5.2_
 
-  - [ ] 8.2 GET /api/v1/expenses/:idエンドポイントを実装
+  - [x] 8.2 GET /api/v1/expenses/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - 経費を取得
     - アクセス制御（自分の経費のみ）
     - _要件: 5.2, 5.5_
 
-  - [ ] 8.3 GET /api/v1/expensesエンドポイントを実装
+  - [x] 8.3 GET /api/v1/expensesエンドポイントを実装
     - 認証ミドルウェアを適用
     - 経費一覧を取得
     - クエリパラメータ（month, category）でフィルタリング
     - _要件: 5.2_
 
-  - [ ] 8.4 PUT /api/v1/expenses/:idエンドポイントを実装
+  - [x] 8.4 PUT /api/v1/expenses/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - 経費を更新
     - アクセス制御（自分の経費のみ）
     - _要件: 5.2, 5.5_
 
-  - [ ] 8.5 DELETE /api/v1/expenses/:idエンドポイントを実装
+  - [x] 8.5 DELETE /api/v1/expenses/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - 経費を削除
     - アクセス制御（自分の経費のみ）
@@ -157,43 +157,43 @@ TauriデスクトップアプリケーションのローカルSQLiteデータベ
     - **検証: 要件 5.2, 8.3**
     - _要件: 10.2_
 
-- [ ] 9. サブスクリプション関連APIエンドポイントの実装
-  - [ ] 9.1 POST /api/v1/subscriptionsエンドポイントを実装
+- [x] 9. サブスクリプション関連APIエンドポイントの実装
+  - [x] 9.1 POST /api/v1/subscriptionsエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを作成
     - _要件: 5.3_
 
-  - [ ] 9.2 GET /api/v1/subscriptions/:idエンドポイントを実装
+  - [x] 9.2 GET /api/v1/subscriptions/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを取得
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.3 GET /api/v1/subscriptionsエンドポイントを実装
+  - [x] 9.3 GET /api/v1/subscriptionsエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプション一覧を取得
     - クエリパラメータ（activeOnly）でフィルタリング
     - _要件: 5.3_
 
-  - [ ] 9.4 PUT /api/v1/subscriptions/:idエンドポイントを実装
+  - [x] 9.4 PUT /api/v1/subscriptions/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを更新
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.5 PATCH /api/v1/subscriptions/:id/toggleエンドポイントを実装
+  - [x] 9.5 PATCH /api/v1/subscriptions/:id/toggleエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションのステータスを切り替え
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.6 DELETE /api/v1/subscriptions/:idエンドポイントを実装
+  - [x] 9.6 DELETE /api/v1/subscriptions/:idエンドポイントを実装
     - 認証ミドルウェアを適用
     - サブスクリプションを削除
     - アクセス制御（自分のサブスクリプションのみ）
     - _要件: 5.3, 5.5_
 
-  - [ ] 9.7 GET /api/v1/subscriptions/monthly-totalエンドポイントを実装
+  - [x] 9.7 GET /api/v1/subscriptions/monthly-totalエンドポイントを実装
     - 認証ミドルウェアを適用
     - 月額合計を取得
     - _要件: 5.3_

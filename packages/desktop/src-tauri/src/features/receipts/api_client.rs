@@ -120,7 +120,23 @@ impl ApiClient {
         user_id: &str,
         auth_token: &str,
     ) -> Result<UploadResponse, AppError> {
-        info!("APIサーバー経由でファイルアップロード開始: expense_id={expense_id}, filename={filename}, user_id={user_id}");
+        self.upload_file_with_type(
+            expense_id, file_data, filename, user_id, auth_token, "expense",
+        )
+        .await
+    }
+
+    /// 単一ファイルをAPIサーバー経由でアップロード（タイプ指定版）
+    pub async fn upload_file_with_type(
+        &self,
+        expense_id: i64,
+        file_data: &[u8],
+        filename: &str,
+        user_id: &str,
+        auth_token: &str,
+        upload_type: &str, // "expense" または "subscription"
+    ) -> Result<UploadResponse, AppError> {
+        info!("APIサーバー経由でファイルアップロード開始: expense_id={expense_id}, filename={filename}, user_id={user_id}, type={upload_type}");
 
         let url = format!("{}/api/v1/receipts/upload", self.config.base_url);
 
@@ -137,7 +153,8 @@ impl ApiClient {
                         .map_err(|e| AppError::Validation(format!("MIMEタイプ設定エラー: {e}")))?,
                 )
                 .text("expenseId", expense_id.to_string())
-                .text("userId", user_id.to_string());
+                .text("userId", user_id.to_string())
+                .text("type", upload_type.to_string());
 
             match self
                 .client

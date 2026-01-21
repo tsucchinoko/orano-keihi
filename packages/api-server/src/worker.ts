@@ -12,6 +12,9 @@ export interface Env {
   // 基本環境変数
   NODE_ENV: string;
 
+  // D1データベース（バインディング）
+  DB: D1Database;
+
   // R2バケット（バインディング）
   R2_BUCKET: R2Bucket;
 
@@ -22,6 +25,10 @@ export interface Env {
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET_NAME?: string;
   R2_REGION?: string;
+
+  // Google OAuth設定（機密情報）
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
 
   // 認証設定（機密情報）
   JWT_SECRET?: string;
@@ -51,8 +58,8 @@ export default {
       // Workers環境用の設定を読み込み
       const config = loadWorkerConfig(env);
 
-      // Honoアプリケーションを作成（R2バケットバインディングとアカウントIDを渡す）
-      const app = createApp(config, env.R2_BUCKET, env.R2_ACCOUNT_ID);
+      // Honoアプリケーションを作成（D1データベース、R2バケットバインディング、アカウントIDを渡す）
+      const app = createApp(config, env.DB, env.R2_BUCKET, env.R2_ACCOUNT_ID);
 
       // リクエストを処理
       return await app.fetch(request, env, ctx);

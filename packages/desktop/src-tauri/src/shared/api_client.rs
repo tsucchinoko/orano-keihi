@@ -20,7 +20,7 @@ pub struct ApiClientConfig {
 impl Default for ApiClientConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://localhost:3000".to_string(),
+            base_url: "http://localhost:8787".to_string(),
             timeout_seconds: 30,
             max_retries: 3,
         }
@@ -177,9 +177,9 @@ impl ApiClient {
 
     /// DELETEリクエストを送信
     pub async fn delete(&self, endpoint: &str, auth_token: Option<&str>) -> Result<(), AppError> {
-        info!("DELETEリクエスト送信: endpoint={endpoint}");
-
         let url = format!("{}{endpoint}", self.config.base_url);
+        info!("DELETEリクエスト送信: endpoint={endpoint}, url={url}");
+
         let mut request = self.client.delete(&url);
 
         // 認証トークンがある場合は追加

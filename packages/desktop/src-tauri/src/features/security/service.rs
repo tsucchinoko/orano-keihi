@@ -1,6 +1,5 @@
 use crate::features::security::encryption::TokenEncryption;
 use crate::features::security::models::{SecurityConfig, SecurityError, TokenInfo};
-use base64::{engine::general_purpose, Engine as _};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -190,7 +189,7 @@ impl SecurityService {
     /// APIリクエストの認証を検証する
     ///
     /// # 引数
-    /// * `token` - 認証トークン
+    /// * `token` - 認証トークン（JWT形式）
     ///
     /// # 戻り値
     /// 検証結果
@@ -202,23 +201,38 @@ impl SecurityService {
             return Ok(false);
         }
 
-        // トークンの基本的な形式を検証（Base64エンコードされているかチェック）
-        match general_purpose::STANDARD.decode(token) {
-            Ok(decoded_bytes) => {
-                // Base64デコードが成功し、最小限の長さがあるかチェック
-                if decoded_bytes.len() >= 12 {
-                    log::debug!("APIリクエストの認証トークン形式が有効です");
-                    Ok(true)
-                } else {
-                    log::warn!("APIリクエストの認証トークンが短すぎます");
-                    Ok(false)
-                }
-            }
-            Err(e) => {
-                log::warn!("APIリクエストの認証トークンのBase64デコードに失敗: {e}");
-                Ok(false)
+        // JWTトークンの基本的な形式を検証（header.payload.signature）
+        let parts: Vec<&str> = token.split('.').collect();
+        if parts.len() != 3 {
+            log::warn!(
+                "APIリクエストの認証トークンがJWT形式ではありません（パーツ数: {}）",
+                parts.len()
+            );
+            return Ok(false);
+        }
+
+        // 各パーツが空でないことを確認
+        if parts.iter().any(|part| part.is_empty()) {
+            log::warn!("APIリクエストの認証トークンに空のパーツが含まれています");
+            return Ok(false);
+        }
+
+        // 各パーツがBase64 URL形式であることを確認（JWT標準）
+        for (i, part) in parts.iter().enumerate() {
+            if !part
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                log::warn!(
+                    "APIリクエストの認証トークンのパーツ{}が無効な文字を含んでいます",
+                    i
+                );
+                return Ok(false);
             }
         }
+
+        log::debug!("APIリクエストの認証トークン形式が有効です（JWT形式）");
+        Ok(true)
     }
 
     /// 不正アクセスを検出して処理する

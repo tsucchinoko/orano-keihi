@@ -8,10 +8,6 @@ export { R2TestService, createR2TestService } from "./r2-test-service.js";
 export { AuthService, createAuthService, AuthError } from "./auth-service.js";
 export { FileUploadService, createFileUploadService } from "./file-upload-service.js";
 export { SubscriptionService, createSubscriptionService } from "./subscription-service.js";
-export {
-  TauriSubscriptionService,
-  createTauriSubscriptionService,
-} from "./tauri-subscription-service.js";
 export type { UploadResult, R2ClientInterface } from "./r2-client.js";
 export type { R2TestResult } from "./r2-test-service.js";
 export type { FileUploadServiceInterface } from "./file-upload-service.js";

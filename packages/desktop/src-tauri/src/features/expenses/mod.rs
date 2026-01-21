@@ -7,23 +7,17 @@
 /// - 領収書URLの管理
 /// - 領収書キャッシュの管理
 // サブモジュールの宣言
-pub mod commands;
+pub mod api_commands;
 pub mod models;
-pub mod repository;
 
 // 公開インターフェース：外部から使用可能な型と関数をエクスポート
 
 // モデル
 pub use models::{CreateExpenseDto, Expense, ReceiptCache, UpdateExpenseDto};
 
-// コマンド（Tauriコマンドハンドラー）
-pub use commands::{create_expense, delete_expense, get_expenses, update_expense};
-
-// リポジトリ（データベース操作）
-pub use repository::{
-    cleanup_old_cache, create, delete, delete_receipt_cache, find_all, find_by_id,
-    get_receipt_cache, get_receipt_url, save_receipt_cache, set_receipt_url, update,
-    update_cache_access_time,
+// APIコマンド（API Server経由のTauriコマンドハンドラー）
+pub use api_commands::{
+    create_expense, delete_expense, delete_expense_receipt, get_expenses, update_expense,
 };
 
 #[cfg(test)]

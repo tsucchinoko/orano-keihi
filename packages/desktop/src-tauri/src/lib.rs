@@ -4,22 +4,19 @@ pub mod shared;
 
 // 新しい機能モジュールからコマンドをインポート
 use features::auth::middleware::AuthMiddleware;
-use features::auth::service::AuthService;
 use features::security::models::SecurityConfig;
 use features::security::service::SecurityManager;
 use features::{
     auth::commands as auth_commands,
-    expenses::commands as expense_commands,
+    expenses::api_commands as expense_commands,
     receipts::{api_commands as receipt_api_commands, commands as receipt_commands},
     security::commands as security_commands,
-    subscriptions::{api_commands as subscription_api_commands, commands as subscription_commands},
+    subscriptions::api_commands as subscription_commands,
     updater::commands as updater_commands,
 };
 use log::info;
 use rusqlite::Connection;
-use shared::config::environment::{
-    initialize_logging_system, load_environment_variables, GoogleOAuthConfig,
-};
+use shared::config::environment::{initialize_logging_system, load_environment_variables};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
@@ -84,6 +81,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .setup(|app| {
             // 詳細なデバッグログを追加
             eprintln!("=== アプリケーション初期化開始 ===");
@@ -189,14 +187,6 @@ pub fn run() {
             initialize_logging_system();
             eprintln!("ログシステムの初期化完了");
 
-            // マイグレーションシステムを初期化
-            eprintln!("マイグレーションシステムを初期化中...");
-            if let Err(e) = features::migrations::initialize_migration_system() {
-                eprintln!("マイグレーションシステムの初期化に失敗しました: {e}");
-                return Err(format!("マイグレーションシステムの初期化に失敗しました: {e}").into());
-            }
-            eprintln!("マイグレーションシステムの初期化完了");
-
             info!("アプリケーション初期化を開始します...");
 
             // セキュリティマネージャーを初期化（.envファイル読み込み後）
@@ -231,54 +221,36 @@ pub fn run() {
 
             info!("システム診断情報を取得中...");
 
-            // データベースを初期化（マイグレーション含む）
-            eprintln!("データベースを初期化中...");
-            let db_conn = match shared::database::connection::initialize_database(app.handle()) {
+            // データベース接続を初期化
+            eprintln!("データベース接続を初期化中...");
+            let db_connection = match crate::shared::database::connection::initialize_database(app.handle()) {
                 Ok(conn) => {
-                    eprintln!("データベース初期化完了");
-                    conn
+                    eprintln!("データベース接続の初期化完了");
+                    Arc::new(Mutex::new(conn))
                 }
                 Err(e) => {
-                    eprintln!("データベース初期化失敗: {e}");
-                    return Err(format!("データベース初期化失敗: {e}").into());
+                    eprintln!("データベース接続初期化失敗: {e}");
+                    return Err(format!("データベース接続初期化失敗: {e}").into());
                 }
             };
 
-            // Google OAuth設定を読み込み
-            eprintln!("Google OAuth設定を読み込み中...");
-            let google_config = match GoogleOAuthConfig::from_env() {
-                Some(config) => {
-                    eprintln!("Google OAuth設定を読み込みました");
-                    // 設定を検証
-                    if let Err(e) = config.validate() {
-                        eprintln!("Google OAuth設定の検証に失敗: {e}");
-                        eprintln!("デフォルト設定を使用します");
-                        GoogleOAuthConfig {
-                            client_id: "dummy_client_id".to_string(),
-                            client_secret: "dummy_client_secret".to_string(),
-                            redirect_uri: "http://localhost:8080/auth/callback".to_string(),
-                            session_encryption_key: "default_32_byte_encryption_key_123"
-                                .to_string(),
-                        }
-                    } else {
-                        config
-                    }
-                }
-                None => {
-                    eprintln!("Google OAuth設定が見つかりません - デフォルト設定を使用します");
-                    GoogleOAuthConfig {
-                        client_id: "dummy_client_id".to_string(),
-                        client_secret: "dummy_client_secret".to_string(),
-                        redirect_uri: "http://localhost:8080/auth/callback".to_string(),
-                        session_encryption_key: "default_32_byte_encryption_key_123".to_string(),
-                    }
-                }
-            };
+            // APIサーバーURLを取得
+            eprintln!("APIサーバー設定を読み込み中...");
+            let api_server_url = crate::get_env_var!("API_SERVER_URL")
+                .unwrap_or_else(|e| {
+                    eprintln!("エラー: {e}");
+                    panic!("API_SERVER_URLが設定されていません。.envファイルまたは環境変数を確認してください。");
+                });
 
-            // 認証サービスを初期化
+            eprintln!("API_SERVER_URL: {api_server_url}");
+
+            // 認証サービスを初期化（APIサーバー経由）
             eprintln!("認証サービスを初期化中...");
-            let auth_service = match AuthService::new(google_config, Arc::new(Mutex::new(db_conn)))
-            {
+            let auth_service = match features::auth::AuthService::new(
+                api_server_url.clone(),
+                Arc::clone(&db_connection),
+                app.handle().clone(),
+            ) {
                 Ok(service) => {
                     eprintln!("認証サービスの初期化完了");
                     service
@@ -286,20 +258,6 @@ pub fn run() {
                 Err(e) => {
                     eprintln!("認証サービス初期化失敗: {e}");
                     return Err(format!("認証サービス初期化失敗: {e}").into());
-                }
-            };
-
-            // アプリケーション用のデータベース接続を作成
-            eprintln!("アプリケーション用データベース接続を作成中...");
-            let app_db_conn = match shared::database::connection::initialize_database(app.handle())
-            {
-                Ok(conn) => {
-                    eprintln!("アプリケーション用データベース接続作成完了");
-                    conn
-                }
-                Err(e) => {
-                    eprintln!("アプリケーション用データベース接続作成失敗: {e}");
-                    return Err(format!("アプリケーション用データベース接続作成失敗: {e}").into());
                 }
             };
 
@@ -316,11 +274,6 @@ pub fn run() {
                 AuthMiddleware::new(Arc::new(auth_service.clone()), security_service.clone());
             app.manage(auth_middleware);
 
-            app.manage(AppState {
-                db: Mutex::new(app_db_conn),
-                security_manager: security_manager.clone(),
-                r2_connection_cache: Arc::new(Mutex::new(R2ConnectionCache::new())),
-            });
 
             eprintln!("=== アプリケーション初期化完了 ===");
             info!("アプリケーション初期化が完了しました");
@@ -350,26 +303,24 @@ pub fn run() {
             auth_commands::validate_session,
             auth_commands::logout,
             auth_commands::get_auth_state,
+            auth_commands::get_stored_auth_info,
             auth_commands::cleanup_expired_sessions,
-            // 経費コマンド
+            // 経費コマンド（API Server経由）
             expense_commands::create_expense,
             expense_commands::get_expenses,
             expense_commands::update_expense,
             expense_commands::delete_expense,
             expense_commands::delete_expense_receipt,
-            // サブスクリプションコマンド
+            // サブスクリプションコマンド（API Server経由）
             subscription_commands::create_subscription,
             subscription_commands::get_subscriptions,
             subscription_commands::update_subscription,
             subscription_commands::toggle_subscription_status,
             subscription_commands::delete_subscription,
             subscription_commands::get_monthly_subscription_total,
-            subscription_commands::save_subscription_receipt,
-            subscription_commands::delete_subscription_receipt,
-            subscription_commands::get_subscription_receipt_path,
-            // サブスクリプションコマンド（APIサーバー経由）
-            subscription_api_commands::upload_subscription_receipt_via_api,
-            subscription_api_commands::delete_subscription_receipt_via_api,
+            subscription_commands::upload_subscription_receipt_via_api,
+            subscription_commands::delete_subscription_receipt_from_r2,
+            subscription_commands::delete_subscription_receipt_via_api,
             // 領収書コマンド（APIサーバー経由）
             receipt_api_commands::upload_receipt_via_api,
             receipt_api_commands::upload_multiple_receipts_via_api,

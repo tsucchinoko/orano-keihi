@@ -84,12 +84,8 @@ pub use service::{
 use crate::shared::errors::AppResult;
 use log::info;
 
-/// 移行機能の初期化
-///
 /// エラーハンドリング、ログ機能、セキュリティ監査機能を初期化します。
-pub fn initialize_migration_system() -> AppResult<()> {
-    info!("移行システムを初期化中...");
-
+pub fn initialize_log_system() -> AppResult<()> {
     // 構造化ログ機能を初期化
     logging::init_global_logger(Some(1000));
     info!("構造化ログ機能を初期化しました");
@@ -105,7 +101,6 @@ pub fn initialize_migration_system() -> AppResult<()> {
     error_handler::init_global_error_handler(structured_logger);
     info!("包括的エラーハンドラーを初期化しました");
 
-    info!("移行システムの初期化が完了しました");
     Ok(())
 }
 
@@ -154,7 +149,7 @@ pub struct MigrationSystemStatistics {
 /// 特別な初期化処理は不要です。
 pub fn init() {
     // 新しい統合初期化関数を呼び出し
-    if let Err(e) = initialize_migration_system() {
+    if let Err(e) = initialize_log_system() {
         log::error!("移行システムの初期化に失敗しました: {}", e);
     }
 }

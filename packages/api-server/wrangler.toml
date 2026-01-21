@@ -48,6 +48,17 @@ bucket_name = "orano-keihi-prod"
 binding = "R2_BUCKET"
 bucket_name = "orano-keihi-dev"
 
+# D1データベースのバインディング
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "orano-keihi-prod-db"
+database_id = "1f74e76a-ea07-455f-80a9-932277fab131"
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "orano-keihi-dev-db"
+database_id = "713917cd-386b-4058-92d2-50ed252b60be"
+
 # 秘匿情報は以下のコマンドで設定してください：
 # 
 # 本番環境の秘匿情報設定：
@@ -55,6 +66,7 @@ bucket_name = "orano-keihi-dev"
 # wrangler secret put R2_ACCOUNT_ID --env production
 # wrangler secret put R2_ACCESS_KEY_ID --env production
 # wrangler secret put R2_SECRET_ACCESS_KEY --env production
+# wrangler secret put GOOGLE_CLIENT_ID --env production
 # wrangler secret put GOOGLE_CLIENT_SECRET --env production
 # wrangler secret put SESSION_ENCRYPTION_KEY --env production
 # wrangler secret put GITHUB_TOKEN --env production
@@ -64,6 +76,7 @@ bucket_name = "orano-keihi-dev"
 # wrangler secret put R2_ACCOUNT_ID --env development
 # wrangler secret put R2_ACCESS_KEY_ID --env development
 # wrangler secret put R2_SECRET_ACCESS_KEY --env development
+# wrangler secret put GOOGLE_CLIENT_ID --env development
 # wrangler secret put GOOGLE_CLIENT_SECRET --env development
 # wrangler secret put SESSION_ENCRYPTION_KEY --env development
 # wrangler secret put GITHUB_TOKEN --env development
