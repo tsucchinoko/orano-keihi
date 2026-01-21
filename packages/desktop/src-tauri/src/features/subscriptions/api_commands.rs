@@ -208,25 +208,40 @@ pub async fn delete_subscription(
     session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<(), String> {
-    info!("サブスクリプション削除処理開始: subscription_id={id}");
+    info!("🗑️ サブスクリプション削除処理開始: subscription_id={id}");
 
     // 認証チェック
+    info!("🔐 認証チェック開始");
     let _user = auth_middleware
         .authenticate_request(session_token.as_deref(), "/subscriptions/delete")
         .await
-        .map_err(|e| format!("認証エラー: {e}"))?;
+        .map_err(|e| {
+            log::error!("🔐 認証エラー: {e}");
+            format!("認証エラー: {e}")
+        })?;
+    info!("🔐 認証チェック成功");
 
     // APIクライアントを作成
-    let api_client = ApiClient::new().map_err(|e| format!("APIクライアント作成エラー: {e}"))?;
+    info!("🌐 APIクライアント作成開始");
+    let api_client = ApiClient::new().map_err(|e| {
+        log::error!("🌐 APIクライアント作成エラー: {e}");
+        format!("APIクライアント作成エラー: {e}")
+    })?;
+    info!("🌐 APIクライアント作成成功");
 
     // API Serverにサブスクリプション削除リクエストを送信
     let endpoint = format!("/api/v1/subscriptions/{id}");
+    info!("📡 API削除リクエスト送信: endpoint={endpoint}");
+
     api_client
         .delete(&endpoint, session_token.as_deref())
         .await
-        .map_err(|e| format!("サブスクリプション削除APIエラー: {e}"))?;
+        .map_err(|e| {
+            log::error!("📡 サブスクリプション削除APIエラー: {e}");
+            format!("サブスクリプション削除APIエラー: {e}")
+        })?;
 
-    info!("サブスクリプション削除成功: subscription_id={id}");
+    info!("✅ サブスクリプション削除成功: subscription_id={id}");
     Ok(())
 }
 

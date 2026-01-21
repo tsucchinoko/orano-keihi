@@ -57,6 +57,21 @@ async function handleToggleStatus(id: number): Promise<void> {
 	}
 }
 
+// 削除処理
+async function handleDelete(id: number): Promise<void> {
+	console.info(`🎯 UI: 削除ボタンクリック: subscription_id=${id}`);
+
+	const success = await expenseStore.removeSubscription(id);
+	console.info(`🎯 UI: 削除処理結果: success=${success}`);
+
+	if (success) {
+		toastStore.success("サブスクリプションを削除しました");
+	} else {
+		console.error(`🎯 UI: 削除失敗エラー:`, expenseStore.error);
+		toastStore.error(expenseStore.error || "サブスクリプションの削除に失敗しました");
+	}
+}
+
 // カテゴリアイコン
 const categoryIcons: Record<string, string> = {
 	交通費: "🚗",
@@ -227,6 +242,14 @@ function handleCloseReceiptViewer() {
 									>
 										⏸️ 停止
 									</button>
+									<button
+										type="button"
+										onclick={() => handleDelete(subscription.id)}
+										class="btn btn-danger text-sm px-3 py-1"
+										title="削除"
+									>
+										🗑️ 削除
+									</button>
 								</div>
 							</div>
 						</div>
@@ -302,6 +325,14 @@ function handleCloseReceiptViewer() {
 										title="有効化"
 									>
 										▶️ 再開
+									</button>
+									<button
+										type="button"
+										onclick={() => handleDelete(subscription.id)}
+										class="btn btn-danger text-sm px-3 py-1"
+										title="削除"
+									>
+										🗑️ 削除
 									</button>
 								</div>
 							</div>

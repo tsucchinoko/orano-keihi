@@ -649,15 +649,23 @@ export function createSubscriptionsRouter(
 
   // DELETE /api/v1/subscriptions/:id - サブスクリプションを削除
   subscriptionsApp.delete("/:id", async (c: Context) => {
-    logger.info("DELETE /:id エンドポイントが呼ばれました", {
+    console.log("🗑️ DELETE /:id エンドポイントが呼ばれました", {
       path: c.req.path,
       params: c.req.param(),
+      method: c.req.method,
+    });
+
+    logger.info("🗑️ DELETE /:id エンドポイントが呼ばれました", {
+      path: c.req.path,
+      params: c.req.param(),
+      method: c.req.method,
     });
 
     try {
       const user = c.get("user");
 
       if (!user) {
+        console.error("❌ ユーザー情報が見つかりません");
         logger.error("ユーザー情報が見つかりません");
         throw createNotFoundError("ユーザー情報が見つかりません");
       }
@@ -665,6 +673,7 @@ export function createSubscriptionsRouter(
       const subscriptionId = parseInt(c.req.param("id"), 10);
 
       if (isNaN(subscriptionId)) {
+        console.error("❌ 無効なサブスクリプションID", c.req.param("id"));
         throw createValidationError(
           "有効なサブスクリプションIDが指定されていません",
           "id",
@@ -673,19 +682,33 @@ export function createSubscriptionsRouter(
         );
       }
 
+      console.log("📋 サブスクリプション削除リクエスト", {
+        userId: user.id,
+        subscriptionId,
+      });
+
       logger.debug("サブスクリプション削除リクエスト", {
         userId: user.id,
         subscriptionId,
       });
 
       // サブスクリプションを削除する前に領収書パスを取得
+      console.log("📂 領収書パス取得開始", { subscriptionId, userId: user.id });
       const receiptPath = await subscriptionRepository.getReceiptPath(subscriptionId, user.id);
+      console.log("📂 領収書パス取得結果", {
+        subscriptionId,
+        receiptPath,
+        hasReceiptPath: !!receiptPath,
+      });
 
       // サブスクリプションを削除（アクセス制御：自分のサブスクリプションのみ）
+      console.log("🗄️ データベースから削除開始", { subscriptionId, userId: user.id });
       await subscriptionRepository.delete(subscriptionId, user.id);
+      console.log("✅ データベースから削除完了", { subscriptionId });
 
       // 領収書がある場合はR2から削除
       if (receiptPath && r2Client) {
+        console.log("🔍 R2削除処理開始", { receiptPath, hasR2Client: !!r2Client });
         try {
           logger.debug("領収書パス解析開始", {
             userId: user.id,
@@ -702,7 +725,10 @@ export function createSubscriptionsRouter(
           try {
             const url = new URL(receiptPath);
             // パス部分を取得（先頭の/を除く）
-            const pathname = url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname;
+            let pathname = url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname;
+
+            // URLデコードを実行（日本語ファイル名対応）
+            pathname = decodeURIComponent(pathname);
 
             // バケット名が含まれている場合は除外
             // 例: bucket/users/xxx/... -> users/xxx/...
@@ -728,11 +754,16 @@ export function createSubscriptionsRouter(
             const urlParts = receiptPath.split("/");
             const usersIndex = urlParts.findIndex((part) => part === "users");
             if (usersIndex !== -1) {
-              key = urlParts.slice(usersIndex).join("/");
+              // URLデコードを実行
+              key = urlParts
+                .slice(usersIndex)
+                .map((part) => decodeURIComponent(part))
+                .join("/");
             }
           }
 
           if (key) {
+            console.log("🗑️ R2から削除実行", { key, subscriptionId });
             logger.debug("R2から領収書を削除します", {
               userId: user.id,
               subscriptionId,
@@ -742,12 +773,14 @@ export function createSubscriptionsRouter(
 
             await r2Client.deleteObject(key);
 
+            console.log("✅ R2から削除成功", { key, subscriptionId });
             logger.info("R2から領収書を削除しました", {
               userId: user.id,
               subscriptionId,
               key,
             });
           } else {
+            console.warn("⚠️ R2キー抽出失敗", { receiptPath, subscriptionId });
             logger.warn("領収書パスからR2キーを抽出できませんでした", {
               userId: user.id,
               subscriptionId,
@@ -756,6 +789,11 @@ export function createSubscriptionsRouter(
           }
         } catch (r2Error) {
           // R2削除エラーはログに記録するが、サブスクリプション削除は成功とする
+          console.error("❌ R2削除エラー（サブスクリプションは削除済み）", {
+            subscriptionId,
+            receiptPath,
+            error: r2Error instanceof Error ? r2Error.message : String(r2Error),
+          });
           logger.error("R2から領収書の削除に失敗しましたが、サブスクリプションは削除されました", {
             userId: user.id,
             subscriptionId,
@@ -764,12 +802,21 @@ export function createSubscriptionsRouter(
           });
         }
       } else if (receiptPath && !r2Client) {
+        console.warn("⚠️ R2クライアント未設定", { receiptPath, subscriptionId });
         logger.warn("R2クライアントが利用できないため、領収書を削除できませんでした", {
           userId: user.id,
           subscriptionId,
           receiptPath,
         });
+      } else {
+        console.log("ℹ️ 領収書なし、R2削除スキップ", { subscriptionId });
       }
+
+      console.log("✅ サブスクリプション削除完了", {
+        userId: user.id,
+        subscriptionId,
+        hadReceipt: !!receiptPath,
+      });
 
       logger.info("サブスクリプションを削除しました", {
         userId: user.id,
