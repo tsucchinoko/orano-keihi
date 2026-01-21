@@ -25,6 +25,7 @@ export interface UpdateExpenseDto {
   amount?: number;
   category?: string;
   description?: string;
+  receipt_url?: string;
 }
 
 // サブスクリプションデータモデル

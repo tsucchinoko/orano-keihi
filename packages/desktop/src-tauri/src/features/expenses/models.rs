@@ -27,10 +27,15 @@ pub struct CreateExpenseDto {
 /// 経費更新用DTO
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateExpenseDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub receipt_url: Option<String>,
 }
 

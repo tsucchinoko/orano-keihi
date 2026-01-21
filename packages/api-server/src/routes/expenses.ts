@@ -288,7 +288,11 @@ export function createExpensesRouter(expenseRepository: ExpenseRepository): Hono
         );
       }
 
-      if (body.receipt_url !== undefined && typeof body.receipt_url !== "string") {
+      if (
+        body.receipt_url !== undefined &&
+        body.receipt_url !== null &&
+        typeof body.receipt_url !== "string"
+      ) {
         throw createValidationError(
           "領収書URLは文字列である必要があります",
           "receipt_url",
@@ -311,7 +315,8 @@ export function createExpensesRouter(expenseRepository: ExpenseRepository): Hono
       }
 
       // 領収書URLのバリデーション（指定されている場合）
-      if (body.receipt_url && !body.receipt_url.startsWith("https://")) {
+      // 空文字列またはnullの場合は削除を意味するのでスキップ
+      if (body.receipt_url && body.receipt_url !== "" && !body.receipt_url.startsWith("https://")) {
         throw createValidationError(
           "領収書URLはHTTPSで始まる必要があります",
           "receipt_url",
