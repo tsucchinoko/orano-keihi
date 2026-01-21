@@ -442,13 +442,3 @@ impl AuthService {
             .map_err(|e| AuthError::StorageError(format!("ユーザーID取得エラー: {e}")))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    // テストは実際のTauriアプリハンドルが必要なため、統合テストで実装
-    #[test]
-    fn test_auth_service_creation() {
-        // 基本的な構造のテストのみ
-        assert!(true);
-    }
-}
