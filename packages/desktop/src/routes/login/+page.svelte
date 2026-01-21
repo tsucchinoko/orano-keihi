@@ -5,9 +5,9 @@ import { page } from "$app/state";
 import { authStore } from "$lib/stores";
 
 // ローディング状態とエラー状態を取得
-let isLoading = $derived(authStore.isLoading);
-let error = $derived(authStore.error);
-let isAuthenticated = $derived(authStore.isAuthenticated);
+let isLoading = $derived(authStore.loading);
+let error = $derived(authStore.errorMessage);
+let isAuthenticated = $derived(authStore.authenticated);
 
 // 認証状態の初期化
 onMount(async () => {
@@ -15,7 +15,8 @@ onMount(async () => {
 	await authStore.initialize();
 
 	// 既に認証済みの場合はメインページにリダイレクト
-	if (isAuthenticated) {
+	if (authStore.authenticated) {
+		console.info("🔘 初期化時に認証済みを検出。メインページにリダイレクトします");
 		goto("/");
 		return;
 	}
@@ -23,13 +24,21 @@ onMount(async () => {
 
 // 認証状態の変化を監視してリダイレクト
 $effect(() => {
-	console.info("🔘 $effect が実行されました。isAuthenticated =", isAuthenticated);
-	if (isAuthenticated) {
+	const currentAuthState = authStore.authenticated;
+	console.info("🔘 $effect が実行されました");
+	console.info("🔘 authStore.authenticated =", currentAuthState);
+	console.info("🔘 authStore.currentUser =", authStore.currentUser);
+	console.info("🔘 authStore.loading =", authStore.loading);
+	
+	if (currentAuthState) {
 		console.info("🔘 認証成功を検出しました。メインページにリダイレクトします");
 		// 少し遅延を入れて確実にリダイレクト
 		setTimeout(() => {
+			console.info("🔘 goto('/') を実行します");
 			goto("/");
 		}, 100);
+	} else {
+		console.info("🔘 まだ未認証状態です");
 	}
 });
 

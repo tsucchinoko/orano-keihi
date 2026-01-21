@@ -63,6 +63,17 @@ pub struct UserInfo {
     pub picture: Option<String>,
 }
 
+/// トークン検証レスポンス
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValidateTokenResponse {
+    /// 検証結果
+    pub valid: bool,
+    /// ユーザー情報
+    pub user: UserInfo,
+    /// タイムスタンプ
+    pub timestamp: String,
+}
+
 /// OAuth認証フローの開始情報（APIサーバー経由）
 #[derive(Debug)]
 pub struct OAuthStartInfo {
@@ -378,14 +389,14 @@ impl AuthService {
             };
         }
 
-        let user_info: UserInfo = response.json().await.map_err(|e| {
+        let validate_response: ValidateTokenResponse = response.json().await.map_err(|e| {
             AuthError::OAuthError(format!("トークン検証レスポンスのパースエラー: {e}"))
         })?;
 
         // ローカルデータベースからユーザー情報を取得
         let user_repository = UserRepository::new(Arc::clone(&self.db_connection));
         let user = user_repository
-            .get_user_by_google_id(user_info.id)
+            .get_user_by_google_id(validate_response.user.id)
             .await?
             .ok_or_else(|| AuthError::DatabaseError("ユーザーが見つかりません".to_string()))?;
 

@@ -361,7 +361,9 @@ export interface StartAuthResponse {
 // 認証完了待機レスポンス型（ループバック方式）
 export interface WaitForAuthResponse {
   user: User;
-  session_token: string;
+  access_token: string;
+  token_type: string;
+  expires_in: number;
 }
 
 // セッション検証レスポンス型

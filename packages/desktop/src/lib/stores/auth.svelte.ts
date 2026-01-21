@@ -137,16 +137,16 @@ class AuthStore {
           }
 
           if (authResult.data) {
-            const { user, session_token } = authResult.data;
+            const { user, access_token } = authResult.data;
             console.info('🔐 認証データを受け取りました:', {
               user,
-              session_token,
+              access_token,
             });
 
             // 認証状態を更新
             console.info('🔐 認証状態を更新します...');
             this.user = user;
-            this.sessionToken = session_token;
+            this.sessionToken = access_token;
 
             // セッショントークンはバックエンドのセキュアストレージに既に保存済み
             console.info(
@@ -155,7 +155,12 @@ class AuthStore {
 
             // 最後に認証状態をtrueに設定（リアクティブな更新をトリガー）
             this.isAuthenticated = true;
-            console.info('🔐 isAuthenticated =', this.isAuthenticated);
+            console.info('🔐 isAuthenticated を true に設定しました');
+            console.info('🔐 現在の認証状態:', {
+              isAuthenticated: this.isAuthenticated,
+              user: this.user,
+              sessionToken: this.sessionToken ? '存在' : 'なし',
+            });
 
             toastStore.success(`${user.name}さん、ログインしました`);
             console.info('🔐 ログイン処理が正常に完了しました');
@@ -187,9 +192,9 @@ class AuthStore {
               }
 
               if (authResult.data) {
-                const { user, session_token } = authResult.data;
+                const { user, access_token } = authResult.data;
                 this.user = user;
-                this.sessionToken = session_token;
+                this.sessionToken = access_token;
 
                 // セッショントークンはバックエンドのセキュアストレージに既に保存済み
 
@@ -300,6 +305,34 @@ class AuthStore {
       console.error('セッション確認エラー:', err);
       this.setUnauthenticatedState();
     }
+  }
+
+  /**
+   * 認証状態を取得する（リアクティブ）
+   */
+  get authenticated(): boolean {
+    return this.isAuthenticated;
+  }
+
+  /**
+   * ユーザー情報を取得する（リアクティブ）
+   */
+  get currentUser(): User | null {
+    return this.user;
+  }
+
+  /**
+   * ローディング状態を取得する（リアクティブ）
+   */
+  get loading(): boolean {
+    return this.isLoading;
+  }
+
+  /**
+   * エラーメッセージを取得する（リアクティブ）
+   */
+  get errorMessage(): string | null {
+    return this.error;
   }
 
   /**
