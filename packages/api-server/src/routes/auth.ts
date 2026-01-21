@@ -219,6 +219,21 @@ app.post("/google/callback", zValidator("json", AuthCallbackRequestSchema), asyn
       return c.json({ error: "メールアドレスが認証されていません" }, 400);
     }
 
+    // データベースにユーザーを保存または取得
+    const userRepository = c.get("userRepository");
+    const dbUser = await userRepository.findOrCreateUser({
+      google_id: userInfo.id,
+      email: userInfo.email,
+      name: userInfo.name,
+      picture_url: userInfo.picture || undefined,
+    });
+
+    console.log("ユーザーをデータベースに保存しました:", {
+      userId: dbUser.id,
+      googleId: dbUser.google_id,
+      email: dbUser.email,
+    });
+
     // JWT トークンを生成（1時間有効）
     const jwtSecretKey = new TextEncoder().encode(jwtSecret);
 

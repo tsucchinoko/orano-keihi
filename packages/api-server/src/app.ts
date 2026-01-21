@@ -42,6 +42,17 @@ import { ExpenseRepository } from "./repositories/expense-repository.js";
 import { SubscriptionRepository } from "./repositories/subscription-repository.js";
 
 /**
+ * Honoコンテキストの型拡張
+ */
+declare module "hono" {
+  interface ContextVariableMap {
+    userRepository: UserRepository;
+    expenseRepository: ExpenseRepository;
+    subscriptionRepository: SubscriptionRepository;
+  }
+}
+
+/**
  * ファイルキーからContent-Typeを推定する
  * @param fileKey ファイルキー
  * @returns Content-Type
@@ -112,6 +123,14 @@ export function createApp(
 
   // ログミドルウェア（最初に適用）
   app.use("*", loggingMiddleware);
+
+  // リポジトリをコンテキストに設定
+  app.use("*", async (c, next) => {
+    c.set("userRepository", userRepository);
+    c.set("expenseRepository", expenseRepository);
+    c.set("subscriptionRepository", subscriptionRepository);
+    await next();
+  });
 
   // レート制限ミドルウェア
   app.use("*", rateLimitMiddleware);
