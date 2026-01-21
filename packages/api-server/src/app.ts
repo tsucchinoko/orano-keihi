@@ -165,7 +165,7 @@ export function createApp(
   app.route("/api/v1/expenses", expensesRouter);
 
   // サブスクリプション関連エンドポイント（認証が必要）
-  const subscriptionsRouter = createSubscriptionsRouter(subscriptionRepository);
+  const subscriptionsRouter = createSubscriptionsRouter(subscriptionRepository, r2Client);
   app.use("/api/v1/subscriptions", authMiddleware);
   app.use("/api/v1/subscriptions/*", authMiddleware);
   app.route("/api/v1/subscriptions", subscriptionsRouter);

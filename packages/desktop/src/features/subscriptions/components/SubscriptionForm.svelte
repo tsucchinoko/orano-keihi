@@ -198,20 +198,33 @@ async function deleteReceipt() {
 		return;
 	}
 
+	if (!subscription.receipt_path) {
+		toastStore.error("削除する領収書がありません");
+		return;
+	}
+
 	try {
-		// R2から領収書を削除
-		const r2DeleteResult = await deleteSubscriptionReceiptFromR2(subscription.id);
+		console.info(`🗑️ サブスクリプションの領収書削除開始: subscription_id=${subscription.id}, receipt_path=${subscription.receipt_path}`);
+		
+		// R2から領収書を削除（deleteSubscriptionReceiptFromR2関数を使用）
+		const r2DeleteResult = await deleteSubscriptionReceiptFromR2(subscription.receipt_path);
 		if (r2DeleteResult.error) {
 			toastStore.error(`R2からの領収書削除に失敗しました: ${r2DeleteResult.error}`);
 			return;
 		}
 
-		// データベースからも領収書パスを削除
+		console.info(`🗑️ R2削除結果:`, r2DeleteResult);
+
+		// データベースからも領収書パスを削除（専用の削除関数を使用）
+		console.info(`🗑️ DB更新開始: subscription_id=${subscription.id}, 専用削除関数を使用`);
+		
 		const dbDeleteResult = await deleteSubscriptionReceipt(subscription.id);
 		if (dbDeleteResult.error) {
 			toastStore.error(`データベースからの領収書削除に失敗しました: ${dbDeleteResult.error}`);
 			return;
 		}
+
+		console.info(`🗑️ DB削除結果:`, dbDeleteResult);
 
 		// プレビューとファイル選択をクリア
 		receiptPreview = undefined;
@@ -226,9 +239,11 @@ async function deleteReceipt() {
 		await expenseStore.loadSubscriptions();
 
 		toastStore.success("領収書を削除しました");
+		
+		console.info(`🗑️ サブスクリプションの領収書削除完了: subscription_id=${subscription.id}`);
 	} catch (error) {
 		console.error("領収書削除エラー:", error);
-		toastStore.error("領収書の削除に失敗しました");
+		toastStore.error(`領収書の削除に失敗しました: ${error}`);
 	}
 }
 

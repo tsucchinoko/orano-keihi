@@ -316,24 +316,6 @@ export async function deleteReceipt(
   );
 }
 
-/**
- * サブスクリプションの領収書を削除する
- *
- * @param subscriptionId - サブスクリプションID
- * @returns 成功またはエラー
- */
-export async function deleteSubscriptionReceipt(
-  subscriptionId: number
-): Promise<TauriResult<boolean>> {
-  const sessionToken = getAuthToken();
-  return handleTauriCommand(
-    invoke<boolean>('delete_subscription_receipt_via_api', {
-      subscriptionId: subscriptionId,
-      sessionToken: sessionToken,
-    })
-  );
-}
-
 // ========================================
 // R2領収書関連のコマンド
 // ========================================
@@ -675,10 +657,35 @@ export async function uploadSubscriptionReceiptToR2(
 /**
  * R2からサブスクリプション領収書を削除する（ユーザー認証付き）
  *
- * @param subscriptionId - サブスクリプションID
+ * @param receiptUrl - 削除する領収書のHTTPS URL
  * @returns 成功またはエラー
  */
 export async function deleteSubscriptionReceiptFromR2(
+  receiptUrl: string
+): Promise<TauriResult<boolean>> {
+  const sessionToken = getAuthToken();
+  if (!sessionToken) {
+    return {
+      success: false,
+      error: '認証が必要です。ログインしてください。',
+    };
+  }
+
+  return handleTauriCommand(
+    invoke<boolean>('delete_subscription_receipt_from_r2', {
+      receiptUrl: receiptUrl,
+      sessionToken: sessionToken,
+    })
+  );
+}
+
+/**
+ * サブスクリプションの領収書パスをDBから削除する（ユーザー認証付き）
+ *
+ * @param subscriptionId - サブスクリプションID
+ * @returns 成功またはエラー
+ */
+export async function deleteSubscriptionReceipt(
   subscriptionId: number
 ): Promise<TauriResult<boolean>> {
   const sessionToken = getAuthToken();

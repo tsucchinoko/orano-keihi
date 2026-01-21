@@ -177,9 +177,9 @@ impl ApiClient {
 
     /// DELETEリクエストを送信
     pub async fn delete(&self, endpoint: &str, auth_token: Option<&str>) -> Result<(), AppError> {
-        info!("DELETEリクエスト送信: endpoint={endpoint}");
-
         let url = format!("{}{endpoint}", self.config.base_url);
+        info!("DELETEリクエスト送信: endpoint={endpoint}, url={url}");
+
         let mut request = self.client.delete(&url);
 
         // 認証トークンがある場合は追加

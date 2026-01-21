@@ -319,6 +319,7 @@ pub fn run() {
             subscription_commands::delete_subscription,
             subscription_commands::get_monthly_subscription_total,
             subscription_commands::upload_subscription_receipt_via_api,
+            subscription_commands::delete_subscription_receipt_from_r2,
             subscription_commands::delete_subscription_receipt_via_api,
             // 領収書コマンド（APIサーバー経由）
             receipt_api_commands::upload_receipt_via_api,

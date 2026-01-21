@@ -341,7 +341,110 @@ pub async fn upload_subscription_receipt_via_api(
     }
 }
 
-/// サブスクリプションの領収書を削除する（API Server経由）
+/// サブスクリプションの領収書をR2から削除する（API Server経由）
+///
+/// # 引数
+/// * `receipt_url` - 削除する領収書のHTTPS URL
+/// * `session_token` - セッショントークン
+/// * `auth_middleware` - 認証ミドルウェア
+///
+/// # 戻り値
+/// 削除成功時はtrue、失敗時はエラーメッセージ
+#[tauri::command]
+pub async fn delete_subscription_receipt_from_r2(
+    receipt_url: String,
+    session_token: Option<String>,
+    auth_middleware: State<'_, AuthMiddleware>,
+) -> Result<bool, String> {
+    info!("サブスクリプションの領収書削除処理開始（R2）: receipt_url={receipt_url}");
+
+    // 認証チェック
+    let user = auth_middleware
+        .authenticate_request(session_token.as_deref(), "/api/receipts/delete")
+        .await
+        .map_err(|e| {
+            log::error!("認証エラー: {e}");
+            format!("認証エラー: {e}")
+        })?;
+
+    log::debug!("認証成功 - ユーザーID: {}", user.id);
+
+    // セッショントークンが必要
+    let token = session_token.ok_or_else(|| {
+        log::error!("セッショントークンが提供されていません");
+        "セッショントークンが必要です".to_string()
+    })?;
+
+    // URLの基本検証
+    if !receipt_url.starts_with("https://") {
+        return Err("無効な領収書URLです".to_string());
+    }
+
+    log::debug!(
+        "使用するセッショントークン: {}****",
+        &token[..8.min(token.len())]
+    );
+
+    // APIクライアントを作成
+    let api_client = crate::shared::api_client::ApiClient::new().map_err(|e| {
+        log::error!("APIクライアント作成エラー: {e}");
+        format!("APIクライアント作成エラー: {e}")
+    })?;
+
+    // 削除リクエストのペイロード
+    let payload = serde_json::json!({
+        "receiptUrl": receipt_url
+    });
+
+    log::debug!(
+        "削除リクエストペイロード: {}",
+        serde_json::to_string_pretty(&payload).unwrap_or_default()
+    );
+
+    // APIサーバーに削除リクエストを送信
+    let endpoint = "/api/v1/receipts/delete-by-url";
+
+    log::debug!("APIエンドポイント: {endpoint}");
+
+    let response = api_client
+        .delete_with_body::<serde_json::Value>(endpoint, &payload, Some(&token))
+        .await
+        .map_err(|e| {
+            log::error!("APIリクエストエラー: {e}");
+            format!("領収書の削除に失敗しました: {e}")
+        })?;
+
+    info!(
+        "APIレスポンス受信: {}",
+        serde_json::to_string_pretty(&response).unwrap_or_default()
+    );
+
+    // レスポンスから成功フラグを取得
+    let success = response
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    info!("レスポンス解析結果: success={success}");
+
+    if success {
+        info!(
+            "サブスクリプションの領収書削除成功 - ユーザーID: {}, receipt_url: {receipt_url}",
+            user.id
+        );
+        Ok(true)
+    } else {
+        let error_message = response
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("不明なエラーが発生しました");
+
+        log::error!("サブスクリプションの領収書削除失敗: {error_message}");
+        Err(format!("領収書の削除に失敗しました: {error_message}"))
+    }
+}
+
+/// サブスクリプションの領収書パスをDBから削除する（API Server経由）
 ///
 /// # 引数
 /// * `subscription_id` - サブスクリプションID
@@ -356,7 +459,7 @@ pub async fn delete_subscription_receipt_via_api(
     session_token: Option<String>,
     auth_middleware: State<'_, AuthMiddleware>,
 ) -> Result<bool, String> {
-    info!("サブスクリプションの領収書削除処理開始: subscription_id={subscription_id}");
+    info!("サブスクリプションの領収書パス削除処理開始（DB）: subscription_id={subscription_id}");
 
     // 認証チェック
     let _user = auth_middleware
@@ -367,8 +470,7 @@ pub async fn delete_subscription_receipt_via_api(
     // APIクライアントを作成
     let api_client = ApiClient::new().map_err(|e| format!("APIクライアント作成エラー: {e}"))?;
 
-    // 領収書パスを空にする更新リクエストを送信
-    // Note: API Serverではreceipt_pathフィールドを空文字列に設定することで削除
+    // 領収書パスを空文字列にする更新リクエストを送信
     let dto = UpdateSubscriptionDto {
         name: None,
         amount: None,
@@ -378,12 +480,14 @@ pub async fn delete_subscription_receipt_via_api(
         receipt_path: Some("".to_string()),
     };
 
+    info!("領収書パス削除リクエストを送信: subscription_id={subscription_id}, dto={dto:?}");
+
     let endpoint = format!("/api/v1/subscriptions/{subscription_id}");
     let _response: UpdateSubscriptionResponse = api_client
         .put(&endpoint, &dto, session_token.as_deref())
         .await
-        .map_err(|e| format!("領収書削除APIエラー: {e}"))?;
+        .map_err(|e| format!("領収書パス削除APIエラー: {e}"))?;
 
-    info!("サブスクリプションの領収書削除成功: subscription_id={subscription_id}");
+    info!("サブスクリプションの領収書パス削除成功: subscription_id={subscription_id}");
     Ok(true)
 }

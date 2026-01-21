@@ -8,13 +8,18 @@ import { logger } from "../utils/logger.js";
 import { handleError, createValidationError, createNotFoundError } from "../utils/error-handler.js";
 import type { SubscriptionRepository } from "../repositories/subscription-repository.js";
 import type { CreateSubscriptionDto, UpdateSubscriptionDto } from "../types/d1-dtos.js";
+import type { R2ClientInterface } from "../services/r2-client.js";
 
 /**
  * サブスクリプションルーターを作成
  * @param subscriptionRepository サブスクリプションリポジトリ
+ * @param r2Client R2クライアント（オプション）
  * @returns サブスクリプションルーター
  */
-export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRepository): Hono {
+export function createSubscriptionsRouter(
+  subscriptionRepository: SubscriptionRepository,
+  r2Client?: R2ClientInterface,
+): Hono {
   const subscriptionsApp = new Hono();
 
   // GET /api/v1/subscriptions/monthly-total - 月額合計を取得
@@ -214,6 +219,123 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
     }
   });
 
+  // DELETE /api/v1/subscriptions/:id/receipt - サブスクリプションの領収書を削除
+  // 注意: このエンドポイントは /:id より前に定義する必要がある
+  subscriptionsApp.delete("/:id/receipt", async (c: Context) => {
+    logger.info("DELETE /:id/receipt エンドポイントが呼ばれました", {
+      path: c.req.path,
+      params: c.req.param(),
+    });
+
+    try {
+      const user = c.get("user");
+
+      if (!user) {
+        logger.error("ユーザー情報が見つかりません");
+        throw createNotFoundError("ユーザー情報が見つかりません");
+      }
+
+      const subscriptionId = parseInt(c.req.param("id"), 10);
+
+      if (isNaN(subscriptionId)) {
+        throw createValidationError(
+          "有効なサブスクリプションIDが指定されていません",
+          "id",
+          c.req.param("id"),
+          "valid number required",
+        );
+      }
+
+      logger.debug("サブスクリプション領収書削除リクエスト", {
+        userId: user.id,
+        subscriptionId,
+      });
+
+      // サブスクリプションを取得して領収書パスを確認
+      const subscription = await subscriptionRepository.findById(subscriptionId, user.id);
+
+      if (!subscription) {
+        logger.warn("サブスクリプションが見つかりませんでした", {
+          userId: user.id,
+          subscriptionId,
+        });
+        throw createNotFoundError("サブスクリプションが見つかりません");
+      }
+
+      logger.debug("サブスクリプション情報を取得しました", {
+        subscriptionId,
+        hasReceiptPath: !!subscription.receipt_path,
+        receiptPath: subscription.receipt_path,
+        hasR2Client: !!r2Client,
+      });
+
+      // 領収書パスが存在する場合、R2から削除
+      if (subscription.receipt_path && r2Client) {
+        try {
+          // receipt_pathからファイルキーを抽出
+          // receipt_pathは "https://pub-xxx.r2.cloudflarestorage.com/bucket-name/users/xxx/subscriptions/xxx/xxx.jpg" の形式
+          const url = new URL(subscription.receipt_path);
+          const pathname = url.pathname.substring(1); // 先頭の "/" を除去
+
+          // パス名からバケット名を除去
+          // pathname = "bucket-name/users/xxx/subscriptions/xxx/xxx.jpg"
+          // fileKey = "users/xxx/subscriptions/xxx/xxx.jpg"
+          const pathParts = pathname.split("/");
+          const fileKey = pathParts.slice(1).join("/"); // 最初の部分（バケット名）を除去
+
+          logger.debug("R2からファイルを削除します", {
+            fileKey,
+            receiptPath: subscription.receipt_path,
+            pathname,
+          });
+
+          await r2Client.deleteObject(fileKey);
+
+          logger.info("R2からファイルを削除しました", {
+            fileKey,
+            subscriptionId,
+          });
+        } catch (error) {
+          // R2削除に失敗してもデータベースは更新する
+          logger.error("R2からのファイル削除に失敗しました", {
+            error: error instanceof Error ? error.message : String(error),
+            receiptPath: subscription.receipt_path,
+            subscriptionId,
+          });
+        }
+      } else {
+        logger.warn("R2削除をスキップしました", {
+          hasReceiptPath: !!subscription.receipt_path,
+          hasR2Client: !!r2Client,
+          receiptPath: subscription.receipt_path,
+        });
+      }
+
+      // データベースの領収書パスを空にする
+      const updatedSubscription = await subscriptionRepository.update(
+        subscriptionId,
+        { receipt_path: "" },
+        user.id,
+      );
+
+      logger.info("サブスクリプションの領収書を削除しました", {
+        userId: user.id,
+        subscriptionId,
+      });
+
+      return c.json({
+        success: true,
+        message: "領収書が正常に削除されました",
+        subscription: updatedSubscription,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      return handleError(c, error instanceof Error ? error : new Error(String(error)), {
+        context: "サブスクリプション領収書削除",
+      });
+    }
+  });
+
   // GET /api/v1/subscriptions/:id - サブスクリプションを取得
   subscriptionsApp.get("/:id", async (c: Context) => {
     try {
@@ -270,6 +392,11 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
 
   // PUT /api/v1/subscriptions/:id - サブスクリプションを更新
   subscriptionsApp.put("/:id", async (c: Context) => {
+    logger.info("PUT /:id エンドポイントが呼ばれました", {
+      path: c.req.path,
+      params: c.req.param(),
+    });
+
     try {
       const user = c.get("user");
 
@@ -292,10 +419,14 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
       // リクエストボディを取得
       const body = await c.req.json<UpdateSubscriptionDto>();
 
-      logger.debug("サブスクリプション更新リクエスト", {
+      logger.info("サブスクリプション更新リクエスト", {
         userId: user.id,
         subscriptionId,
         updateData: body,
+        hasReceiptPath: body.receipt_path !== undefined,
+        receiptPathValue: body.receipt_path,
+        receiptPathIsEmptyString: body.receipt_path === "",
+        receiptPathType: typeof body.receipt_path,
       });
 
       // バリデーション
@@ -397,6 +528,58 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
         }
       }
 
+      // 領収書削除処理：receipt_pathが空文字列の場合、R2から削除
+      if (body.receipt_path === "" && r2Client) {
+        logger.info("領収書削除処理を開始します", {
+          subscriptionId,
+          userId: user.id,
+        });
+
+        // 現在のサブスクリプション情報を取得
+        const currentSubscription = await subscriptionRepository.findById(subscriptionId, user.id);
+
+        if (currentSubscription && currentSubscription.receipt_path) {
+          try {
+            // receipt_pathからファイルキーを抽出
+            const url = new URL(currentSubscription.receipt_path);
+            const pathname = url.pathname.substring(1); // 先頭の "/" を除去
+            const pathParts = pathname.split("/");
+            const fileKey = pathParts.slice(1).join("/"); // バケット名を除去
+
+            logger.info("R2からファイルを削除します", {
+              fileKey,
+              receiptPath: currentSubscription.receipt_path,
+            });
+
+            await r2Client.deleteObject(fileKey);
+
+            logger.info("R2からファイルを削除しました", {
+              fileKey,
+              subscriptionId,
+            });
+          } catch (error) {
+            // R2削除に失敗してもデータベースは更新する
+            logger.error("R2からのファイル削除に失敗しました", {
+              error: error instanceof Error ? error.message : String(error),
+              receiptPath: currentSubscription.receipt_path,
+              subscriptionId,
+            });
+          }
+        } else {
+          logger.info("削除する領収書がありません", {
+            subscriptionId,
+            hasCurrentSubscription: !!currentSubscription,
+            hasReceiptPath: currentSubscription?.receipt_path ? true : false,
+          });
+        }
+      } else {
+        logger.info("領収書削除処理をスキップしました", {
+          subscriptionId,
+          receiptPathValue: body.receipt_path,
+          hasR2Client: !!r2Client,
+        });
+      }
+
       // サブスクリプションを更新（アクセス制御：自分のサブスクリプションのみ）
       const subscription = await subscriptionRepository.update(subscriptionId, body, user.id);
 
@@ -466,6 +649,11 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
 
   // DELETE /api/v1/subscriptions/:id - サブスクリプションを削除
   subscriptionsApp.delete("/:id", async (c: Context) => {
+    logger.info("DELETE /:id エンドポイントが呼ばれました", {
+      path: c.req.path,
+      params: c.req.param(),
+    });
+
     try {
       const user = c.get("user");
 
@@ -490,12 +678,103 @@ export function createSubscriptionsRouter(subscriptionRepository: SubscriptionRe
         subscriptionId,
       });
 
+      // サブスクリプションを削除する前に領収書パスを取得
+      const receiptPath = await subscriptionRepository.getReceiptPath(subscriptionId, user.id);
+
       // サブスクリプションを削除（アクセス制御：自分のサブスクリプションのみ）
       await subscriptionRepository.delete(subscriptionId, user.id);
+
+      // 領収書がある場合はR2から削除
+      if (receiptPath && r2Client) {
+        try {
+          logger.debug("領収書パス解析開始", {
+            userId: user.id,
+            subscriptionId,
+            receiptPath,
+          });
+
+          // URLからR2キーを抽出
+          // 想定される形式:
+          // 1. https://orano-keihi-dev.account.r2.cloudflarestorage.com/users/xxx/subscriptions/yyy/file.jpg
+          // 2. https://account.r2.cloudflarestorage.com/bucket/users/xxx/subscriptions/yyy/file.jpg
+          let key: string | null = null;
+
+          try {
+            const url = new URL(receiptPath);
+            // パス部分を取得（先頭の/を除く）
+            const pathname = url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname;
+
+            // バケット名が含まれている場合は除外
+            // 例: bucket/users/xxx/... -> users/xxx/...
+            const pathParts = pathname.split("/");
+
+            // "users/"で始まるパスを探す
+            const usersIndex = pathParts.findIndex((part) => part === "users");
+            if (usersIndex !== -1) {
+              key = pathParts.slice(usersIndex).join("/");
+            } else {
+              // バケット名の次からがキーの可能性
+              key = pathname;
+            }
+          } catch (urlError) {
+            logger.warn("URL解析に失敗しました。文字列分割で試行します", {
+              userId: user.id,
+              subscriptionId,
+              receiptPath,
+              error: urlError instanceof Error ? urlError.message : String(urlError),
+            });
+
+            // フォールバック: 文字列分割
+            const urlParts = receiptPath.split("/");
+            const usersIndex = urlParts.findIndex((part) => part === "users");
+            if (usersIndex !== -1) {
+              key = urlParts.slice(usersIndex).join("/");
+            }
+          }
+
+          if (key) {
+            logger.debug("R2から領収書を削除します", {
+              userId: user.id,
+              subscriptionId,
+              receiptPath,
+              key,
+            });
+
+            await r2Client.deleteObject(key);
+
+            logger.info("R2から領収書を削除しました", {
+              userId: user.id,
+              subscriptionId,
+              key,
+            });
+          } else {
+            logger.warn("領収書パスからR2キーを抽出できませんでした", {
+              userId: user.id,
+              subscriptionId,
+              receiptPath,
+            });
+          }
+        } catch (r2Error) {
+          // R2削除エラーはログに記録するが、サブスクリプション削除は成功とする
+          logger.error("R2から領収書の削除に失敗しましたが、サブスクリプションは削除されました", {
+            userId: user.id,
+            subscriptionId,
+            receiptPath,
+            error: r2Error instanceof Error ? r2Error.message : String(r2Error),
+          });
+        }
+      } else if (receiptPath && !r2Client) {
+        logger.warn("R2クライアントが利用できないため、領収書を削除できませんでした", {
+          userId: user.id,
+          subscriptionId,
+          receiptPath,
+        });
+      }
 
       logger.info("サブスクリプションを削除しました", {
         userId: user.id,
         subscriptionId,
+        hadReceipt: !!receiptPath,
       });
 
       return c.json({
