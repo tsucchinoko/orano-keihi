@@ -70,12 +70,15 @@ pub async fn start_oauth_flow(
 
     // コールバック受信用の情報をグローバルストレージに保存
     if let Some(receiver) = oauth_info.callback_receiver {
+        // 実際のリダイレクトURIを構築
+        let redirect_uri = format!("http://127.0.0.1:{}/callback", oauth_info.loopback_port);
+
         let mut global_storage = CALLBACK_STORAGE.lock().unwrap();
         *global_storage = Some(CallbackStorage {
             receiver: Some(receiver),
             state: Some(oauth_info.state),
             code_verifier: Some(oauth_info.code_verifier),
-            redirect_uri: None, // 後で設定
+            redirect_uri: Some(redirect_uri),
         });
     }
 

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
-import { SignJWT } from "jose";
+import { SignJWT, jwtVerify } from "jose";
 import type { Env } from "../worker.js";
 
 // リクエストスキーマ
@@ -101,6 +101,13 @@ app.post("/google/start", zValidator("json", AuthStartRequestSchema), async (c) 
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
 
+    console.log("認証開始リクエスト:", {
+      redirect_uri,
+      has_client_id: !!clientId,
+      has_client_secret: !!clientSecret,
+      client_id_length: clientId?.length,
+    });
+
     if (!clientId || !clientSecret) {
       return c.json({ error: "Google OAuth設定が不完全です" }, 500);
     }
@@ -140,6 +147,9 @@ app.post("/google/callback", zValidator("json", AuthCallbackRequestSchema), asyn
   try {
     const { code, state, code_verifier, redirect_uri } = c.req.valid("json");
 
+    // stateは検証に使用（将来的にCSRF対策として実装予定）
+    console.log("認証コールバック処理:", { state });
+
     // 環境変数からGoogle OAuth設定を取得
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
@@ -167,8 +177,25 @@ app.post("/google/callback", zValidator("json", AuthCallbackRequestSchema), asyn
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      console.error("トークン交換エラー:", errorText);
-      return c.json({ error: "トークン交換に失敗しました" }, 400);
+      console.error("トークン交換エラー:", {
+        status: tokenResponse.status,
+        statusText: tokenResponse.statusText,
+        errorText,
+        requestParams: {
+          redirect_uri,
+          client_id: clientId,
+          has_code: !!code,
+          has_code_verifier: !!code_verifier,
+        },
+      });
+      return c.json(
+        {
+          error: "トークン交換に失敗しました",
+          details: errorText,
+          status: tokenResponse.status,
+        },
+        400,
+      );
     }
 
     const tokenData = (await tokenResponse.json()) as GoogleTokenResponse;
@@ -222,6 +249,124 @@ app.post("/google/callback", zValidator("json", AuthCallbackRequestSchema), asyn
   } catch (error) {
     console.error("認証コールバックエラー:", error);
     return c.json({ error: "認証処理に失敗しました" }, 500);
+  }
+});
+
+// JWT検証エンドポイント
+app.get("/validate", async (c) => {
+  try {
+    // Authorizationヘッダーからトークンを取得
+    const authHeader = c.req.header("Authorization");
+
+    if (!authHeader) {
+      return c.json(
+        {
+          error: {
+            code: "MISSING_AUTH_HEADER",
+            message: "認証ヘッダーが必要です",
+            timestamp: new Date().toISOString(),
+          },
+        },
+        401,
+      );
+    }
+
+    // Bearer トークンの形式をチェック
+    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/);
+    if (!tokenMatch) {
+      return c.json(
+        {
+          error: {
+            code: "INVALID_AUTH_HEADER",
+            message: "認証ヘッダーの形式が正しくありません（Bearer <token>）",
+            timestamp: new Date().toISOString(),
+          },
+        },
+        401,
+      );
+    }
+
+    const token = tokenMatch[1];
+
+    // 環境変数からJWT_SECRETを取得
+    const jwtSecret = c.env.JWT_SECRET;
+
+    if (!jwtSecret) {
+      console.error("JWT_SECRETが設定されていません");
+      return c.json(
+        {
+          error: {
+            code: "SERVER_CONFIGURATION_ERROR",
+            message: "サーバー設定が不完全です",
+            timestamp: new Date().toISOString(),
+          },
+        },
+        500,
+      );
+    }
+
+    // JWTトークンを検証
+    const jwtSecretKey = new TextEncoder().encode(jwtSecret);
+
+    try {
+      const { payload } = await jwtVerify(token, jwtSecretKey, {
+        algorithms: ["HS256"],
+      });
+
+      // ペイロードからユーザー情報を取得
+      const user = {
+        id: payload.sub as string,
+        email: payload.email as string,
+        name: payload.name as string,
+        picture: payload.picture as string | undefined,
+      };
+
+      console.log("JWT検証が成功しました:", {
+        userId: user.id,
+        email: user.email,
+      });
+
+      return c.json({
+        valid: true,
+        user,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (jwtError) {
+      console.error("JWT検証エラー:", jwtError);
+
+      // JWT検証エラーの詳細を判定
+      let errorMessage = "無効なトークンです";
+      if (jwtError instanceof Error) {
+        if (jwtError.message.includes("expired")) {
+          errorMessage = "トークンの有効期限が切れています";
+        } else if (jwtError.message.includes("signature")) {
+          errorMessage = "トークンの署名が無効です";
+        }
+      }
+
+      return c.json(
+        {
+          error: {
+            code: "INVALID_TOKEN",
+            message: errorMessage,
+            timestamp: new Date().toISOString(),
+          },
+        },
+        401,
+      );
+    }
+  } catch (error) {
+    console.error("JWT検証エンドポイントでエラーが発生しました:", error);
+    return c.json(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "トークン検証処理でエラーが発生しました",
+          timestamp: new Date().toISOString(),
+        },
+      },
+      500,
+    );
   }
 });
 
