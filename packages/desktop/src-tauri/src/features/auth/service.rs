@@ -445,9 +445,6 @@ impl AuthService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::shared::database::connection::create_in_memory_connection;
-
     // テストは実際のTauriアプリハンドルが必要なため、統合テストで実装
     #[test]
     fn test_auth_service_creation() {

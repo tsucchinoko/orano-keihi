@@ -1,6 +1,5 @@
 use crate::features::security::encryption::TokenEncryption;
 use crate::features::security::models::{SecurityConfig, SecurityError, TokenInfo};
-use base64::{engine::general_purpose, Engine as _};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
