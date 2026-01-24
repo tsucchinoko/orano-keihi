@@ -28,7 +28,9 @@ INSERT OR IGNORE INTO categories (name, icon, display_order, is_active, created_
     ('通信費', '📱', 3, 1, datetime('now'), datetime('now')),
     ('消耗品費', '📦', 4, 1, datetime('now'), datetime('now')),
     ('接待交際費', '🤝', 5, 1, datetime('now'), datetime('now')),
-    ('その他', '📋', 6, 1, datetime('now'), datetime('now'));
+    ('水道光熱費', '🚰', 6, 1, datetime('now'), datetime('now')),
+    ('地代家賃', '🏠', 7, 1, datetime('now'), datetime('now')),
+    ('その他', '📋', 8, 1, datetime('now'), datetime('now'));
 
 -- ============================================
 -- Step 3: expensesテーブルに category_id カラムを追加
