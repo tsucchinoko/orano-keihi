@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { authStore } from '../stores/auth.svelte';
 import type {
+  Category,
   Expense,
   CreateExpenseDto,
   UpdateExpenseDto,
@@ -66,6 +67,24 @@ export async function handleTauriCommand<T>(
  */
 export function getAuthToken(): string | null {
   return authStore.getSessionToken();
+}
+
+// ========================================
+// カテゴリー関連のコマンド
+// ========================================
+
+/**
+ * カテゴリー一覧を取得する
+ *
+ * @returns カテゴリー一覧またはエラー
+ */
+export async function getCategories(): Promise<TauriResult<Category[]>> {
+  const sessionToken = getAuthToken();
+  return handleTauriCommand(
+    invoke<Category[]>('get_categories', {
+      sessionToken: sessionToken,
+    })
+  );
 }
 
 // ========================================

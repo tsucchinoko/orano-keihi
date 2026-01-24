@@ -3,7 +3,8 @@ export interface Expense {
   id: number;
   date: string; // ISO 8601形式
   amount: number;
-  category: string;
+  category: string; // 後方互換性のため残す
+  category_id?: number; // カテゴリーID（categoriesテーブルへの外部キー）
   description?: string;
   receipt_path?: string; // 後方互換性のため残す
   receipt_url?: string; // R2対応の新しいフィールド
@@ -15,7 +16,8 @@ export interface Expense {
 export interface CreateExpenseDto {
   date: string;
   amount: number;
-  category: string;
+  category: string; // 後方互換性のため残す
+  category_id?: number; // カテゴリーID（推奨）
   description?: string;
 }
 
@@ -23,7 +25,8 @@ export interface CreateExpenseDto {
 export interface UpdateExpenseDto {
   date?: string;
   amount?: number;
-  category?: string;
+  category?: string; // 後方互換性のため残す
+  category_id?: number; // カテゴリーID（推奨）
   description?: string;
   receipt_url?: string;
 }
@@ -35,7 +38,8 @@ export interface Subscription {
   amount: number;
   billing_cycle: 'monthly' | 'annual';
   start_date: string;
-  category: string;
+  category: string; // 後方互換性のため残す
+  category_id?: number; // カテゴリーID（categoriesテーブルへの外部キー）
   is_active: boolean;
   receipt_path?: string;
   created_at: string;
@@ -48,7 +52,8 @@ export interface CreateSubscriptionDto {
   amount: number;
   billing_cycle: 'monthly' | 'annual';
   start_date: string;
-  category: string;
+  category: string; // 後方互換性のため残す
+  category_id?: number; // カテゴリーID（推奨）
 }
 
 // サブスクリプション更新用DTO
@@ -57,7 +62,8 @@ export interface UpdateSubscriptionDto {
   amount?: number;
   billing_cycle?: 'monthly' | 'annual';
   start_date?: string;
-  category?: string;
+  category?: string; // 後方互換性のため残す
+  category_id?: number; // カテゴリーID（推奨）
   receipt_path?: string;
 }
 
@@ -76,8 +82,11 @@ export interface MonthlyTotalResponse {
 export interface Category {
   id: number;
   name: string;
-  color: string;
-  icon?: string;
+  icon: string;
+  display_order: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // 月別合計データモデル
