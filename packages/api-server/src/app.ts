@@ -36,10 +36,12 @@ import { createReceiptsRouter } from "./routes/receipts.js";
 import { createUsersRouter } from "./routes/users.js";
 import { createExpensesRouter } from "./routes/expenses.js";
 import { createSubscriptionsRouter } from "./routes/subscriptions.js";
+import { createCategoriesRouter } from "./routes/categories.js";
 import authRouter from "./routes/auth.js";
 import { UserRepository } from "./repositories/user-repository.js";
 import { ExpenseRepository } from "./repositories/expense-repository.js";
 import { SubscriptionRepository } from "./repositories/subscription-repository.js";
+import { CategoryRepository } from "./repositories/category-repository.js";
 
 /**
  * Honoコンテキストの型拡張
@@ -104,6 +106,7 @@ export function createApp(
   const userRepository = new UserRepository(db);
   const expenseRepository = new ExpenseRepository(db);
   const subscriptionRepository = new SubscriptionRepository(db);
+  const categoryRepository = new CategoryRepository(db);
 
   // 認証サービスを初期化
   const authService = createAuthService(config.auth, userRepository);
@@ -188,6 +191,12 @@ export function createApp(
   app.use("/api/v1/subscriptions", authMiddleware);
   app.use("/api/v1/subscriptions/*", authMiddleware);
   app.route("/api/v1/subscriptions", subscriptionsRouter);
+
+  // カテゴリー関連エンドポイント（認証が必要）
+  const categoriesRouter = createCategoriesRouter(categoryRepository);
+  app.use("/api/v1/categories", authMiddleware);
+  app.use("/api/v1/categories/*", authMiddleware);
+  app.route("/api/v1/categories", categoriesRouter);
 
   // 領収書関連エンドポイント（認証が必要）
   const receiptsRouter = createReceiptsRouter(r2Client);
