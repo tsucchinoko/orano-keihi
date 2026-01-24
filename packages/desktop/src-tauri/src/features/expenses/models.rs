@@ -7,6 +7,7 @@ pub struct Expense {
     pub date: String,
     pub amount: f64,
     pub category: String,
+    pub category_id: Option<i64>, // カテゴリーID（categoriesテーブルへの外部キー）
     pub description: Option<String>,
     pub receipt_url: Option<String>, // receipt_pathからreceipt_urlに変更
     pub created_at: String,
@@ -19,6 +20,7 @@ pub struct CreateExpenseDto {
     pub date: String,
     pub amount: f64,
     pub category: String,
+    pub category_id: Option<i64>, // カテゴリーID（推奨）
     pub description: Option<String>,
     /// ユーザーID（認証後に設定される、nanoId形式）
     pub user_id: Option<String>,
@@ -33,6 +35,8 @@ pub struct UpdateExpenseDto {
     pub amount: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_id: Option<i64>, // カテゴリーID（推奨）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -62,6 +66,7 @@ mod tests {
             date: "2024-01-01".to_string(),
             amount: 1000.0,
             category: "食費".to_string(),
+            category_id: Some(1),
             description: Some("テスト経費".to_string()),
             receipt_url: Some("https://example.com/receipt.pdf".to_string()),
             created_at: "2024-01-01T00:00:00+09:00".to_string(),

@@ -492,6 +492,7 @@ pub async fn delete_subscription_receipt_via_api(
         billing_cycle: None,
         start_date: None,
         category: None,
+        category_id: None,
         receipt_path: Some("".to_string()),
     };
 
