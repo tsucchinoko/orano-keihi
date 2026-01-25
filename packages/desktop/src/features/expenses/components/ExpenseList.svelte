@@ -104,7 +104,7 @@
 
 <div class="space-y-6">
     <!-- サマリーカード -->
-    <div class="card bg-gradient-to-br from-purple-50 to-pink-50">
+    <div class="card bg-linear-to-br from-purple-50 to-pink-50">
         <h3 class="text-lg font-bold mb-4">
             {selectedMonth ? `${selectedMonth}の` : ""}経費サマリー
         </h3>
@@ -127,7 +127,7 @@
             <div class="flex items-center justify-between">
                 <span class="text-lg font-bold">合計</span>
                 <span
-                    class="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent"
+                    class="text-2xl font-bold bg-linear-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent"
                 >
                     {formatAmount(grandTotal)}
                 </span>
@@ -153,7 +153,7 @@
                         {formatDate(date)}
                     </h4>
                     <div
-                        class="flex-1 h-px bg-gradient-to-r from-purple-300 to-transparent"
+                        class="flex-1 h-px bg-linear-to-r from-purple-300 to-transparent"
                     ></div>
                     <span class="text-sm font-semibold text-purple-600">
                         {formatAmount(
