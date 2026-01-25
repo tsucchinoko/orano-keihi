@@ -161,10 +161,10 @@
 
 <div class="space-y-6">
     <!-- 月額合計カード -->
-    <div class="card bg-gradient-to-br from-purple-50 to-pink-50">
+    <div class="card bg-linear-to-br from-purple-50 to-pink-50">
         <h3 class="text-lg font-bold mb-2">月額合計</h3>
         <div
-            class="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent"
+            class="text-3xl font-bold bg-linear-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent"
         >
             {formatAmount(monthlyTotal)}
         </div>
@@ -209,7 +209,7 @@
 
                                     <div class="flex items-baseline gap-2 mb-2">
                                         <span
-                                            class="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent"
+                                            class="text-2xl font-bold bg-linear-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent"
                                         >
                                             {formatAmount(subscription.amount)}
                                         </span>
