@@ -228,6 +228,7 @@ pub async fn delete_expense_receipt(
         date: None,
         amount: None,
         category: None,
+        category_id: None,
         description: None,
         receipt_url: Some("".to_string()),
     };

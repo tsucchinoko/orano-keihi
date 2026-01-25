@@ -26,8 +26,8 @@ export class SubscriptionRepository {
 
       const result = await this.db
         .prepare(
-          `INSERT INTO subscriptions (user_id, name, amount, billing_cycle, start_date, category, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+          `INSERT INTO subscriptions (user_id, name, amount, billing_cycle, start_date, category, category_id, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
         )
         .bind(
           userId,
@@ -36,6 +36,7 @@ export class SubscriptionRepository {
           dto.billing_cycle,
           dto.start_date,
           dto.category,
+          dto.category_id || null,
           now,
           now,
         )
@@ -92,7 +93,10 @@ export class SubscriptionRepository {
         .first<Subscription>();
 
       if (!result) {
-        logger.debug("サブスクリプションが見つかりませんでした", { id, userId });
+        logger.debug("サブスクリプションが見つかりませんでした", {
+          id,
+          userId,
+        });
         return null;
       }
 
@@ -208,6 +212,10 @@ export class SubscriptionRepository {
         updates.push("category = ?");
         params.push(dto.category);
       }
+      if (dto.category_id !== undefined) {
+        updates.push("category_id = ?");
+        params.push(dto.category_id);
+      }
       if (dto.receipt_path !== undefined && dto.receipt_path !== null) {
         updates.push("receipt_path = ?");
         params.push(dto.receipt_path);
@@ -293,7 +301,7 @@ export class SubscriptionRepository {
 
       const result = await this.db
         .prepare(
-          `UPDATE subscriptions 
+          `UPDATE subscriptions
            SET is_active = ?, updated_at = ?
            WHERE id = ? AND user_id = ?`,
         )
@@ -423,7 +431,7 @@ export class SubscriptionRepository {
 
       const result = await this.db
         .prepare(
-          `UPDATE subscriptions 
+          `UPDATE subscriptions
            SET receipt_path = ?, updated_at = ?
            WHERE id = ? AND user_id = ?`,
         )
@@ -477,7 +485,10 @@ export class SubscriptionRepository {
         .first<{ receipt_path: string | null }>();
 
       if (!result) {
-        logger.debug("サブスクリプションが見つかりませんでした", { id, userId });
+        logger.debug("サブスクリプションが見つかりませんでした", {
+          id,
+          userId,
+        });
         return null;
       }
 

@@ -26,10 +26,19 @@ export class ExpenseRepository {
 
       const result = await this.db
         .prepare(
-          `INSERT INTO expenses (user_id, date, amount, category, description, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO expenses (user_id, date, amount, category, category_id, description, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(userId, dto.date, dto.amount, dto.category, dto.description || null, now, now)
+        .bind(
+          userId,
+          dto.date,
+          dto.amount,
+          dto.category,
+          dto.category_id || null,
+          dto.description || null,
+          now,
+          now,
+        )
         .run();
 
       if (!result.success) {
@@ -188,6 +197,10 @@ export class ExpenseRepository {
         updates.push("category = ?");
         params.push(dto.category);
       }
+      if (dto.category_id !== undefined) {
+        updates.push("category_id = ?");
+        params.push(dto.category_id);
+      }
       if (dto.description !== undefined) {
         updates.push("description = ?");
         params.push(dto.description);
@@ -311,7 +324,7 @@ export class ExpenseRepository {
 
       const result = await this.db
         .prepare(
-          `UPDATE expenses 
+          `UPDATE expenses
            SET receipt_url = ?, updated_at = ?
            WHERE id = ? AND user_id = ?`,
         )

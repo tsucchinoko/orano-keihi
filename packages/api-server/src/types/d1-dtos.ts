@@ -13,6 +13,25 @@ export interface GoogleUser {
 }
 
 /**
+ * カテゴリ作成DTO
+ */
+export interface CreateCategoryDto {
+  name: string; // カテゴリ名
+  icon: string; // 絵文字アイコン
+  display_order?: number; // 表示順序（オプション）
+}
+
+/**
+ * カテゴリ更新DTO
+ */
+export interface UpdateCategoryDto {
+  name?: string; // カテゴリ名
+  icon?: string; // 絵文字アイコン
+  display_order?: number; // 表示順序
+  is_active?: boolean; // 有効/無効フラグ
+}
+
+/**
  * ユーザー更新DTO
  */
 export interface UpdateUserDto {
@@ -27,7 +46,8 @@ export interface UpdateUserDto {
 export interface CreateExpenseDto {
   date: string; // YYYY-MM-DD形式
   amount: number; // 金額
-  category: string; // カテゴリ
+  category: string; // カテゴリ（後方互換性のため残す）
+  category_id?: number; // カテゴリID（推奨）
   description?: string; // 説明（オプション）
 }
 
@@ -37,7 +57,8 @@ export interface CreateExpenseDto {
 export interface UpdateExpenseDto {
   date?: string; // YYYY-MM-DD形式
   amount?: number; // 金額
-  category?: string; // カテゴリ
+  category?: string; // カテゴリ（後方互換性のため残す）
+  category_id?: number; // カテゴリID（推奨）
   description?: string; // 説明
   receipt_url?: string; // 領収書URL（HTTPS）
 }
@@ -50,7 +71,8 @@ export interface CreateSubscriptionDto {
   amount: number; // 金額
   billing_cycle: "monthly" | "annual"; // 請求サイクル
   start_date: string; // YYYY-MM-DD形式
-  category: string; // カテゴリ
+  category: string; // カテゴリ（後方互換性のため残す）
+  category_id?: number; // カテゴリID（推奨）
 }
 
 /**
@@ -61,6 +83,7 @@ export interface UpdateSubscriptionDto {
   amount?: number; // 金額
   billing_cycle?: "monthly" | "annual"; // 請求サイクル
   start_date?: string; // YYYY-MM-DD形式
-  category?: string; // カテゴリ
+  category?: string; // カテゴリ（後方互換性のため残す）
+  category_id?: number; // カテゴリID（推奨）
   receipt_path?: string; // 領収書パス
 }

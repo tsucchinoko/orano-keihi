@@ -8,6 +8,7 @@ use features::security::models::SecurityConfig;
 use features::security::service::SecurityManager;
 use features::{
     auth::commands as auth_commands,
+    categories::api_commands as category_commands,
     expenses::api_commands as expense_commands,
     receipts::{api_commands as receipt_api_commands, commands as receipt_commands},
     security::commands as security_commands,
@@ -305,6 +306,8 @@ pub fn run() {
             auth_commands::get_auth_state,
             auth_commands::get_stored_auth_info,
             auth_commands::cleanup_expired_sessions,
+            // カテゴリーコマンド（API Server経由）
+            category_commands::get_categories,
             // 経費コマンド（API Server経由）
             expense_commands::create_expense,
             expense_commands::get_expenses,
