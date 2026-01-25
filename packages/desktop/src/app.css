@@ -15,6 +15,7 @@
   --gradient-success: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   --gradient-info: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   --gradient-warning: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+  --gradient-danger: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
 
   /* 背景グラデーション */
   --bg-gradient-light: linear-gradient(to bottom right, #fafafa, #e5e7eb);
@@ -38,6 +39,10 @@
 
   .gradient-warning {
     background: var(--gradient-warning);
+  }
+
+  .gradient-danger {
+    background: var(--gradient-danger);
   }
 
   .bg-gradient-light {
@@ -174,6 +179,10 @@
 
   .btn-warning {
     background: var(--gradient-warning);
+  }
+
+  .btn-danger {
+    background: var(--gradient-danger);
   }
 
   /* インプット共通スタイル */
