@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { Expense } from "$lib/types";
     import { convertFileSrc } from "@tauri-apps/api/core";
+    import { categoryStore } from "$lib/stores/categories.svelte";
 
     // Props
     interface Props {
@@ -11,6 +12,11 @@
     }
 
     let { expense, onEdit, onDelete, onViewReceipt }: Props = $props();
+
+    // カテゴリーストアの初期化
+    $effect(() => {
+        categoryStore.initialize();
+    });
 
     // 領収書のサムネイルURL（ローカルファイル用）
     let receiptThumbnailUrl = $state<string | undefined>(undefined);
@@ -43,16 +49,21 @@
     // 削除確認ダイアログの状態
     let showDeleteConfirm = $state(false);
 
-    // カテゴリごとのアイコンとカラー
-    const categoryConfig: Record<string, { icon: string; colorClass: string }> =
-        {
-            交通費: { icon: "🚗", colorClass: "bg-category-transport" },
-            飲食費: { icon: "🍽️", colorClass: "bg-category-meals" },
-            通信費: { icon: "📱", colorClass: "bg-category-communication" },
-            消耗品費: { icon: "📦", colorClass: "bg-category-supplies" },
-            接待交際費: { icon: "🤝", colorClass: "bg-category-entertainment" },
-            その他: { icon: "📋", colorClass: "bg-category-other" },
-        };
+    // DBから取得したカテゴリー情報を使用
+    // category_idが存在する場合はそれを優先、なければcategory名で検索（後方互換性）
+    const categoryIcon = $derived(() => {
+        if (expense.category_id) {
+            return categoryStore.getIconById(expense.category_id);
+        }
+        return categoryStore.getIconByName(expense.category);
+    });
+
+    const categoryColorClass = $derived(() => {
+        if (expense.category_id) {
+            return categoryStore.getColorById(expense.category_id);
+        }
+        return categoryStore.getColorByName(expense.category);
+    });
 
     // 日付フォーマット
     function formatDate(dateStr: string): string {
@@ -102,20 +113,14 @@
     class="card hover:shadow-lg transition-shadow duration-200 relative overflow-hidden"
 >
     <!-- カテゴリカラーバー -->
-    <div
-        class="absolute top-0 left-0 w-1 h-full {categoryConfig[
-            expense.category
-        ]?.colorClass || 'bg-category-other'}"
-    ></div>
+    <div class="absolute top-0 left-0 w-1 h-full {categoryColorClass()}"></div>
 
     <div class="pl-4">
         <div class="flex items-start justify-between gap-4">
             <!-- 左側：経費情報 -->
             <div class="flex-1">
                 <div class="flex items-center gap-2 mb-2">
-                    <span class="text-2xl"
-                        >{categoryConfig[expense.category]?.icon || "📋"}</span
-                    >
+                    <span class="text-2xl">{categoryIcon()}</span>
                     <span class="font-semibold text-gray-700"
                         >{expense.category}</span
                     >
