@@ -245,7 +245,7 @@ app.post("/google/callback", zValidator("json", AuthCallbackRequestSchema), asyn
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuedAt()
-      .setExpirationTime("1h") // 1時間後に期限切れ
+      .setExpirationTime("30d") // 1ヶ月後に期限切れ
       .sign(jwtSecretKey);
 
     const response: AuthCallbackResponse = {
